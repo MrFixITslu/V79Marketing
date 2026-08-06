@@ -26,7 +26,6 @@ interface LandingPageProps {
   currency: 'XCD' | 'USD';
   onViewPricing: () => void;
   utmParams?: UtmTrackingParams | null;
-  onSimulateUtm?: (params: UtmTrackingParams) => void;
 }
 
 export const LandingPage: React.FC<LandingPageProps> = ({
@@ -34,7 +33,6 @@ export const LandingPage: React.FC<LandingPageProps> = ({
   currency,
   onViewPricing,
   utmParams,
-  onSimulateUtm,
 }) => {
   return (
     <div className="bg-slate-950 text-slate-100 min-h-screen">
@@ -93,51 +91,6 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                 <span>View Plans ({currency === 'XCD' ? 'EC$' : '$'})</span>
               </button>
             </div>
-
-            {/* Test UTM Parameters Bar */}
-            {onSimulateUtm && (
-              <div className="pt-2 flex flex-wrap items-center justify-center gap-2 text-[11px] text-slate-400">
-                <span className="font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
-                  <Tag className="w-3 h-3 text-orange-400" /> Test UTM Attribution:
-                </span>
-                <button
-                  onClick={() =>
-                    onSimulateUtm({
-                      source: 'facebook_ads',
-                      medium: 'paid_social',
-                      campaign: 'caribbean_growth_2026',
-                    })
-                  }
-                  className="hover:text-white bg-slate-800/80 hover:bg-slate-800 px-2.5 py-1 rounded-md transition-colors cursor-pointer"
-                >
-                  Facebook Paid Ad
-                </button>
-                <button
-                  onClick={() =>
-                    onSimulateUtm({
-                      source: 'google_search',
-                      medium: 'cpc',
-                      campaign: 'st_lucia_launch',
-                    })
-                  }
-                  className="hover:text-white bg-slate-800/80 hover:bg-slate-800 px-2.5 py-1 rounded-md transition-colors cursor-pointer"
-                >
-                  Google PPC
-                </button>
-                <button
-                  onClick={() =>
-                    onSimulateUtm({
-                      source: 'whatsapp_newsletter',
-                      medium: 'direct_msg',
-                      campaign: 'vip_promo',
-                    })
-                  }
-                  className="hover:text-white bg-slate-800/80 hover:bg-slate-800 px-2.5 py-1 rounded-md transition-colors cursor-pointer"
-                >
-                  WhatsApp VIP
-                </button>
-              </div>
-            )}
 
             {/* Badges */}
             <div className="flex flex-wrap items-center justify-center gap-6 pt-4 text-xs text-slate-400 font-medium">

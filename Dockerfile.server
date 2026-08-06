@@ -1,0 +1,18 @@
+# Node.js Server Dockerfile
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Copy dependency files and install
+COPY package*.json ./
+RUN npm ci
+
+# Copy source code and build production server bundle
+COPY . .
+RUN npm run build
+
+# Node server runs on port 3000
+EXPOSE 3000
+
+ENV NODE_ENV=production
+CMD ["npm", "start"]

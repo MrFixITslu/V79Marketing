@@ -331,7 +331,6 @@ export default function App() {
             currency={currency}
             onViewPricing={() => setCurrentView('billing')}
             utmParams={utmParams}
-            onSimulateUtm={(params) => setUtmParams(params)}
           />
         )}
 

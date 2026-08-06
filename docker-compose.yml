@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  # Nginx Web Server (Listens on port 80 / mapped to host 8080)
+  nginx:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:80"
+    depends_on:
+      - app
+    restart: always
+
+  # Express Node Backend Service (Runs internal backend on port 3000)
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+    restart: always
