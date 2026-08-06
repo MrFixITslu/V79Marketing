@@ -1,0 +1,6 @@
+{
+  "name": "V79 Marketing Hub",
+  "description": "Your business online. Your brand everywhere. All-in-one AI-powered marketing and digital presence SaaS platform for SMBs.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
