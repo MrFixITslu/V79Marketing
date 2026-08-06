@@ -1,33 +1,26 @@
-# Stage 1: Build Frontend Application
-FROM node:20-alpine AS builder
+# Production Dockerfile for Full-Stack App (Express + Vite)
+FROM node:20-alpine
 
 WORKDIR /app
 
-# Copy dependency definitions
+# Copy dependency manifests
 COPY package*.json ./
 
-# Install dependencies
+# Install dependencies (including devDependencies needed for build)
 RUN npm install
 
-# Copy application source code
+# Copy application source
 COPY . .
 
-# Build application
+# Build frontend static assets and server bundle
 RUN npm run build
 
-# Stage 2: Serve static files with Nginx on Port 80
-FROM nginx:alpine AS runner
+# Set production environment
+ENV NODE_ENV=production
+ENV PORT=3000
 
-# Remove default nginx static assets
-RUN rm -rf /usr/share/nginx/html/*
+# Expose port 3000
+EXPOSE 3000
 
-# Copy custom nginx configuration (Nginx listens on port 80, NOT 3000)
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-
-# Copy build artifacts from builder stage
-COPY --from=builder /app/dist /usr/share/nginx/html
-
-# Expose Nginx web server port (Port 80)
-EXPOSE 80
-
-CMD ["nginx", "-g", "daemon off;"]
+# Start production server
+CMD ["npm", "start"]
