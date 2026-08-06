@@ -18,7 +18,9 @@ import {
   CustomerReview,
   Competitor,
   CaribbeanEvent,
-  UtmTrackingParams
+  UtmTrackingParams,
+  InAppNotification,
+  NotificationCategory
 } from './types';
 import {
   INITIAL_BUSINESSES,
@@ -178,6 +180,125 @@ export default function App() {
   const [competitors, setCompetitors] = useState<Competitor[]>(INITIAL_COMPETITORS);
   const [caribbeanEvents, setCaribbeanEvents] = useState<CaribbeanEvent[]>(INITIAL_CARIBBEAN_EVENTS);
 
+  // In-App Notification State
+  const [notifications, setNotifications] = useState<InAppNotification[]>([
+    {
+      id: 'notif-1',
+      businessId: 'biz-1',
+      category: 'CAMPAIGN_MILESTONE',
+      title: 'Campaign Milestone Reached!',
+      message: '"Summer Sunset Special" reached 10,000+ impressions with 18.4% engagement rate.',
+      timestamp: new Date(Date.now() - 1000 * 60 * 25).toISOString(),
+      read: false,
+      severity: 'success',
+      actionTab: 'campaigns',
+    },
+    {
+      id: 'notif-2',
+      businessId: 'biz-1',
+      category: 'LOW_CREDIT',
+      title: 'Low Credit Warning',
+      message: 'Your AI Credit balance is below 500 credits. Top up to ensure uninterrupted AI generation.',
+      timestamp: new Date(Date.now() - 1000 * 60 * 120).toISOString(),
+      read: false,
+      severity: 'warning',
+      actionTab: 'billing',
+    },
+    {
+      id: 'notif-3',
+      businessId: 'biz-1',
+      category: 'NEW_REVIEW',
+      title: 'New 5-Star Review Received',
+      message: 'Sarah Jenkins left a 5-star review on Google: "Best dining experience in Rodney Bay!" AI draft response ready.',
+      timestamp: new Date(Date.now() - 1000 * 60 * 360).toISOString(),
+      read: false,
+      severity: 'info',
+      actionTab: 'reviews',
+    },
+    {
+      id: 'notif-4',
+      businessId: 'biz-1',
+      category: 'SYSTEM',
+      title: 'Weekly Marketing Score Updated',
+      message: 'Your business score increased to 88/100 (+4 pts). Recommended action: Publish short-form video.',
+      timestamp: new Date(Date.now() - 1000 * 60 * 1440).toISOString(),
+      read: true,
+      severity: 'info',
+      actionTab: 'dashboard',
+    },
+  ]);
+
+  const handleMarkNotificationRead = (id: string) => {
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === id ? { ...n, read: true } : n))
+    );
+  };
+
+  const handleMarkAllNotificationsRead = () => {
+    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+  };
+
+  const handleClearNotification = (id: string) => {
+    setNotifications((prev) => prev.filter((n) => n.id !== id));
+  };
+
+  const handleSimulateNotification = (category: NotificationCategory) => {
+    const now = new Date().toISOString();
+    let newNotif: InAppNotification;
+
+    if (category === 'CAMPAIGN_MILESTONE') {
+      newNotif = {
+        id: `notif-${Date.now()}`,
+        businessId: currentBusiness.id,
+        category: 'CAMPAIGN_MILESTONE',
+        title: 'New Campaign Milestone: 15,000 Reach!',
+        message: 'Your cross-channel marketing campaign hit a new milestone with 1,240 link clicks today.',
+        timestamp: now,
+        read: false,
+        severity: 'success',
+        actionTab: 'campaigns',
+      };
+    } else if (category === 'LOW_CREDIT') {
+      newNotif = {
+        id: `notif-${Date.now()}`,
+        businessId: currentBusiness.id,
+        category: 'LOW_CREDIT',
+        title: 'Alert: Low Credit Balance Warning',
+        message: 'You have fewer than 200 AI credits remaining. Top up to continue automated post generation.',
+        timestamp: now,
+        read: false,
+        severity: 'warning',
+        actionTab: 'billing',
+      };
+    } else if (category === 'NEW_REVIEW') {
+      newNotif = {
+        id: `notif-${Date.now()}`,
+        businessId: currentBusiness.id,
+        category: 'NEW_REVIEW',
+        title: 'New Google Customer Review Alert',
+        message: 'David Miller rated your business 5 stars: "Outstanding customer service and fast delivery!"',
+        timestamp: now,
+        read: false,
+        severity: 'info',
+        actionTab: 'reviews',
+      };
+    } else {
+      newNotif = {
+        id: `notif-${Date.now()}`,
+        businessId: currentBusiness.id,
+        category: 'SYSTEM',
+        title: 'System Optimization Complete',
+        message: 'AI Copy models updated with latest localized trend parameters.',
+        timestamp: now,
+        read: false,
+        severity: 'info',
+        actionTab: 'dashboard',
+      };
+    }
+
+    setNotifications((prev) => [newNotif, ...prev]);
+  };
+
   const [currentBusiness, setCurrentBusiness] = useState<Business>(INITIAL_BUSINESSES[0]);
   const [currentUser, setCurrentUser] = useState<User>(INITIAL_USERS[0]);
   const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
@@ -321,6 +442,11 @@ export default function App() {
         onOpenAuth={() => setShowAuthModal(true)}
         onViewPublicProfile={() => setCurrentView('public_storefront')}
         onOpenCreditStore={() => setShowCreditStoreModal(true)}
+        notifications={notifications}
+        onMarkNotificationRead={handleMarkNotificationRead}
+        onMarkAllNotificationsRead={handleMarkAllNotificationsRead}
+        onClearNotification={handleClearNotification}
+        onSimulateNotification={handleSimulateNotification}
       />
 
       {/* Main App Canvas Body */}

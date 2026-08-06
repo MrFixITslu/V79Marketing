@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { User, UserRole, Business, CreditBalance } from '../types';
+import { User, UserRole, Business, CreditBalance, InAppNotification, NotificationCategory } from '../types';
 import {
   Sparkles,
   Building2,
@@ -24,7 +24,13 @@ import {
   Coins,
   Plus,
   Zap,
-  LayoutGrid
+  LayoutGrid,
+  CheckCheck,
+  Trash2,
+  AlertTriangle,
+  Trophy,
+  Star,
+  X
 } from 'lucide-react';
 
 interface NavbarProps {
@@ -40,6 +46,11 @@ interface NavbarProps {
   onOpenAuth: () => void;
   onViewPublicProfile: () => void;
   onOpenCreditStore: () => void;
+  notifications?: InAppNotification[];
+  onMarkNotificationRead?: (id: string) => void;
+  onMarkAllNotificationsRead?: () => void;
+  onClearNotification?: (id: string) => void;
+  onSimulateNotification?: (category: NotificationCategory) => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -55,12 +66,19 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenAuth,
   onViewPublicProfile,
   onOpenCreditStore,
+  notifications = [],
+  onMarkNotificationRead,
+  onMarkAllNotificationsRead,
+  onClearNotification,
+  onSimulateNotification,
 }) => {
   const [showUserDropdown, setShowUserDropdown] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [openGroupDropdown, setOpenGroupDropdown] = useState<string | null>(null);
+  const [notifFilter, setNotifFilter] = useState<'all' | 'unread' | 'CAMPAIGN_MILESTONE' | 'LOW_CREDIT' | 'NEW_REVIEW'>('all');
 
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const notifRef = useRef<HTMLDivElement>(null);
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -68,10 +86,44 @@ export const Navbar: React.FC<NavbarProps> = ({
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setOpenGroupDropdown(null);
       }
+      if (notifRef.current && !notifRef.current.contains(event.target as Node)) {
+        setShowNotifications(false);
+      }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  const unreadCount = notifications.filter((n) => !n.read).length;
+
+  const filteredNotifications = notifications.filter((n) => {
+    if (notifFilter === 'unread') return !n.read;
+    if (notifFilter === 'CAMPAIGN_MILESTONE') return n.category === 'CAMPAIGN_MILESTONE';
+    if (notifFilter === 'LOW_CREDIT') return n.category === 'LOW_CREDIT';
+    if (notifFilter === 'NEW_REVIEW') return n.category === 'NEW_REVIEW';
+    return true;
+  });
+
+  const formatRelativeTime = (isoString: string) => {
+    const diff = Math.max(0, Math.floor((Date.now() - new Date(isoString).getTime()) / 1000));
+    if (diff < 60) return 'Just now';
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+    return `${Math.floor(diff / 86400)}d ago`;
+  };
+
+  const getCategoryIcon = (category: NotificationCategory) => {
+    switch (category) {
+      case 'CAMPAIGN_MILESTONE':
+        return <Trophy className="w-4 h-4 text-emerald-500" />;
+      case 'LOW_CREDIT':
+        return <AlertTriangle className="w-4 h-4 text-amber-500" />;
+      case 'NEW_REVIEW':
+        return <Star className="w-4 h-4 text-amber-400 fill-amber-400" />;
+      default:
+        return <Bell className="w-4 h-4 text-blue-500" />;
+    }
+  };
 
   const getRoleBadge = (role: UserRole) => {
     switch (role) {
@@ -303,37 +355,197 @@ export const Navbar: React.FC<NavbarProps> = ({
               )}
             </div>
 
-            {/* Notifications Bell */}
-            <div className="relative">
+            {/* Notifications Bell & Popover Center */}
+            <div className="relative" ref={notifRef}>
               <button
                 onClick={() => setShowNotifications(!showNotifications)}
                 className="p-2 text-slate-600 hover:text-slate-900 bg-slate-50 rounded-lg border border-slate-200 relative hover:bg-slate-100 transition-colors cursor-pointer"
+                aria-label="View notifications"
               >
                 <Bell className="w-4 h-4" />
-                <span className="absolute top-1 right-1 w-2 h-2 bg-orange-500 rounded-full animate-ping" />
-                <span className="absolute top-1 right-1 w-2 h-2 bg-orange-500 rounded-full" />
+                {unreadCount > 0 && (
+                  <>
+                    <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-orange-500 rounded-full animate-ping" />
+                    <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 bg-orange-600 text-white font-bold text-[10px] rounded-full flex items-center justify-center border-2 border-white shadow-xs">
+                      {unreadCount}
+                    </span>
+                  </>
+                )}
               </button>
 
               {showNotifications && (
-                <div className="absolute right-0 mt-2 w-80 bg-white border border-slate-200 rounded-xl shadow-xl p-3 z-50 text-xs">
-                  <div className="flex items-center justify-between border-b border-slate-100 pb-2 mb-2">
-                    <span className="font-semibold text-slate-800">System Notifications</span>
-                    <span className="text-[10px] bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded font-bold">3 New</span>
+                <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white border border-slate-200 rounded-2xl shadow-2xl z-50 text-xs overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                  {/* Popover Header */}
+                  <div className="p-3 bg-gradient-to-r from-slate-900 to-slate-800 text-white flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Bell className="w-4 h-4 text-amber-400" />
+                      <span className="font-bold text-sm tracking-tight">Notifications</span>
+                      {unreadCount > 0 && (
+                        <span className="bg-orange-500/30 border border-orange-400/40 text-orange-200 text-[10px] px-2 py-0.5 rounded-full font-bold">
+                          {unreadCount} unread
+                        </span>
+                      )}
+                    </div>
+                    {unreadCount > 0 && onMarkAllNotificationsRead && (
+                      <button
+                        onClick={onMarkAllNotificationsRead}
+                        className="text-[11px] text-amber-300 hover:text-amber-100 flex items-center gap-1 font-medium hover:underline cursor-pointer"
+                      >
+                        <CheckCheck className="w-3.5 h-3.5" />
+                        Mark all read
+                      </button>
+                    )}
                   </div>
-                  <div className="space-y-2">
-                    <div className="p-2 bg-slate-50 rounded border-l-2 border-orange-500">
-                      <p className="font-medium text-slate-800">Emancipation Event Radar</p>
-                      <p className="text-[11px] text-slate-500">Suggested campaign ready for Caribbean Cultural Feast</p>
-                    </div>
-                    <div className="p-2 bg-slate-50 rounded border-l-2 border-blue-500">
-                      <p className="font-medium text-slate-800">AI Weekly Health Report</p>
-                      <p className="text-[11px] text-slate-500">Marketing score updated to 84/100 (+4 pts)</p>
-                    </div>
-                    <div className="p-2 bg-slate-50 rounded border-l-2 border-emerald-500">
-                      <p className="font-medium text-slate-800">5-Star Google Review</p>
-                      <p className="text-[11px] text-slate-500">Marcus Thorne left a review — AI response generated</p>
-                    </div>
+
+                  {/* Category Filter Pills */}
+                  <div className="px-3 py-2 bg-slate-50 border-b border-slate-100 flex items-center gap-1.5 overflow-x-auto no-scrollbar text-[11px]">
+                    <button
+                      onClick={() => setNotifFilter('all')}
+                      className={`px-2.5 py-1 rounded-lg font-medium transition-colors cursor-pointer ${
+                        notifFilter === 'all'
+                          ? 'bg-slate-900 text-white'
+                          : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                      }`}
+                    >
+                      All ({notifications.length})
+                    </button>
+                    <button
+                      onClick={() => setNotifFilter('unread')}
+                      className={`px-2.5 py-1 rounded-lg font-medium transition-colors cursor-pointer ${
+                        notifFilter === 'unread'
+                          ? 'bg-slate-900 text-white'
+                          : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                      }`}
+                    >
+                      Unread ({unreadCount})
+                    </button>
+                    <button
+                      onClick={() => setNotifFilter('CAMPAIGN_MILESTONE')}
+                      className={`px-2.5 py-1 rounded-lg font-medium transition-colors cursor-pointer ${
+                        notifFilter === 'CAMPAIGN_MILESTONE'
+                          ? 'bg-emerald-700 text-white'
+                          : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                      }`}
+                    >
+                      Milestones
+                    </button>
+                    <button
+                      onClick={() => setNotifFilter('LOW_CREDIT')}
+                      className={`px-2.5 py-1 rounded-lg font-medium transition-colors cursor-pointer ${
+                        notifFilter === 'LOW_CREDIT'
+                          ? 'bg-amber-600 text-white'
+                          : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                      }`}
+                    >
+                      Alerts
+                    </button>
+                    <button
+                      onClick={() => setNotifFilter('NEW_REVIEW')}
+                      className={`px-2.5 py-1 rounded-lg font-medium transition-colors cursor-pointer ${
+                        notifFilter === 'NEW_REVIEW'
+                          ? 'bg-indigo-600 text-white'
+                          : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                      }`}
+                    >
+                      Reviews
+                    </button>
                   </div>
+
+                  {/* Notification List */}
+                  <div className="max-h-80 overflow-y-auto divide-y divide-slate-100">
+                    {filteredNotifications.length === 0 ? (
+                      <div className="p-8 text-center text-slate-400">
+                        <Bell className="w-8 h-8 mx-auto mb-2 opacity-30 text-slate-500" />
+                        <p className="font-semibold text-slate-700">No notifications found</p>
+                        <p className="text-[11px] text-slate-400 mt-0.5">You're all caught up!</p>
+                      </div>
+                    ) : (
+                      filteredNotifications.map((n) => (
+                        <div
+                          key={n.id}
+                          onClick={() => {
+                            if (!n.read && onMarkNotificationRead) {
+                              onMarkNotificationRead(n.id);
+                            }
+                            if (n.actionTab) {
+                              setActiveTab(n.actionTab);
+                              setShowNotifications(false);
+                            }
+                          }}
+                          className={`p-3 transition-colors cursor-pointer relative group flex items-start gap-3 ${
+                            n.read
+                              ? 'bg-white hover:bg-slate-50 text-slate-600'
+                              : 'bg-orange-50/40 hover:bg-orange-50/80 text-slate-900 border-l-3 border-orange-500'
+                          }`}
+                        >
+                          <div className="mt-0.5 p-1.5 rounded-lg bg-slate-100 border border-slate-200/60 shrink-0">
+                            {getCategoryIcon(n.category)}
+                          </div>
+                          <div className="flex-1 min-w-0 pr-6">
+                            <div className="flex items-center justify-between gap-1">
+                              <p className={`font-semibold text-xs truncate ${n.read ? 'text-slate-700' : 'text-slate-900'}`}>
+                                {n.title}
+                              </p>
+                              <span className="text-[10px] text-slate-400 shrink-0">
+                                {formatRelativeTime(n.timestamp)}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-2 leading-relaxed">
+                              {n.message}
+                            </p>
+                            {n.actionTab && (
+                              <span className="inline-block mt-1 text-[10px] font-bold text-blue-600 hover:underline">
+                                View in {n.actionTab} →
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Delete/Clear Button */}
+                          {onClearNotification && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onClearNotification(n.id);
+                              }}
+                              className="absolute top-2 right-2 p-1 text-slate-300 hover:text-red-500 rounded transition-colors opacity-0 group-hover:opacity-100"
+                              title="Dismiss notification"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  {/* Real-time Notification Tester Toolbar */}
+                  {onSimulateNotification && (
+                    <div className="p-2.5 bg-slate-100/80 border-t border-slate-200 text-[10px]">
+                      <p className="font-bold text-slate-500 uppercase tracking-wider mb-1.5 flex items-center gap-1">
+                        <Zap className="w-3 h-3 text-amber-500" /> Simulate Real-time Events:
+                      </p>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <button
+                          onClick={() => onSimulateNotification('CAMPAIGN_MILESTONE')}
+                          className="px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white font-semibold transition-colors cursor-pointer"
+                        >
+                          + Milestone
+                        </button>
+                        <button
+                          onClick={() => onSimulateNotification('LOW_CREDIT')}
+                          className="px-2 py-1 rounded bg-amber-600 hover:bg-amber-700 text-white font-semibold transition-colors cursor-pointer"
+                        >
+                          + Low Credit
+                        </button>
+                        <button
+                          onClick={() => onSimulateNotification('NEW_REVIEW')}
+                          className="px-2 py-1 rounded bg-indigo-600 hover:bg-indigo-700 text-white font-semibold transition-colors cursor-pointer"
+                        >
+                          + New Review
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

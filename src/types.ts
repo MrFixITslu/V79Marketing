@@ -321,3 +321,17 @@ export interface UtmTrackingParams {
   capturedAt?: string;
 }
 
+export type NotificationCategory = 'CAMPAIGN_MILESTONE' | 'LOW_CREDIT' | 'NEW_REVIEW' | 'SYSTEM' | 'SECURITY';
+
+export interface InAppNotification {
+  id: string;
+  businessId: string;
+  category: NotificationCategory;
+  title: string;
+  message: string;
+  timestamp: string;
+  read: boolean;
+  severity: 'info' | 'warning' | 'success' | 'alert';
+  actionTab?: string;
+}
+

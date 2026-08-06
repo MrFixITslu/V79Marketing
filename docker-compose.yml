@@ -1,13 +1,13 @@
 version: '3.8'
 
 services:
-  # Nginx Web Server (Listens on port 80 / mapped to host 8080)
+  # Nginx Web Server (Listens on port 80 / mapped to host port 3070)
   nginx:
     build:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "8080:80"
+      - "3070:80"
     depends_on:
       - app
     restart: always
