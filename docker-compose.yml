@@ -10,16 +10,25 @@ services:
       - "3070:80"
     depends_on:
       - app
+    networks:
+      - proxy_network
     restart: always
 
-  # Express Node Backend Service (Runs internal backend on port 3000)
+  # Express Node Backend Service (Runs internal backend on port 3070)
   app:
     build:
       context: .
       dockerfile: Dockerfile.server
-    ports:
-      - "3000:3000"
+    expose:
+      - "3070"
     environment:
       - NODE_ENV=production
       - PORT=3070
+    networks:
+      - proxy_network
     restart: always
+
+networks:
+  proxy_network:
+    external: true
+
