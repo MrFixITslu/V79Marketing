@@ -17,10 +17,10 @@ RUN npm run build
 
 # Set production environment
 ENV NODE_ENV=production
-ENV PORT=3000
+ENV PORT=3070
 
-# Expose port 3000
-EXPOSE 3000
+# Expose port 3070
+EXPOSE 3070
 
 # Start production server
 CMD ["npm", "start"]
