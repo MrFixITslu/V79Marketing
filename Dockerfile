@@ -1,7 +1,10 @@
-# Production Dockerfile for Full-Stack App (Express + Vite)
-FROM node:20-alpine
+# Production Dockerfile for V79 Marketing Hub (Express + Vite)
+FROM node:22-alpine
 
 WORKDIR /app
+
+# Install native compilation dependencies for better-sqlite3
+RUN apk add --no-cache python3 make g++
 
 # Copy dependency manifests
 COPY package*.json ./

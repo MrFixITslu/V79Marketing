@@ -1,34 +1,16 @@
-version: '3.8'
-
 services:
-  # Nginx Web Server (Listens on port 80 / mapped to host port 3070)
-  nginx:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    ports:
-      - "3070:80"
-    depends_on:
-      - app
-    networks:
-      - proxy_network
-    restart: always
-
-  # Express Node Backend Service (Runs internal backend on port 3070)
   app:
     build:
       context: .
-      dockerfile: Dockerfile.server
-    expose:
-      - "3070"
+      dockerfile: Dockerfile
+    container_name: v79marketing-app
+    ports:
+      - "3070:3070"
     environment:
       - NODE_ENV=production
       - PORT=3070
-    networks:
-      - proxy_network
     restart: always
 
 networks:
-  proxy_network:
-    external: true
-
+  default:
+    name: v79_network
