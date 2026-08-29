@@ -142,53 +142,63 @@ export const Navbar: React.FC<NavbarProps> = ({
   const remainingCredits = Math.max(0, totalCredits - creditBalance.usedCredits);
   const creditPercent = Math.min(100, Math.round((remainingCredits / totalCredits) * 100));
 
-  // Define logical grouped navigation hubs
+  // Define logical grouped navigation hubs aligned with Growth Platform architecture
   const navGroups = [
     {
-      id: 'dashboard',
-      label: 'Dashboard',
+      id: 'home',
+      label: 'Home',
       icon: BarChart3,
       isSingle: true,
       tabId: 'dashboard',
     },
     {
-      id: 'ai_studio',
-      label: 'AI Studio',
+      id: 'create_hub',
+      label: 'Create',
       icon: Sparkles,
-      badge: 'AI Powered',
+      badge: '1-Click',
       items: [
-        { id: 'ai-assistant', label: 'AI Copy Generator', icon: Sparkles, desc: 'Captions, blogs & ad copy' },
-        { id: 'ai-image', label: 'AI Image Studio', icon: ImageIcon, desc: 'Social posts & banner graphics' },
-        { id: 'ai-video', label: 'AI Video Studio', icon: Video, badge: 'New', desc: 'Short-form Reels & TikToks' },
-        { id: 'ai_brain', label: 'AI Business Brain', icon: Brain, badge: 'Knowledge', desc: 'Context & guidelines hub' },
+        { id: 'one-idea-campaign', label: 'One Idea → Campaign', icon: Layers, badge: 'Popular', desc: 'Single prompt to full campaign' },
+        { id: 'ai-assistant', label: 'Zero-Prompt Creator', icon: Sparkles, desc: 'Guided post & promo captions' },
+        { id: 'ai-image', label: 'Graphic Studio', icon: ImageIcon, desc: 'Social posters & banners' },
+        { id: 'ai-video', label: 'Short Video Reels', icon: Video, desc: 'Vertical 9:16 TikTok & IG Reels' },
       ],
     },
     {
-      id: 'marketing_hub',
-      label: 'Marketing Hub',
-      icon: Layers,
+      id: 'calendar',
+      label: 'Calendar',
+      icon: Calendar,
+      isSingle: true,
+      tabId: 'calendar',
+    },
+    {
+      id: 'customers_hub',
+      label: 'Customers',
+      icon: MessageSquare,
       items: [
-        { id: 'campaigns', label: 'Campaign Builder', icon: Layers, desc: 'Multi-channel campaigns' },
-        { id: 'calendar', label: 'Content Calendar', icon: Calendar, desc: 'Scheduled posts overview' },
-        { id: 'social-channels', label: 'Social Channels', icon: Share2, desc: 'Connected accounts' },
-        { id: 'brand_kit', label: 'Brand Kit', icon: Palette, desc: 'Colors, logos & tone' },
+        { id: 'customers', label: 'Customer Pipeline', icon: MessageSquare, badge: 'CRM', desc: 'Inquiries & WhatsApp messaging' },
+        { id: 'reviews', label: 'Review Management', icon: Star, desc: 'Google & Facebook replies' },
       ],
     },
     {
-      id: 'growth_intel',
-      label: 'Growth & Intel',
+      id: 'growth_hub',
+      label: 'Growth',
       icon: TrendingUp,
       items: [
-        { id: 'reviews', label: 'Review Assistant', icon: MessageSquare, desc: 'Google & Facebook responses' },
-        { id: 'competitors', label: 'Competitor Intel', icon: TrendingUp, desc: 'Market benchmarking' },
+        { id: 'analytics', label: 'Simple Analytics', icon: BarChart3, desc: 'People reached & top posts' },
+        { id: 'competitors', label: 'Market Benchmarks', icon: TrendingUp, desc: 'Competitor opportunity gaps' },
+        { id: 'campaigns', label: '30-Day Growth Plans', icon: Layers, desc: 'Multi-week growth roadmaps' },
       ],
     },
     {
-      id: 'billing',
-      label: 'Plans & Credits',
-      icon: CreditCard,
-      isSingle: true,
-      tabId: 'billing',
+      id: 'business_hub',
+      label: 'Business',
+      icon: Building2,
+      items: [
+        { id: 'profile-builder', label: 'Business Profile', icon: Building2, desc: 'Public info, products & hours' },
+        { id: 'ai_brain', label: 'Business Memory', icon: Brain, desc: 'Knowledge, FAQs & USPs' },
+        { id: 'brand_kit', label: 'Brand Kit', icon: Palette, desc: 'Colors, logo & voice guidelines' },
+        { id: 'billing', label: 'Plans & Credits', icon: CreditCard, desc: 'AI credit balance & top-ups' },
+      ],
     },
   ];
 

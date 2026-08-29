@@ -165,6 +165,56 @@ export function initDb() {
       opportunity_gap TEXT NOT NULL,
       last_analyzed TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS customers (
+      id TEXT PRIMARY KEY,
+      business_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      phone TEXT NOT NULL,
+      email TEXT,
+      channel TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'NEW_INQUIRY',
+      notes TEXT,
+      last_contacted_at TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (business_id) REFERENCES businesses(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS growth_plans (
+      id TEXT PRIMARY KEY,
+      business_id TEXT NOT NULL,
+      week_number INTEGER NOT NULL,
+      title TEXT NOT NULL,
+      category TEXT NOT NULL,
+      description TEXT NOT NULL,
+      completed INTEGER NOT NULL DEFAULT 0,
+      action_view TEXT,
+      FOREIGN KEY (business_id) REFERENCES businesses(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS business_memories (
+      business_id TEXT PRIMARY KEY,
+      approved_claims_json TEXT NOT NULL,
+      usps_json TEXT NOT NULL,
+      faqs_json TEXT NOT NULL,
+      preferred_ctas_json TEXT NOT NULL,
+      brand_voice TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (business_id) REFERENCES businesses(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS marketing_audits (
+      id TEXT PRIMARY KEY,
+      business_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      severity TEXT NOT NULL,
+      category TEXT NOT NULL,
+      issue_description TEXT NOT NULL,
+      fix_recommendation TEXT NOT NULL,
+      resolved INTEGER NOT NULL DEFAULT 0,
+      action_target TEXT,
+      FOREIGN KEY (business_id) REFERENCES businesses(id) ON DELETE CASCADE
+    );
   `);
 
   seedInitialData();

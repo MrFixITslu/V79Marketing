@@ -335,3 +335,52 @@ export interface InAppNotification {
   actionTab?: string;
 }
 
+export type CustomerStatus = 'NEW_INQUIRY' | 'INTERESTED' | 'FOLLOW_UP' | 'CUSTOMER' | 'REPEAT_CUSTOMER';
+
+export interface CustomerInquiry {
+  id: string;
+  businessId: string;
+  name: string;
+  phone: string;
+  email?: string;
+  channel: 'whatsapp' | 'facebook' | 'google_business' | 'website';
+  status: CustomerStatus;
+  notes?: string;
+  lastContactedAt?: string;
+  createdAt: string;
+}
+
+export interface GrowthPlanTask {
+  id: string;
+  businessId: string;
+  weekNumber: 1 | 2 | 3 | 4;
+  title: string;
+  category: string;
+  description: string;
+  completed: boolean;
+  actionView?: string;
+}
+
+export interface BusinessMemory {
+  businessId: string;
+  approvedClaims: string[];
+  usps: string[];
+  faqs: Array<{ q: string; a: string }>;
+  preferredCtas: string[];
+  brandVoice: string;
+  updatedAt: string;
+}
+
+export interface MarketingAuditItem {
+  id: string;
+  businessId: string;
+  title: string;
+  severity: 'HIGH' | 'MEDIUM' | 'LOW';
+  category: string;
+  issueDescription: string;
+  fixRecommendation: string;
+  resolved: boolean;
+  actionTarget?: string;
+}
+
+

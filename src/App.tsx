@@ -62,10 +62,16 @@ import { AiBrandKitView } from './components/AiBrandKitView';
 import { AiVideoStudioView } from './components/AiVideoStudioView';
 import { CreditStoreModal } from './components/CreditStoreModal';
 import { MobileBottomNav } from './components/MobileBottomNav';
+import { CustomerPipelineView } from './components/CustomerPipelineView';
+import { OneIdeaCampaignView } from './components/OneIdeaCampaignView';
+import { FixMyMarketingModal } from './components/FixMyMarketingModal';
+import { CustomerInquiry } from './types';
 
 export type ViewType =
   | 'landing'
   | 'dashboard'
+  | 'customers'
+  | 'one-idea-campaign'
   | 'ai_brain'
   | 'ai-assistant'
   | 'ai-image'
@@ -302,8 +308,45 @@ export default function App() {
 
   const [currentBusiness, setCurrentBusiness] = useState<Business>(INITIAL_BUSINESSES[0]);
   const [currentUser, setCurrentUser] = useState<User>(INITIAL_USERS[0]);
-  const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
-  const [showCreditStoreModal, setShowCreditStoreModal] = useState<boolean>(false);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showCreditStoreModal, setShowCreditStoreModal] = useState(false);
+  const [showFixModal, setShowFixModal] = useState(false);
+
+  // Growth Platform Customers CRM State
+  const [customers, setCustomers] = useState<CustomerInquiry[]>([
+    {
+      id: 'cust-1',
+      businessId: 'bus-1',
+      name: 'Julian Alexander',
+      phone: '+1 (758) 720-1492',
+      email: 'julian.a@gmail.com',
+      channel: 'whatsapp',
+      status: 'NEW_INQUIRY',
+      notes: 'Asked about Friday sunset dinner reservations & waterfront table availability',
+      createdAt: '2026-08-28T14:30:00Z',
+    },
+    {
+      id: 'cust-2',
+      businessId: 'bus-1',
+      name: 'Samantha Charles',
+      phone: '+1 (758) 518-9920',
+      email: 'samantha.c@hotmail.com',
+      channel: 'facebook',
+      status: 'INTERESTED',
+      notes: 'Inquired about hosting 15-person birthday brunch',
+      createdAt: '2026-08-27T10:15:00Z',
+    },
+    {
+      id: 'cust-3',
+      businessId: 'bus-1',
+      name: 'Devon St. Rose',
+      phone: '+1 (758) 484-3311',
+      channel: 'google_business',
+      status: 'FOLLOW_UP',
+      notes: 'Follow up needed regarding Jerk Pork Ribs catering quote',
+      createdAt: '2026-08-26T16:45:00Z',
+    },
+  ]);
 
   // Credit Deduction Engine
   const handleDeductCredits = (amount: number, reason: string): boolean => {
@@ -481,6 +524,24 @@ export default function App() {
             }}
             onViewPublicProfile={() => setCurrentView('public_storefront')}
             currency={currency}
+          />
+        )}
+
+        {currentView === 'customers' && (
+          <CustomerPipelineView
+            business={currentBusiness}
+            customers={customers}
+            onAddCustomer={(newCust) => setCustomers([newCust, ...customers])}
+            onUpdateCustomerStatus={(id, status) =>
+              setCustomers(customers.map((c) => (c.id === id ? { ...c, status } : c)))
+            }
+          />
+        )}
+
+        {currentView === 'one-idea-campaign' && (
+          <OneIdeaCampaignView
+            business={currentBusiness}
+            onCreateCampaign={(newCamp) => setCampaigns([newCamp, ...campaigns])}
           />
         )}
 
