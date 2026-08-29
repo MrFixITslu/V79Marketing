@@ -61,6 +61,7 @@ import { CompetitorIntelligenceView } from './components/CompetitorIntelligenceV
 import { AiBrandKitView } from './components/AiBrandKitView';
 import { AiVideoStudioView } from './components/AiVideoStudioView';
 import { CreditStoreModal } from './components/CreditStoreModal';
+import { MobileBottomNav } from './components/MobileBottomNav';
 
 export type ViewType =
   | 'landing'
@@ -659,6 +660,12 @@ export default function App() {
           onClose={() => setShowAuthModal(false)}
         />
       )}
+
+      {/* Mobile Bottom Touch Navigation */}
+      <MobileBottomNav
+        activeTab={currentView}
+        setActiveTab={(tab) => setCurrentView(tab as ViewType)}
+      />
     </div>
   );
 }
