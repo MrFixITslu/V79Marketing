@@ -40,7 +40,7 @@ export const OneIdeaCampaignView: React.FC<OneIdeaCampaignViewProps> = ({
       { dayNumber: 7, channel: 'tiktok', postTitle: 'Chef Kitchen POV Video', caption: `POV: You just ordered the freshest Jerk Ribs in Rodney Bay St. Lucia 🔥👀`, suggestedTime: '06:00 PM' },
       { dayNumber: 14, channel: 'whatsapp', postTitle: 'VIP Subscriber Discount Code', caption: `📢 EXCLUSIVE OFFER from ${business.name}: Enjoy EC$15 OFF Jerk Ribs this weekend! Reply "RIB15" to claim your table code! 📲`, suggestedTime: '09:30 AM' },
     ],
-    flyerVisual: `data:image/svg+xml;base64,${Buffer.from(`
+    flyerVisual: `data:image/svg+xml;utf8,${encodeURIComponent(`
       <svg xmlns="http://www.w3.org/2000/svg" width="800" height="1000" viewBox="0 0 800 1000">
         <rect width="800" height="1000" fill="#0F172A"/>
         <rect x="40" y="40" width="720" height="920" rx="32" fill="#1E293B" stroke="#EA580C" stroke-width="4"/>
@@ -56,7 +56,7 @@ export const OneIdeaCampaignView: React.FC<OneIdeaCampaignViewProps> = ({
         <text x="120" y="530" font-family="sans-serif" font-size="32" font-weight="bold" fill="#FFFFFF">WATERFRONT DINING</text>
         <text x="80" y="860" font-family="sans-serif" font-size="20" fill="#CBD5E1">📍 ${business.location} | 📞 ${business.phone}</text>
       </svg>
-    `).toString('base64')}`,
+    `)}`,
   });
 
   const handleGenerate = (e: React.FormEvent) => {

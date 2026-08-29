@@ -5,7 +5,7 @@ services:
       dockerfile: Dockerfile
     container_name: v79marketing-app
     ports:
-      - "3070:3070"
+      - "3070:80"
     environment:
       - NODE_ENV=production
       - PORT=3070
