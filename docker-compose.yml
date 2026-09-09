@@ -5,11 +5,16 @@ services:
       dockerfile: Dockerfile
     container_name: v79marketing-app
     ports:
-      - "3070:80"
+      - "3070:3070"
     environment:
       - NODE_ENV=production
       - PORT=3070
+    volumes:
+      - v79_data:/app/data
     restart: always
+
+volumes:
+  v79_data:
 
 networks:
   default:

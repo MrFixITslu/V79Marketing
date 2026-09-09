@@ -21,7 +21,7 @@ import { getCreditBalance, deductCredits, addCredits, CREDIT_COSTS } from "./src
 import { startPublisherWorker, processScheduledPosts } from "./src/lib/publisher.ts";
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 
 // Initialize Database & Seed
 initDb();
