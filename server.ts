@@ -588,6 +588,306 @@ app.post("/api/ai/generate-image", authenticate, aiGenerationLimiter, async (req
   }
 });
 
+// --- AI CAMPAIGN PLAN GENERATION ---
+app.post("/api/ai/generate-campaign-plan", authenticate, aiGenerationLimiter, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { campaignName, objective, businessName, industry } = req.body;
+    const businessId = req.user!.businessId;
+
+    if (!campaignName || !objective) {
+      return res.status(400).json({ error: "campaignName and objective are required" });
+    }
+
+    const deduction = deductCredits(
+      businessId,
+      req.user!.id,
+      req.user!.name,
+      CREDIT_COSTS.aiPost * 2,
+      `AI 30-Day Campaign Plan Generation: "${campaignName}"`,
+      req.ip || "127.0.0.1"
+    );
+
+    if (!deduction.success) {
+      return res.status(402).json({ error: deduction.error });
+    }
+
+    const ai = getGenAI();
+    if (ai) {
+      try {
+        const response = await ai.models.generateContent({
+          model: "gemini-3.6-flash",
+          contents: `You are a world-class marketing director for "${businessName || "V79 Partner"}" in the "${industry || "Retail & Hospitality"}" sector.
+Generate a structured 4-step multi-channel social campaign for:
+Campaign Title: "${campaignName}"
+Objective: "${objective}"
+
+Return JSON matching this schema:
+{
+  "steps": [
+    { "dayNumber": 1, "channel": "facebook", "postTitle": "...", "caption": "...", "suggestedTime": "10:00 AM" },
+    { "dayNumber": 3, "channel": "instagram", "postTitle": "...", "caption": "...", "suggestedTime": "04:30 PM" },
+    { "dayNumber": 7, "channel": "tiktok", "postTitle": "...", "caption": "...", "suggestedTime": "06:00 PM" },
+    { "dayNumber": 14, "channel": "whatsapp", "postTitle": "...", "caption": "...", "suggestedTime": "09:30 AM" }
+  ]
+}`,
+          config: {
+            responseMimeType: "application/json",
+          },
+        });
+
+        if (response.text) {
+          const parsed = JSON.parse(response.text);
+          if (parsed.steps && Array.isArray(parsed.steps)) {
+            return res.json({
+              success: true,
+              steps: parsed.steps,
+              source: "gemini",
+              remainingCredits: deduction.remainingCredits,
+            });
+          }
+        }
+      } catch (geminiErr) {
+        console.warn("Gemini plan generation failed, falling back to structured templates:", geminiErr);
+      }
+    }
+
+    // High-quality contextual fallback
+    const bName = businessName || "V79 Enterprise Partner";
+    const steps = [
+      {
+        dayNumber: 1,
+        channel: "facebook",
+        postTitle: "Campaign Kickoff & Core Value Offer",
+        caption: `Announcement from ${bName}: ${objective}. We are proud to deliver exceptional service and premium experiences to our clients. Discover our latest offerings and message us directly to book or reserve today.`,
+        suggestedTime: "10:00 AM",
+      },
+      {
+        dayNumber: 3,
+        channel: "instagram",
+        postTitle: "Visual Spotlight & Engagement Reel",
+        caption: `Elevate your experience with ${bName}. Experience ${campaignName} with verified quality and authentic care. Link in bio to explore full details and secure your reservation.`,
+        suggestedTime: "04:30 PM",
+      },
+      {
+        dayNumber: 7,
+        channel: "tiktok",
+        postTitle: "Behind-the-Scenes Showcase Clip",
+        caption: `Exclusive behind-the-scenes look at how ${bName} delivers ${campaignName}. Verified local craftsmanship and premium standards.`,
+        suggestedTime: "06:00 PM",
+      },
+      {
+        dayNumber: 14,
+        channel: "whatsapp",
+        postTitle: "VIP Subscriber Priority Invitation",
+        caption: `Priority update from ${bName}: As a valued client, you receive early access to our ${campaignName}. Reply directly to this message to speak with our reservations desk.`,
+        suggestedTime: "09:30 AM",
+      },
+    ];
+
+    return res.json({
+      success: true,
+      steps,
+      source: "fallback",
+      remainingCredits: deduction.remainingCredits,
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || "Failed to generate campaign plan" });
+  }
+});
+
+// --- CUSTOMER PIPELINE CRM ENDPOINTS ---
+app.get("/api/customers", authenticate, (req: AuthenticatedRequest, res) => {
+  try {
+    let rows: any[];
+    if (req.user!.role === "PLATFORM_ADMIN") {
+      rows = db.prepare("SELECT * FROM customers ORDER BY created_at DESC").all();
+    } else {
+      rows = db.prepare("SELECT * FROM customers WHERE business_id = ? ORDER BY created_at DESC").all(req.user!.businessId);
+    }
+
+    const customers = rows.map((c) => ({
+      id: c.id,
+      businessId: c.business_id,
+      name: c.name,
+      phone: c.phone,
+      email: c.email || undefined,
+      channel: c.channel,
+      status: c.status,
+      notes: c.notes || undefined,
+      lastContactedAt: c.last_contacted_at || undefined,
+      createdAt: c.created_at,
+    }));
+
+    res.json({ success: true, customers });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to fetch customer pipeline" });
+  }
+});
+
+app.post("/api/customers", authenticate, (req: AuthenticatedRequest, res) => {
+  try {
+    const { name, phone, email, channel, status, notes } = req.body;
+    if (!name || !phone) {
+      return res.status(400).json({ error: "Name and phone are required" });
+    }
+
+    const customerId = `cust-${Date.now()}`;
+    const businessId = req.user!.businessId;
+    const now = new Date().toISOString();
+
+    db.prepare(`
+      INSERT INTO customers (id, business_id, name, phone, email, channel, status, notes, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      customerId,
+      businessId,
+      name.trim(),
+      phone.trim(),
+      email ? email.trim() : null,
+      channel || "whatsapp",
+      status || "NEW_INQUIRY",
+      notes ? notes.trim() : null,
+      now
+    );
+
+    res.json({
+      success: true,
+      customer: {
+        id: customerId,
+        businessId,
+        name: name.trim(),
+        phone: phone.trim(),
+        email: email ? email.trim() : undefined,
+        channel: channel || "whatsapp",
+        status: status || "NEW_INQUIRY",
+        notes: notes ? notes.trim() : undefined,
+        createdAt: now,
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to create customer inquiry" });
+  }
+});
+
+app.patch("/api/customers/:id/status", authenticate, (req: AuthenticatedRequest, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    if (!status) {
+      return res.status(400).json({ error: "Status is required" });
+    }
+
+    const existing = db.prepare("SELECT * FROM customers WHERE id = ?").get(id) as any;
+    if (!existing) {
+      return res.status(404).json({ error: "Customer not found" });
+    }
+
+    if (req.user!.role !== "PLATFORM_ADMIN" && existing.business_id !== req.user!.businessId) {
+      return res.status(403).json({ error: "Unauthorized access to customer record" });
+    }
+
+    db.prepare("UPDATE customers SET status = ?, last_contacted_at = ? WHERE id = ?").run(
+      status,
+      new Date().toISOString(),
+      id
+    );
+
+    res.json({ success: true, id, status });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to update customer status" });
+  }
+});
+
+// --- BUSINESS MEMORY ENDPOINTS ---
+app.get("/api/memory", authenticate, (req: AuthenticatedRequest, res) => {
+  try {
+    const memory = db.prepare("SELECT * FROM business_memories WHERE business_id = ?").get(req.user!.businessId) as any;
+    if (!memory) {
+      return res.json({
+        success: true,
+        memory: {
+          businessId: req.user!.businessId,
+          approvedClaims: [],
+          usps: [],
+          faqs: [],
+          preferredCtas: [],
+          brandVoice: "Professional, authoritative and client-focused",
+          updatedAt: new Date().toISOString(),
+        },
+      });
+    }
+
+    res.json({
+      success: true,
+      memory: {
+        businessId: memory.business_id,
+        approvedClaims: JSON.parse(memory.approved_claims_json || "[]"),
+        usps: JSON.parse(memory.usps_json || "[]"),
+        faqs: JSON.parse(memory.faqs_json || "[]"),
+        preferredCtas: JSON.parse(memory.preferred_ctas_json || "[]"),
+        brandVoice: memory.brand_voice,
+        updatedAt: memory.updated_at,
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to fetch business memory" });
+  }
+});
+
+app.put("/api/memory", authenticate, (req: AuthenticatedRequest, res) => {
+  try {
+    const { approvedClaims, usps, faqs, preferredCtas, brandVoice } = req.body;
+    const businessId = req.user!.businessId;
+    const now = new Date().toISOString();
+
+    const existing = db.prepare("SELECT * FROM business_memories WHERE business_id = ?").get(businessId);
+    if (existing) {
+      db.prepare(`
+        UPDATE business_memories
+        SET approved_claims_json = ?, usps_json = ?, faqs_json = ?, preferred_ctas_json = ?, brand_voice = ?, updated_at = ?
+        WHERE business_id = ?
+      `).run(
+        JSON.stringify(approvedClaims || []),
+        JSON.stringify(usps || []),
+        JSON.stringify(faqs || []),
+        JSON.stringify(preferredCtas || []),
+        brandVoice || "Professional and trustworthy",
+        now,
+        businessId
+      );
+    } else {
+      db.prepare(`
+        INSERT INTO business_memories (business_id, approved_claims_json, usps_json, faqs_json, preferred_ctas_json, brand_voice, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        businessId,
+        JSON.stringify(approvedClaims || []),
+        JSON.stringify(usps || []),
+        JSON.stringify(faqs || []),
+        JSON.stringify(preferredCtas || []),
+        brandVoice || "Professional and trustworthy",
+        now
+      );
+    }
+
+    res.json({
+      success: true,
+      memory: {
+        businessId,
+        approvedClaims: approvedClaims || [],
+        usps: usps || [],
+        faqs: faqs || [],
+        preferredCtas: preferredCtas || [],
+        brandVoice: brandVoice || "Professional and trustworthy",
+        updatedAt: now,
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to update business memory" });
+  }
+});
+
 // --- ADMIN METRICS & AUDIT LOGS ---
 
 app.get("/api/admin/metrics", authenticate, requireRole(["PLATFORM_ADMIN"]), (req, res) => {

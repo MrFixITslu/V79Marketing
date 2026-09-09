@@ -55,7 +55,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
       sessionStorage.setItem('v79_admin_unlocked', 'true');
       setAuthError('');
     } else {
-      setAuthError('Incorrect admin passcode. Try default passcode: v79admin');
+      setAuthError('Authentication failed. Invalid administrative credentials.');
     }
   };
 
@@ -72,27 +72,25 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   if (!isAuthenticated) {
     return (
       <div className="min-h-[70vh] flex items-center justify-center p-4">
-        <div className="max-w-md w-full bg-white rounded-3xl p-8 border border-slate-200 shadow-xl text-slate-800 space-y-6 text-center relative overflow-hidden">
-          <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600" />
-          
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center text-white mx-auto shadow-lg shadow-blue-200">
-            <Lock className="w-8 h-8" />
+        <div className="max-w-md w-full bg-white rounded-xl p-8 border border-slate-200 shadow-sm text-slate-800 space-y-6 text-center relative overflow-hidden">
+          <div className="w-12 h-12 rounded-lg bg-slate-900 text-white flex items-center justify-center mx-auto shadow-xs">
+            <Lock className="w-6 h-6 text-slate-100" />
           </div>
 
           <div>
-            <span className="bg-purple-100 text-purple-800 text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full">
-              Route: /admin
+            <span className="bg-slate-100 text-slate-700 text-xs font-semibold px-2.5 py-1 rounded-md border border-slate-200">
+              System Administration
             </span>
-            <h2 className="text-2xl font-black text-slate-900 mt-2">Admin Portal Locked</h2>
-            <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-              This administrative area is restricted. Enter the master system passcode to access global tenant management and audit controls.
+            <h2 className="text-xl font-bold text-slate-900 mt-3 tracking-tight">Admin Portal Authentication</h2>
+            <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
+              Restricted platform area. Verify your administrative credentials to manage tenant workspaces, review audit records, and monitor system metrics.
             </p>
           </div>
 
           <form onSubmit={handleAuthenticate} className="space-y-4 text-left">
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                Admin Passcode
+              <label className="block text-xs font-medium text-slate-700 mb-1.5">
+                Administrative Passcode
               </label>
               <div className="relative">
                 <KeyRound className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
@@ -100,8 +98,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                   type={showPassword ? 'text' : 'password'}
                   value={passwordInput}
                   onChange={(e) => setPasswordInput(e.target.value)}
-                  placeholder="Enter admin passcode"
-                  className="w-full bg-slate-50 border border-slate-300 rounded-xl pl-9 pr-10 py-2.5 text-sm font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all"
+                  placeholder="Enter administrative passcode"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-lg pl-9 pr-10 py-2.5 text-sm font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 focus:bg-white transition-all"
                   autoFocus
                 />
                 <button
@@ -115,35 +113,28 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
             </div>
 
             {authError && (
-              <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-semibold flex items-center gap-2">
+              <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs font-medium flex items-center gap-2">
                 <AlertTriangle className="w-4 h-4 flex-shrink-0 text-red-500" />
                 <span>{authError}</span>
               </div>
             )}
 
-            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-600 flex items-center justify-between font-mono">
-              <span className="text-[11px] text-slate-500">Default Passcode:</span>
-              <span className="font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                v79admin
-              </span>
-            </div>
-
             <button
               type="submit"
-              className="w-full py-3 bg-gradient-to-r from-blue-600 via-cyan-600 to-indigo-600 hover:opacity-95 text-white font-black text-sm rounded-xl shadow-lg shadow-blue-200 transition-all flex items-center justify-center gap-2 cursor-pointer"
+              className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-semibold text-sm rounded-lg shadow-xs transition-colors flex items-center justify-center gap-2 cursor-pointer"
             >
               <Shield className="w-4 h-4" />
-              <span>Unlock Admin Portal</span>
+              <span>Verify & Unlock Portal</span>
             </button>
           </form>
 
-          <div className="pt-2 border-t border-slate-100">
+          <div className="pt-3 border-t border-slate-100">
             <button
               onClick={onExitAdmin}
-              className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-colors flex items-center justify-center gap-2 cursor-pointer"
+              className="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium text-xs rounded-lg transition-colors flex items-center justify-center gap-2 cursor-pointer"
             >
               <ArrowLeft className="w-4 h-4" />
-              <span>Return to Marketing Hub (/)</span>
+              <span>Return to Hub Dashboard</span>
             </button>
           </div>
         </div>

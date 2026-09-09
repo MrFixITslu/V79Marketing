@@ -75,44 +75,44 @@ export const AiImageGenerator: React.FC<AiImageGeneratorProps> = ({
   return (
     <div className="space-y-6 pb-12">
       {/* Header */}
-      <div className="bg-slate-900 p-6 rounded-2xl border border-slate-800 shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="bg-slate-900 p-6 rounded-xl border border-slate-800 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2 text-xs font-semibold text-amber-400 uppercase tracking-wider mb-1">
-            <ImageIcon className="w-4 h-4" />
-            <span>Gemini AI Visual Studio</span>
+          <div className="flex items-center gap-2 text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">
+            <ImageIcon className="w-4 h-4 text-slate-300" />
+            <span>AI Visual Asset Generator</span>
           </div>
-          <h1 className="text-2xl font-black text-white">AI Image & Flyer Generator</h1>
+          <h1 className="text-2xl font-bold text-white tracking-tight">AI Graphic & Flyer Studio</h1>
           <p className="text-xs text-slate-400 mt-1">
-            Generate exact-dimension social graphics, story flyers, and ad banners with brand colors.
+            Generate exact-dimension social media creative, story flyers, and banner assets tailored to brand guidelines.
           </p>
         </div>
 
         <button
           onClick={handleSaveImage}
-          className="px-6 py-3 bg-gradient-to-r from-orange-500 to-amber-500 text-white font-bold rounded-xl text-xs shadow-lg flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap"
+          className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-white font-medium rounded-lg text-xs border border-slate-700 flex items-center justify-center gap-2 cursor-pointer transition-colors whitespace-nowrap"
         >
-          {savedSuccess ? <Check className="w-4 h-4" /> : <Save className="w-4 h-4" />}
-          <span>{savedSuccess ? 'Saved to Media Assets!' : 'Save Asset to Library'}</span>
+          {savedSuccess ? <Check className="w-4 h-4 text-emerald-400" /> : <Save className="w-4 h-4" />}
+          <span>{savedSuccess ? 'Saved to Media Assets' : 'Save to Asset Library'}</span>
         </button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left Settings Panel */}
-        <div className="bg-slate-900 rounded-2xl p-6 border border-slate-800 space-y-6">
-          <div className="space-y-2">
-            <label className="text-xs font-bold text-slate-300 block">Prompt Description</label>
+        <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-xs space-y-5">
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-slate-700 block">Prompt & Visual Description</label>
             <textarea
               rows={3}
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-orange-500"
-              placeholder="Describe the image you want Gemini to generate..."
+              className="w-full bg-slate-50 border border-slate-300 rounded-lg p-3 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 focus:bg-white"
+              placeholder="Describe the image subject, lighting, and mood..."
             />
           </div>
 
           {/* Dimension Selector */}
-          <div className="space-y-2">
-            <label className="text-xs font-bold text-slate-300 block">Target Social Dimensions</label>
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-slate-700 block">Target Social Format</label>
             <div className="grid grid-cols-2 gap-2 text-xs">
               {[
                 { id: '1080x1080', label: 'Instagram Square', size: '1080 × 1080' },
@@ -123,26 +123,26 @@ export const AiImageGenerator: React.FC<AiImageGeneratorProps> = ({
                 <button
                   key={d.id}
                   onClick={() => setDimension(d.id as any)}
-                  className={`p-3 rounded-xl border text-left transition-all ${
+                  className={`p-2.5 rounded-lg border text-left transition-colors cursor-pointer ${
                     dimension === d.id
-                      ? 'bg-orange-500/10 border-orange-500 text-orange-400 font-bold'
-                      : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
+                      ? 'bg-slate-900 border-slate-900 text-white font-medium'
+                      : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
                   }`}
                 >
-                  <p className="font-semibold text-xs text-white">{d.label}</p>
-                  <p className="text-[10px] text-slate-500">{d.size}</p>
+                  <p className={`font-semibold text-xs ${dimension === d.id ? 'text-white' : 'text-slate-900'}`}>{d.label}</p>
+                  <p className={`text-[10px] ${dimension === d.id ? 'text-slate-300' : 'text-slate-500'}`}>{d.size}</p>
                 </button>
               ))}
             </div>
           </div>
 
           {/* Style Preset */}
-          <div className="space-y-2">
-            <label className="text-xs font-bold text-slate-300 block">Visual Style Preset</label>
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-slate-700 block">Visual Style Preset</label>
             <select
               value={stylePreset}
               onChange={(e) => setStylePreset(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none"
+              className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 focus:bg-white"
             >
               <option value="Social Graphic">Social Media Graphic</option>
               <option value="Promotional Flyer">Event / Promotional Flyer</option>
@@ -154,18 +154,18 @@ export const AiImageGenerator: React.FC<AiImageGeneratorProps> = ({
           <button
             onClick={() => handleGenerateImage()}
             disabled={isGenerating}
-            className="w-full py-3 bg-gradient-to-r from-orange-500 via-amber-500 to-orange-600 text-white font-bold text-xs rounded-xl shadow-md hover:scale-105 transition-transform flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+            className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs rounded-lg shadow-xs transition-colors flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
           >
             {isGenerating ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-            <span>{isGenerating ? 'Gemini Generating Image...' : 'Generate AI Image'}</span>
+            <span>{isGenerating ? 'Synthesizing Visual Asset...' : 'Generate AI Image'}</span>
           </button>
         </div>
 
         {/* Right Live Canvas Preview */}
-        <div className="lg:col-span-2 bg-slate-900 rounded-2xl p-6 border border-slate-800 flex flex-col items-center justify-center space-y-4 min-h-[400px]">
-          <div className="flex items-center justify-between w-full border-b border-slate-800 pb-3 text-xs text-slate-400">
-            <span className="font-bold text-slate-200 flex items-center gap-2">
-              <Layout className="w-4 h-4 text-orange-400" />
+        <div className="lg:col-span-2 bg-white rounded-xl p-6 border border-slate-200 shadow-xs flex flex-col items-center justify-center space-y-4 min-h-[400px]">
+          <div className="flex items-center justify-between w-full border-b border-slate-100 pb-3 text-xs text-slate-500">
+            <span className="font-semibold text-slate-800 flex items-center gap-2">
+              <Layout className="w-4 h-4 text-slate-600" />
               <span>Canvas Preview ({dimension})</span>
             </span>
             <a
@@ -173,7 +173,7 @@ export const AiImageGenerator: React.FC<AiImageGeneratorProps> = ({
               download="v79-marketing-asset.png"
               target="_blank"
               rel="noreferrer"
-              className="flex items-center gap-1.5 text-amber-400 font-semibold hover:underline"
+              className="flex items-center gap-1.5 text-slate-700 hover:text-slate-900 font-medium transition-colors"
             >
               <Download className="w-3.5 h-3.5" />
               <span>Download Image</span>
@@ -181,11 +181,11 @@ export const AiImageGenerator: React.FC<AiImageGeneratorProps> = ({
           </div>
 
           {/* Rendered Asset Container */}
-          <div className="relative max-w-md w-full overflow-hidden rounded-2xl border-2 border-slate-800 shadow-2xl bg-slate-950 flex items-center justify-center p-2">
+          <div className="relative max-w-md w-full overflow-hidden rounded-xl border border-slate-200 shadow-xs bg-slate-50 flex items-center justify-center p-2">
             <img
               src={currentImage}
               alt={prompt}
-              className="w-full h-auto max-h-[500px] object-contain rounded-xl"
+              className="w-full h-auto max-h-[500px] object-contain rounded-lg"
             />
           </div>
         </div>

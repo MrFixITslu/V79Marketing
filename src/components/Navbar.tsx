@@ -210,24 +210,26 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   return (
     <header className="bg-white border-b border-slate-200 text-slate-900 sticky top-0 z-50 shadow-xs">
-      {/* Top Banner */}
-      <div className="bg-gradient-to-r from-cyan-600 via-blue-600 to-indigo-600 px-4 py-1 text-xs text-white flex items-center justify-between font-medium">
-        <div className="flex items-center gap-2">
-          <span className="bg-white/20 px-2 py-0.5 rounded text-[10px] font-black tracking-wider uppercase">V79 DIGITAL</span>
-          <span className="hidden sm:inline">Proactive AI Marketing Manager for SMBs</span>
+      {/* Top Utility Bar */}
+      <div className="bg-slate-900 px-4 py-1.5 text-xs text-slate-300 flex items-center justify-between font-medium border-b border-slate-800">
+        <div className="flex items-center gap-2.5">
+          <span className="bg-slate-800 border border-slate-700 text-slate-200 px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase">V79 DIGITAL</span>
+          <span className="hidden sm:inline text-slate-400">Enterprise AI Marketing & Growth OS for SMBs</span>
         </div>
         <div className="flex items-center gap-4">
           <button
             onClick={() => setCurrency(currency === 'XCD' ? 'USD' : 'XCD')}
-            className="hover:bg-white/10 flex items-center gap-1 bg-black/10 px-2.5 py-0.5 rounded text-xs transition-colors cursor-pointer"
+            className="hover:text-white flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700/60 px-2.5 py-0.5 rounded text-xs transition-colors cursor-pointer"
           >
-            <Globe className="w-3 h-3" /> Currency: <strong className="ml-1">{currency} ({currency === 'XCD' ? 'EC$' : '$'})</strong>
+            <Globe className="w-3.5 h-3.5 text-slate-400" />
+            <span>Currency: <strong className="text-white ml-0.5">{currency} ({currency === 'XCD' ? 'EC$' : '$'})</strong></span>
           </button>
           <button
             onClick={onViewPublicProfile}
-            className="hover:underline flex items-center gap-1 font-bold text-amber-200 cursor-pointer"
+            className="hover:text-white flex items-center gap-1 text-slate-300 text-xs font-medium cursor-pointer transition-colors"
           >
-            <ExternalLink className="w-3 h-3" /> Public Storefront
+            <ExternalLink className="w-3.5 h-3.5" />
+            <span>Public Storefront</span>
           </button>
         </div>
       </div>
@@ -241,15 +243,15 @@ export const Navbar: React.FC<NavbarProps> = ({
               onClick={() => setActiveTab('landing')}
               className="flex items-center gap-3 cursor-pointer group"
             >
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center font-black text-xl shadow-md shadow-blue-200 group-hover:scale-105 transition-transform text-white">
+              <div className="w-9 h-9 rounded-lg bg-slate-900 flex items-center justify-center font-bold text-sm tracking-tight text-white border border-slate-800 shadow-xs group-hover:bg-slate-800 transition-colors">
                 V79
               </div>
               <div className="hidden sm:block">
-                <span className="font-black text-lg tracking-tight text-slate-800">
+                <span className="font-bold text-base tracking-tight text-slate-900 block leading-tight">
                   Marketing Hub
                 </span>
-                <p className="text-[10px] text-slate-400 font-bold tracking-widest uppercase">
-                  AI Marketing Suite
+                <p className="text-[10px] text-slate-500 font-medium tracking-wider uppercase">
+                  Growth Platform
                 </p>
               </div>
             </div>
@@ -259,10 +261,10 @@ export const Navbar: React.FC<NavbarProps> = ({
               <img
                 src={currentBusiness.logoUrl}
                 alt={currentBusiness.name}
-                className="w-5 h-5 rounded-full object-cover border border-orange-500"
+                className="w-5 h-5 rounded object-cover border border-slate-200"
               />
               <span className="font-semibold truncate max-w-[130px] text-slate-800">{currentBusiness.name}</span>
-              <span className="bg-orange-100 text-orange-700 text-[10px] px-1.5 py-0.5 rounded font-bold">
+              <span className="bg-slate-200 text-slate-700 text-[10px] px-1.5 py-0.5 rounded font-mono font-medium">
                 {currentBusiness.plan}
               </span>
             </div>
@@ -273,32 +275,27 @@ export const Navbar: React.FC<NavbarProps> = ({
             {/* V79 AI Credits Badge */}
             <div
               onClick={onOpenCreditStore}
-              className="flex items-center gap-2.5 bg-gradient-to-r from-amber-50 to-orange-50 hover:from-amber-100 hover:to-orange-100 border border-amber-200/80 rounded-xl px-3 py-1.5 text-xs text-slate-800 cursor-pointer shadow-xs transition-all group"
+              className="flex items-center gap-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-800 cursor-pointer transition-colors group"
             >
-              <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-amber-500 to-orange-600 text-white flex items-center justify-center shadow-xs group-hover:scale-105 transition-transform">
-                <Coins className="w-4 h-4" />
-              </div>
+              <Coins className="w-4 h-4 text-slate-700" />
               <div className="text-left hidden sm:block">
                 <div className="flex items-center gap-1">
-                  <span className="font-black text-amber-900 font-mono">
+                  <span className="font-semibold text-slate-900 font-mono">
                     {remainingCredits.toLocaleString()}
                   </span>
-                  <span className="text-[10px] text-amber-700 font-semibold">Credits</span>
+                  <span className="text-[10px] text-slate-500">Credits</span>
                 </div>
-                <div className="w-20 bg-amber-200/60 rounded-full h-1 mt-0.5 overflow-hidden">
+                <div className="w-20 bg-slate-200 rounded-full h-1 mt-0.5 overflow-hidden">
                   <div
-                    className="bg-gradient-to-r from-amber-500 to-orange-500 h-1 rounded-full"
+                    className="bg-slate-800 h-1 rounded-full"
                     style={{ width: `${creditPercent}%` }}
                   />
                 </div>
               </div>
-              <button
-                type="button"
-                className="ml-1 px-2 py-0.5 rounded-lg bg-orange-600 text-white font-bold text-[10px] flex items-center gap-0.5 hover:bg-orange-700 shadow-xs transition-colors"
-              >
+              <span className="ml-1 px-2 py-0.5 rounded bg-slate-900 hover:bg-slate-800 text-white font-medium text-[10px] flex items-center gap-0.5 transition-colors">
                 <Plus className="w-3 h-3" />
                 <span>Top Up</span>
-              </button>
+              </span>
             </div>
 
             {/* Quick Demo Role Switcher */}
