@@ -21,7 +21,7 @@ import { getCreditBalance, deductCredits, addCredits, CREDIT_COSTS } from "./src
 import { startPublisherWorker, processScheduledPosts } from "./src/lib/publisher.ts";
 
 const app = express();
-const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+const PORT = 3000;
 
 // Initialize Database & Seed
 initDb();
@@ -29,7 +29,7 @@ initDb();
 // Start Background Publisher Queue Worker
 startPublisherWorker(15000);
 
-// Security Middleware Setup
+// Security Middleware Setup - Configured for AI Studio iframe embedding
 app.use(
   helmet({
     contentSecurityPolicy: {
@@ -40,10 +40,12 @@ app.use(
         fontSrc: ["'self'", "https://fonts.gstatic.com"],
         imgSrc: ["'self'", "data:", "https://images.unsplash.com", "https://*.googleusercontent.com"],
         connectSrc: ["'self'", "https://generativelanguage.googleapis.com"],
-        frameAncestors: ["'none'"],
+        frameAncestors: ["'self'", "https://ai.studio", "https://*.google.com", "https://*.run.app"],
       },
     },
+    frameguard: false,
     crossOriginEmbedderPolicy: false,
+    crossOriginResourcePolicy: { policy: "cross-origin" },
   })
 );
 
