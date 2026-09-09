@@ -10,10 +10,10 @@ import {
   INITIAL_CAMPAIGNS,
   INITIAL_AUDIT_LOGS,
   INITIAL_INVOICES,
-  INITIAL_CREDIT_BALANCE,
+  DEFAULT_CREDIT_BALANCE as INITIAL_CREDIT_BALANCE,
   INITIAL_REVIEWS,
   INITIAL_COMPETITORS
-} from "../data/mockData.js";
+} from "./constants.js";
 
 const dataDir = path.join(process.cwd(), "data");
 if (!fs.existsSync(dataDir)) {
