@@ -1,10 +1,16 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
-import bcrypt from "bcryptjs";
-import { db } from "./db.js";
 
-const JWT_SECRET = process.env.JWT_SECRET || "v79-super-secret-production-key-2026";
-const TOKEN_EXPIRY = "24h";
+const TOKEN_EXPIRY = "12h";
+const ISSUER = "v79-marketing";
+const AUDIENCE = "v79-marketing";
+
+function jwtSecret() {
+  const configured = String(process.env.JWT_SECRET || "").trim();
+  if (configured.length >= 32) return configured;
+  if (process.env.NODE_ENV === "test") return "v79-marketing-test-secret-32-characters-minimum";
+  throw new Error("JWT_SECRET must be configured with at least 32 characters.");
+}
 
 export interface AuthenticatedRequest extends Request {
   user?: {
@@ -17,75 +23,55 @@ export interface AuthenticatedRequest extends Request {
 }
 
 export function generateToken(user: { id: string; email: string; name: string; role: string; businessId: string }) {
-  return jwt.sign(user, JWT_SECRET, { expiresIn: TOKEN_EXPIRY });
+  return jwt.sign(user, jwtSecret(), { expiresIn: TOKEN_EXPIRY, issuer: ISSUER, audience: AUDIENCE });
 }
 
 export function verifyToken(token: string) {
   try {
-    return jwt.verify(token, JWT_SECRET) as {
+    return jwt.verify(token, jwtSecret(), { issuer: ISSUER, audience: AUDIENCE }) as {
       id: string;
       email: string;
       name: string;
       role: string;
       businessId: string;
     };
-  } catch (err) {
+  } catch {
     return null;
   }
 }
 
 export function authenticate(req: AuthenticatedRequest, res: Response, next: NextFunction) {
   let token: string | undefined;
-
   const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith("Bearer ")) {
+  if (authHeader?.startsWith("Bearer ")) {
     token = authHeader.substring(7);
-  } else if (req.headers.cookie) {
-    const cookies = req.headers.cookie.split(";").reduce((acc: any, cookie) => {
-      const [key, val] = cookie.trim().split("=");
-      acc[key] = val;
-      return acc;
-    }, {});
-    token = cookies.v79_token;
+  } else {
+    const cookie = (req.headers.cookie || "").split(";").map(v => v.trim()).find(v => v.startsWith("v79_marketing_session="));
+    if (cookie) token = decodeURIComponent(cookie.slice("v79_marketing_session=".length));
   }
 
-  if (!token) {
-    return res.status(401).json({ error: "Authentication required. Missing token." });
-  }
-
+  if (!token) return res.status(401).json({ error: "Sign in through V79 Hub to use V79 Marketing.", code: "HUB_AUTH_REQUIRED" });
   const decoded = verifyToken(token);
-  if (!decoded) {
-    return res.status(401).json({ error: "Invalid or expired session token." });
-  }
+  if (!decoded) return res.status(401).json({ error: "Your V79 Marketing session has expired.", code: "SESSION_EXPIRED" });
 
   req.user = decoded;
   next();
 }
 
 export function requireTenantAccess(req: AuthenticatedRequest, res: Response, next: NextFunction) {
-  if (!req.user) {
-    return res.status(401).json({ error: "Authentication required." });
-  }
-
-  const requestedBusinessId = req.params.businessId || req.query.businessId || req.body?.businessId;
-
-  // Platform Admins can inspect any tenant
-  if (req.user.role === "PLATFORM_ADMIN") {
-    return next();
-  }
-
-  // If specific business ID requested, verify match with user's assigned businessId
+  if (!req.user) return res.status(401).json({ error: "Authentication required." });
+  const requestedBusinessId = req.params.businessId || req.params.id || req.query.businessId || req.body?.businessId;
+  if (req.user.role === "PLATFORM_ADMIN") return next();
   if (requestedBusinessId && requestedBusinessId !== req.user.businessId) {
-    return res.status(403).json({ error: "Forbidden: Access denied to tenant resources." });
+    return res.status(403).json({ error: "Access denied to another organisation's Marketing workspace." });
   }
-
   next();
 }
 
 export function requireRole(allowedRoles: string[]) {
   return (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     if (!req.user || !allowedRoles.includes(req.user.role)) {
-      return res.status(403).json({ error: "Forbidden: Insufficient privileges." });
+      return res.status(403).json({ error: "Insufficient privileges." });
     }
     next();
   };
