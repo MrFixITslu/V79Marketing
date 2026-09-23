@@ -1,21 +1,42 @@
 services:
-  app:
+  v79-marketing:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: v79marketing-app
-    ports:
-      - "3070:3070"
+    restart: unless-stopped
+    env_file: .env
     environment:
-      - NODE_ENV=production
-      - PORT=3070
+      NODE_ENV: production
+      PORT: 3070
+      APP_URL: ${APP_URL:-https://marketing.v79sl.com}
+      TRUST_PROXY: ${TRUST_PROXY:-1}
+      DATABASE_PATH: ${DATABASE_PATH:-/app/data/v79_marketing.sqlite}
+      JWT_SECRET: ${JWT_SECRET}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      V79_HUB_PUBLIC_URL: ${V79_HUB_PUBLIC_URL:-https://hub.v79sl.com}
+      V79_HUB_INTERNAL_URL: ${V79_HUB_INTERNAL_URL:-http://v79-hub:3040}
+      V79_MARKETING_LAUNCH_SECRET: ${V79_MARKETING_LAUNCH_SECRET}
+      V79_PLATFORM_SHARED_SECRET: ${V79_PLATFORM_SHARED_SECRET}
+      V79_HUB_EVENT_URL: ${V79_HUB_EVENT_URL:-http://v79-hub:3040/api/platform/events}
+      V79_HUB_EVENT_SECRET: ${V79_HUB_EVENT_SECRET}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
+      V79_ALLOW_LEGACY_LOGIN: "0"
+      V79_MARKETING_SEED_DEMO: "0"
+      V79_ENABLE_SIMULATED_PUBLISHER: "0"
+    expose:
+      - "3070"
     volumes:
-      - v79_data:/app/data
-    restart: always
-
-volumes:
-  v79_data:
+      - ./data:/app/data
+    networks:
+      - proxy_network
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3070/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
 
 networks:
-  default:
-    name: v79_network
+  proxy_network:
+    external: true
