@@ -19,15 +19,15 @@ import {
 } from "./src/lib/auth.js";
 import { getCreditBalance, deductCredits, addCredits, CREDIT_COSTS } from "./src/lib/creditService.js";
 import { startPublisherWorker, processScheduledPosts } from "./src/lib/publisher.ts";
+import { consumeHubLaunchTicket, verifyHubSummaryRequest } from "./src/lib/platform.js";
+import { queueMarketingEvent, startPlatformEventPump } from "./src/lib/platformEvents.js";
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 
-// Initialize Database & Seed
 initDb();
-
-// Start Background Publisher Queue Worker
 startPublisherWorker(15000);
+startPlatformEventPump(30000);
 
 // Security Middleware Setup - Configured for AI Studio iframe embedding
 app.use(
@@ -49,12 +49,10 @@ app.use(
   })
 );
 
-app.use(
-  cors({
-    origin: process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(",") : true,
-    credentials: true,
-  })
-);
+const allowedOrigins = String(process.env.ALLOWED_ORIGINS || "").split(",").map(v => v.trim()).filter(Boolean);
+if (allowedOrigins.length) {
+  app.use(cors({ origin: allowedOrigins, credentials: true }));
+}
 
 app.use(express.json({ limit: "10mb" }));
 app.use(cookieParser());
@@ -97,14 +95,6 @@ function getGenAI() {
 }
 
 // Zod Validation Schemas
-const registerSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(8),
-  name: z.string().min(2),
-  businessName: z.string().min(2),
-  industry: z.string().min(2),
-});
-
 const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
@@ -121,50 +111,20 @@ const createPostSchema = z.object({
 
 // --- AUTHENTICATION ROUTES ---
 
-app.post("/api/auth/register", authLimiter, (req, res) => {
-  try {
-    const data = registerSchema.parse(req.body);
-    const existing = db.prepare("SELECT * FROM users WHERE email = ?").get(data.email);
-    if (existing) {
-      return res.status(400).json({ error: "An account with this email already exists." });
-    }
-
-    const businessId = `bus-${Date.now()}`;
-    const userId = `user-${Date.now()}`;
-    const slug = data.businessName.toLowerCase().replace(/[^a-z0-9]+/g, "-");
-    const passwordHash = bcrypt.hashSync(data.password, 10);
-    const now = new Date().toISOString();
-
-    db.prepare(`
-      INSERT INTO businesses (id, name, slug, industry, description, location, plan, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, 'FREE', ?)
-    `).run(businessId, data.businessName, slug, data.industry, `${data.businessName} marketing workspace`, "Caribbean", now);
-
-    db.prepare(`
-      INSERT INTO users (id, email, password_hash, name, role, email_verified, two_factor_enabled, business_id, created_at)
-      VALUES (?, ?, ?, ?, 'BUSINESS_OWNER', 1, 0, ?, ?)
-    `).run(userId, data.email, passwordHash, data.name, businessId, now);
-
-    db.prepare(`
-      INSERT INTO credit_balances (business_id, monthly_allowance, purchased_credits, bonus_credits, used_credits, reset_date)
-      VALUES (?, 10000, 5000, 0, 0, ?)
-    `).run(businessId, new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString());
-
-    const token = generateToken({ id: userId, email: data.email, name: data.name, role: "BUSINESS_OWNER", businessId });
-    res.cookie("v79_token", token, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax" });
-
-    res.json({
-      success: true,
-      token,
-      user: { id: userId, email: data.email, name: data.name, role: "BUSINESS_OWNER", businessId },
-      business: { id: businessId, name: data.businessName, slug, industry: data.industry },
-    });
-  } catch (err: any) {
-    res.status(400).json({ error: err.message || "Registration failed" });
-  }
+app.post("/api/auth/register", authLimiter, (_req, res) => {
+  const hubUrl = String(process.env.V79_HUB_PUBLIC_URL || "https://hub.v79sl.com").replace(/\/$/, "");
+  return res.status(410).json({
+    error: "V79 Marketing accounts are created and managed by V79 Hub.",
+    code: "HUB_SIGNUP_REQUIRED",
+    hubUrl,
+  });
 });
 
 app.post("/api/auth/login", authLimiter, (req, res) => {
+  if (process.env.V79_ALLOW_LEGACY_LOGIN !== "1") {
+    const hubUrl = String(process.env.V79_HUB_PUBLIC_URL || "https://hub.v79sl.com").replace(/\/$/, "");
+    return res.status(410).json({ error: "Sign in through V79 Hub.", code: "HUB_AUTH_REQUIRED", hubUrl });
+  }
   try {
     const data = loginSchema.parse(req.body);
     const user = db.prepare("SELECT * FROM users WHERE email = ?").get(data.email) as any;
@@ -181,7 +141,7 @@ app.post("/api/auth/login", authLimiter, (req, res) => {
       businessId: user.business_id,
     });
 
-    res.cookie("v79_token", token, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax" });
+    res.cookie("v79_marketing_session", token, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", maxAge: 12 * 60 * 60 * 1000, path: "/" });
 
     res.json({
       success: true,
@@ -234,21 +194,164 @@ app.get("/api/auth/me", authenticate, (req: AuthenticatedRequest, res) => {
 });
 
 app.post("/api/auth/logout", (req, res) => {
-  res.clearCookie("v79_token");
+  res.clearCookie("v79_marketing_session", { path: "/" });
   res.json({ success: true, message: "Logged out successfully" });
+});
+
+
+// --- V79 HUB ACCESS & PLATFORM CONTRACTS ---
+
+function cleanValue(value: unknown) {
+  return typeof value === "string" ? value.trim().replace(/^['"]|['"]$/g, "") : "";
+}
+
+function uniqueSlug(base: string, organizationId: string) {
+  const seed = (base || "business").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 48) || "business";
+  const existing = db.prepare("SELECT id FROM businesses WHERE slug=? AND id<>?").get(seed, organizationId);
+  if (!existing) return seed;
+  return `${seed}-${organizationId.replace(/[^a-z0-9]/gi, "").slice(-8).toLowerCase()}`;
+}
+
+function provisionHubIdentity(session: Awaited<ReturnType<typeof consumeHubLaunchTicket>>) {
+  const businessId = session.organization.id;
+  const userId = `hub:${session.user.id}`;
+  const now = new Date().toISOString();
+  const role = session.role === "member" ? "MARKETING_STAFF" : "BUSINESS_OWNER";
+  const plan = String(session.plan || "HUB").toUpperCase();
+  const slug = uniqueSlug(session.organization.slug, businessId);
+
+  const tx = db.transaction(() => {
+    const business = db.prepare("SELECT id FROM businesses WHERE hub_organization_id=? OR id=?").get(session.organization.id, businessId) as any;
+    if (!business) {
+      db.prepare(`
+        INSERT INTO businesses
+          (id,name,slug,industry,description,location,plan,hub_organization_id,created_at)
+        VALUES (?,?,?,?,?,?,?,?,?)
+      `).run(businessId, session.organization.name, slug, "General", `${session.organization.name} marketing workspace`, "Caribbean", plan, session.organization.id, now);
+    } else {
+      db.prepare("UPDATE businesses SET name=?,slug=?,plan=?,hub_organization_id=? WHERE id=?")
+        .run(session.organization.name, slug, plan, session.organization.id, business.id);
+    }
+
+    const existingUser = db.prepare("SELECT id FROM users WHERE hub_user_id=? OR email=?").get(session.user.id, session.user.email.toLowerCase()) as any;
+    if (!existingUser) {
+      db.prepare(`
+        INSERT INTO users
+          (id,email,password_hash,name,role,email_verified,two_factor_enabled,business_id,hub_user_id,created_at)
+        VALUES (?,?,?,?,?,1,0,?,?,?)
+      `).run(userId, session.user.email.toLowerCase(), "hub-managed", session.user.name, role, businessId, session.user.id, now);
+    } else {
+      db.prepare("UPDATE users SET email=?,name=?,role=?,business_id=?,hub_user_id=? WHERE id=?")
+        .run(session.user.email.toLowerCase(), session.user.name, role, businessId, session.user.id, existingUser.id);
+    }
+
+    db.prepare(`
+      INSERT INTO credit_balances
+        (business_id,monthly_allowance,purchased_credits,bonus_credits,used_credits,reset_date)
+      VALUES (?,10000,0,0,0,?)
+      ON CONFLICT(business_id) DO NOTHING
+    `).run(businessId, new Date(Date.now() + 30*24*60*60*1000).toISOString());
+  });
+  tx();
+
+  const localUser = db.prepare("SELECT * FROM users WHERE hub_user_id=?").get(session.user.id) as any;
+  return { businessId, userId: localUser.id, role: localUser.role };
+}
+
+app.get("/api/platform/start", (_req, res) => {
+  const hubUrl = String(process.env.V79_HUB_PUBLIC_URL || "https://hub.v79sl.com").replace(/\/$/, "");
+  res.redirect(302, `${hubUrl}/?return=marketing`);
+});
+
+app.get("/api/platform/launch", authLimiter, async (req, res) => {
+  const ticket = cleanValue(req.query.ticket);
+  if (!ticket || !/^[A-Za-z0-9_-]{32,180}$/.test(ticket)) {
+    return res.status(400).send("Invalid V79 Hub launch ticket.");
+  }
+  try {
+    const hubSession = await consumeHubLaunchTicket(ticket);
+    const local = provisionHubIdentity(hubSession);
+    const token = generateToken({
+      id: local.userId,
+      email: hubSession.user.email,
+      name: hubSession.user.name,
+      role: local.role,
+      businessId: local.businessId,
+    });
+    res.cookie("v79_marketing_session", token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: 12 * 60 * 60 * 1000,
+      path: "/",
+    });
+    return res.redirect(302, "/");
+  } catch (error:any) {
+    console.warn("[V79 Marketing] Hub launch denied:", error?.message || error);
+    const hubUrl = String(process.env.V79_HUB_PUBLIC_URL || "https://hub.v79sl.com").replace(/\/$/, "");
+    return res.status(403).send(`V79 Marketing access was not granted. Return to <a href="${hubUrl}">V79 Hub</a>.`);
+  }
+});
+
+app.get("/api/platform/summary/:subject", (req, res) => {
+  const timestamp = cleanValue(req.get("x-v79-timestamp"));
+  const signature = cleanValue(req.get("x-v79-signature"));
+  const serviceId = cleanValue(req.get("x-v79-service-id"));
+  if (!verifyHubSummaryRequest({
+    method: req.method,
+    pathname: req.path,
+    timestamp,
+    signature,
+    serviceId,
+  })) return res.status(401).json({ error: "Invalid V79 Hub signature." });
+
+  const subject = cleanValue(req.params.subject);
+  const business = db.prepare("SELECT id,name,plan,created_at FROM businesses WHERE hub_organization_id=? OR id=? LIMIT 1").get(subject, subject) as any;
+  if (!business) return res.status(404).json({ error: "Marketing workspace not found." });
+
+  const scalar = (sql: string, ...params: any[]) => Number((db.prepare(sql).get(...params) as any)?.count || 0);
+  const statusRows = db.prepare("SELECT status,COUNT(*) AS count FROM posts WHERE business_id=? GROUP BY status").all(business.id) as any[];
+  const customerRows = db.prepare("SELECT status,COUNT(*) AS count FROM customers WHERE business_id=? GROUP BY status").all(business.id) as any[];
+  const postsByStatus = Object.fromEntries(statusRows.map(row => [row.status, Number(row.count)]));
+  const customersByStatus = Object.fromEntries(customerRows.map(row => [row.status, Number(row.count)]));
+  const credit = db.prepare("SELECT monthly_allowance,purchased_credits,bonus_credits,used_credits FROM credit_balances WHERE business_id=?").get(business.id) as any;
+
+  res.json({
+    product: "marketing",
+    subjectId: business.id,
+    generatedAt: new Date().toISOString(),
+    workspace: { name: business.name, plan: business.plan, createdAt: business.created_at },
+    metrics: {
+      posts: scalar("SELECT COUNT(*) AS count FROM posts WHERE business_id=?", business.id),
+      scheduledPosts: postsByStatus.SCHEDULED || 0,
+      publishedPosts: postsByStatus.PUBLISHED || 0,
+      campaigns: scalar("SELECT COUNT(*) AS count FROM campaigns WHERE business_id=?", business.id),
+      activeCampaigns: scalar("SELECT COUNT(*) AS count FROM campaigns WHERE business_id=? AND status='ACTIVE'", business.id),
+      customers: scalar("SELECT COUNT(*) AS count FROM customers WHERE business_id=?", business.id),
+      repeatCustomers: customersByStatus.REPEAT_CUSTOMER || 0,
+      connectedSocialAccounts: scalar("SELECT COUNT(*) AS count FROM social_accounts WHERE business_id=? AND connected=1", business.id),
+      aiCreditsRemaining: credit ? Math.max(0, Number(credit.monthly_allowance)+Number(credit.purchased_credits)+Number(credit.bonus_credits)-Number(credit.used_credits)) : 0,
+    },
+  });
 });
 
 // --- PUBLIC & HEALTH ROUTES ---
 
-app.get("/api/health", (req, res) => {
-  res.json({
-    status: "ok",
-    app: "V79 Marketing Hub",
-    owner: "V79 Digital",
-    version: "2.5.0",
-    database: "SQLite Connected",
-    timestamp: new Date().toISOString(),
-  });
+app.get("/api/health", (_req, res) => {
+  try {
+    db.prepare("SELECT 1").get();
+    res.json({
+      status: "ok",
+      app: "V79 Marketing",
+      owner: "V79 Digital",
+      version: "3.0.0",
+      authentication: "V79 Hub managed",
+      database: "SQLite",
+      timestamp: new Date().toISOString(),
+    });
+  } catch {
+    res.status(503).json({ status: "storage_unavailable", app: "V79 Marketing" });
+  }
 });
 
 app.get("/api/businesses/public/:slug", (req, res) => {
@@ -311,7 +414,7 @@ app.put("/api/businesses/:id", authenticate, requireTenantAccess, (req: Authenti
     updates.products ? JSON.stringify(updates.products) : existing.products_json,
     updates.services ? JSON.stringify(updates.services) : existing.services_json,
     updates.brandProfile ? JSON.stringify(updates.brandProfile) : existing.brand_profile_json,
-    updates.plan || existing.plan,
+    existing.plan,
     id
   );
 
@@ -333,27 +436,11 @@ app.get("/api/credits/balance", authenticate, (req: AuthenticatedRequest, res) =
   res.json({ balance, costs: CREDIT_COSTS });
 });
 
-app.post("/api/credits/buy", authenticate, (req: AuthenticatedRequest, res) => {
-  const { amount } = req.body;
-  if (!amount || amount <= 0) return res.status(400).json({ error: "Invalid credit amount" });
-
-  const balance = addCredits(req.user!.businessId, amount);
-
-  // Log purchase audit
-  db.prepare(`
-    INSERT INTO audit_logs (id, business_id, user_id, user_name, action, details, ip_address, timestamp)
-    VALUES (?, ?, ?, ?, 'CREDITS_PURCHASED', ?, ?, ?)
-  `).run(
-    `al-credit-${Date.now()}`,
-    req.user!.businessId,
-    req.user!.id,
-    req.user!.name,
-    `Purchased ${amount} V79 AI Credits`,
-    req.ip || "127.0.0.1",
-    new Date().toISOString()
-  );
-
-  res.json({ success: true, balance });
+app.post("/api/credits/buy", authenticate, (_req, res) => {
+  return res.status(410).json({
+    error: "Marketing credits and subscription entitlements are managed through V79 Hub.",
+    code: "HUB_BILLING_MANAGED",
+  });
 });
 
 app.get("/api/posts", authenticate, (req: AuthenticatedRequest, res) => {
@@ -407,6 +494,16 @@ app.post("/api/posts", authenticate, (req: AuthenticatedRequest, res) => {
       data.campaignId || null,
       now
     );
+    queueMarketingEvent({
+      businessId: data.businessId,
+      type: "marketing.post_scheduled",
+      subjectId: postId,
+      payload: {
+        scheduledFor: data.scheduledFor,
+        platformCount: Object.keys(data.content || {}).length,
+        campaignLinked: Boolean(data.campaignId),
+      },
+    });
 
     res.json({
       success: true,
@@ -454,7 +551,7 @@ app.post("/api/ai/generate-text", authenticate, aiGenerationLimiter, async (req:
     if (ai) {
       const response = await ai.models.generateContent({
         model: "gemini-3.6-flash",
-        contents: `You are an expert Caribbean & global digital marketing strategist for "V79 Marketing Hub".
+        contents: `You are an expert Caribbean & global digital marketing strategist for "V79 Marketing".
 Generate engaging, platform-customized social media marketing posts for the following prompt and business:
 
 Business Name: ${businessName || "My Business"}
@@ -551,7 +648,7 @@ app.post("/api/ai/generate-image", authenticate, aiGenerationLimiter, async (req
 
     const brandCol = primaryColor || "#EA580C";
     const titleText = prompt || "Special Promotional Visual";
-    const subText = businessName || "V79 Marketing Hub";
+    const subText = businessName || "V79 Marketing";
 
     const svgString = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
       <defs>
@@ -749,6 +846,12 @@ app.post("/api/customers", authenticate, (req: AuthenticatedRequest, res) => {
       notes ? notes.trim() : null,
       now
     );
+    queueMarketingEvent({
+      businessId,
+      type: "marketing.lead_created",
+      subjectId: customerId,
+      payload: { channel: channel || "whatsapp", hasEmail: Boolean(email) },
+    });
 
     res.json({
       success: true,
@@ -792,6 +895,12 @@ app.patch("/api/customers/:id/status", authenticate, (req: AuthenticatedRequest,
       new Date().toISOString(),
       id
     );
+    queueMarketingEvent({
+      businessId: existing.business_id,
+      type: "marketing.customer_status_changed",
+      subjectId: id,
+      payload: { from: existing.status, to: status },
+    });
 
     res.json({ success: true, id, status });
   } catch (err: any) {
@@ -915,8 +1024,8 @@ app.get("/api/admin/metrics", authenticate, requireRole(["PLATFORM_ADMIN"]), (re
 
 app.get("/api/docs", (req, res) => {
   res.json({
-    title: "V79 Marketing Hub API Documentation",
-    version: "2.5.0",
+    title: "V79 Marketing API Documentation",
+    version: "3.0.0",
     description: "SaaS REST API for digital marketing automation, business profiles, social scheduling & Gemini AI",
     endpoints: [
       { method: "POST", path: "/api/auth/register", description: "Register new business workspace & owner" },
@@ -951,7 +1060,7 @@ async function startServer() {
   }
 
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`V79 Marketing Hub server running at http://0.0.0.0:${PORT}`);
+    console.log(`V79 Marketing server running at http://0.0.0.0:${PORT}`);
   });
 }
 
