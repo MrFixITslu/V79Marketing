@@ -297,8 +297,7 @@ export default function App() {
     }).catch((error) => console.error('Business profile save failed:', error));
   };
 
-  const handleSchedulePost = (newPost: Partial<Post>) => {
-    void (async () => {
+  const handleSchedulePost = async (newPost: Partial<Post>): Promise<void> => {
       const response = await fetch('/api/posts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -314,7 +313,6 @@ export default function App() {
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(body.error || 'Could not schedule the post.');
       if (body.post) setPosts((items) => [body.post, ...items.filter((item) => item.id !== body.post.id)]);
-    })().catch((error) => console.error('Post scheduling failed:', error));
   };
 
   const handleCreateCampaign = (newCamp: Campaign) => {

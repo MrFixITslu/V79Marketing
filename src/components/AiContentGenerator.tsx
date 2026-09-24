@@ -24,7 +24,7 @@ import {
 
 interface AiContentGeneratorProps {
   business: Business;
-  onSchedulePost: (newPost: Partial<Post>) => void;
+  onSchedulePost: (newPost: Partial<Post>) => Promise<void>;
   initialPrompt?: string;
 }
 
@@ -41,6 +41,8 @@ export const AiContentGenerator: React.FC<AiContentGeneratorProps> = ({
   const [activePlatform, setActivePlatform] = useState<SocialPlatform | 'whatsapp'>('facebook');
   const [copied, setCopied] = useState(false);
   const [scheduledSuccess, setScheduledSuccess] = useState(false);
+  const [schedulePending, setSchedulePending] = useState(false);
+  const [scheduleError, setScheduleError] = useState('');
 
   const categories = [
     { id: 'offer', label: 'Special Offer / Sale', icon: Gift, defaultItem: '', defaultDetail: '' },
@@ -97,7 +99,7 @@ export const AiContentGenerator: React.FC<AiContentGeneratorProps> = ({
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleScheduleCurrent = () => {
+  const handleScheduleCurrent = async () => {
     const newPost: Partial<Post> = {
       title: itemName || 'AI Generated Campaign Post',
       businessId: business.id,
@@ -108,9 +110,17 @@ export const AiContentGenerator: React.FC<AiContentGeneratorProps> = ({
       status: 'SCHEDULED',
       mediaUrls: [business.coverImageUrl],
     };
-    onSchedulePost(newPost);
-    setScheduledSuccess(true);
-    setTimeout(() => setScheduledSuccess(false), 3000);
+    setSchedulePending(true);
+    setScheduleError('');
+    try {
+      await onSchedulePost(newPost);
+      setScheduledSuccess(true);
+      setTimeout(() => setScheduledSuccess(false), 3000);
+    } catch (error) {
+      setScheduleError(error instanceof Error ? error.message : 'Could not save this post. Try again.');
+    } finally {
+      setSchedulePending(false);
+    }
   };
 
   const platformIcons: Record<string, React.ReactNode> = {
@@ -132,17 +142,19 @@ export const AiContentGenerator: React.FC<AiContentGeneratorProps> = ({
           </div>
           <h1 className="text-2xl font-black text-slate-900">Create a Post or Promotion</h1>
           <p className="text-xs text-slate-500 mt-1">
-            Guiding content generation specifically for <strong className="text-slate-800">{business.name}</strong>
+            Draft content for <strong className="text-slate-800">{business.name}</strong>. Saving to the calendar does not publish to social networks until an official provider connection is available.
           </p>
         </div>
 
         <button
           onClick={handleScheduleCurrent}
+          disabled={schedulePending}
           className="px-6 py-3 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-bold rounded-2xl text-xs shadow-md flex items-center justify-center gap-2 transition-all cursor-pointer whitespace-nowrap"
         >
           {scheduledSuccess ? <Check className="w-4 h-4" /> : <Calendar className="w-4 h-4" />}
-          <span>{scheduledSuccess ? 'Scheduled to Calendar!' : 'Schedule All Platforms'}</span>
+          <span>{schedulePending ? 'Saving…' : scheduledSuccess ? 'Saved to Calendar' : 'Save to Calendar'}</span>
         </button>
+        {scheduleError && <p role="alert" className="text-xs text-red-700">{scheduleError}</p>}
       </div>
 
       {/* Guided Category Selection */}
