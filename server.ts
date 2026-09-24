@@ -29,23 +29,28 @@ initDb();
 startPublisherWorker(15000);
 startPlatformEventPump(30000);
 
-// Security Middleware Setup - Configured for AI Studio iframe embedding
+app.disable("x-powered-by");
+if (process.env.TRUST_PROXY === "1") app.set("trust proxy", 1);
 app.use(
   helmet({
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+        scriptSrc: ["'self'"],
         styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
         fontSrc: ["'self'", "https://fonts.gstatic.com"],
-        imgSrc: ["'self'", "data:", "https://images.unsplash.com", "https://*.googleusercontent.com"],
+        imgSrc: ["'self'", "data:", "blob:", "https:"],
         connectSrc: ["'self'", "https://generativelanguage.googleapis.com"],
-        frameAncestors: ["'self'", "https://ai.studio", "https://*.google.com", "https://*.run.app"],
+        frameAncestors: ["'none'"],
+        objectSrc: ["'none'"],
+        baseUri: ["'self'"],
+        formAction: ["'self'"],
       },
     },
-    frameguard: false,
+    frameguard: { action: "deny" },
     crossOriginEmbedderPolicy: false,
-    crossOriginResourcePolicy: { policy: "cross-origin" },
+    crossOriginResourcePolicy: { policy: "same-origin" },
+    referrerPolicy: { policy: "strict-origin-when-cross-origin" },
   })
 );
 
@@ -54,8 +59,28 @@ if (allowedOrigins.length) {
   app.use(cors({ origin: allowedOrigins, credentials: true }));
 }
 
-app.use(express.json({ limit: "10mb" }));
+app.use(express.json({ limit: "2mb" }));
 app.use(cookieParser());
+
+function canonicalOrigin(req: express.Request) {
+  const configured = String(process.env.APP_URL || "").trim();
+  if (configured) {
+    try { return new URL(configured).origin; } catch {}
+  }
+  return `${req.protocol}://${req.get("host")}`;
+}
+
+app.use((req, res, next) => {
+  if (["GET","HEAD","OPTIONS"].includes(req.method) || !req.path.startsWith("/api/")) return next();
+  const origin = req.headers.origin;
+  if (!origin) return res.status(403).json({ error: "Origin header required." });
+  try {
+    if (new URL(origin).origin !== canonicalOrigin(req)) return res.status(403).json({ error: "Cross-site request denied." });
+  } catch {
+    return res.status(403).json({ error: "Cross-site request denied." });
+  }
+  next();
+});
 
 // Rate Limiting Rules
 const globalApiLimiter = rateLimit({
