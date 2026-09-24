@@ -40,10 +40,10 @@ export const CompetitorIntelligenceView: React.FC<CompetitorIntelligenceViewProp
       name: newCompName.trim(),
       handle: newCompHandle.trim(),
       platform: 'instagram',
-      postingFrequency: '4 posts / week',
-      estimatedReach: '10,000 / mo',
-      topTopics: ['Promotions', 'Weekly Specials', 'Behind the Scenes'],
-      opportunityGap: 'They rely on plain photos without brand overlays or video stories. High opportunity to win audience attention with V79 AI Video Reels!',
+      postingFrequency: 'Not measured',
+      estimatedReach: 'Not measured',
+      topTopics: [],
+      opportunityGap: 'Connect an approved data source before V79 calculates competitor benchmarks.',
       lastAnalyzed: new Date().toISOString()
     };
     const updated = [newComp, ...list];
@@ -54,22 +54,9 @@ export const CompetitorIntelligenceView: React.FC<CompetitorIntelligenceViewProp
   };
 
   const handleRunAudit = () => {
-    if (onDeductCredits && !onDeductCredits(50, 'AI Regional Competitor Intelligence Audit')) return;
-
-    setAuditing(true);
-    setTimeout(() => {
-      const updated = list.map((c) => ({
-        ...c,
-        lastAnalyzed: new Date().toISOString(),
-        estimatedReach: `${(Math.floor(Math.random() * 10) + 10)},000 / mo`,
-        opportunityGap: `${c.name} has decreased posting consistency by 20% this week. Activate a 3-day flash special now to capture market share in ${business.location}.`
-      }));
-      setList(updated);
-      onUpdateCompetitors(updated);
-      setAuditing(false);
-      setAuditSuccess(true);
-      setTimeout(() => setAuditSuccess(false), 3000);
-    }, 1200);
+    setAuditing(false);
+    setAuditSuccess(false);
+    window.alert('Competitor analysis needs an approved external data source. V79 will not estimate reach or market-share changes without verified data.');
   };
 
   const handleDelete = (id: string) => {
@@ -86,7 +73,7 @@ export const CompetitorIntelligenceView: React.FC<CompetitorIntelligenceViewProp
           <div className="space-y-2">
             <div className="flex items-center gap-2 text-xs font-bold text-amber-300 uppercase tracking-widest bg-amber-500/20 px-3 py-1 rounded-full w-fit">
               <TrendingUp className="w-4 h-4 text-amber-300" />
-              <span>Competitor & Regional Market Intelligence</span>
+              <span>Competitor Tracking</span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-black text-white">
               Public Competitor Radar & Topic Gap Analysis
