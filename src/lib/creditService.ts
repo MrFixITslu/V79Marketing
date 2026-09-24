@@ -12,9 +12,15 @@ export const CREDIT_COSTS = {
 
 export function allowanceForPlan(plan: string | null | undefined) {
   switch (String(plan || "").toUpperCase()) {
-    case "ADVANTAGE": return 30000;
-    case "BUSINESS": return 10000;
-    default: return 0;
+    case "ADVANTAGE":
+    case "PROFESSIONAL":
+    case "ENTERPRISE":
+      return 30000;
+    case "BUSINESS":
+    case "GROWTH":
+      return 10000;
+    default:
+      return 0;
   }
 }
 
