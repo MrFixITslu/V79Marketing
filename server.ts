@@ -134,6 +134,16 @@ const createPostSchema = z.object({
   campaignId: z.string().optional(),
 });
 
+const createCampaignSchema = z.object({
+  name: z.string().min(1).max(160),
+  objective: z.string().min(1).max(2000),
+  startDate: z.string().min(8).max(40),
+  endDate: z.string().min(8).max(40),
+  status: z.enum(["ACTIVE","PLANNED","COMPLETED"]).default("ACTIVE"),
+  steps: z.array(z.record(z.string(), z.any())).max(100).default([]),
+  aiPlanGenerated: z.boolean().default(false),
+});
+
 // --- AUTHENTICATION ROUTES ---
 
 app.post("/api/auth/register", authLimiter, (_req, res) => {
@@ -567,6 +577,72 @@ app.post("/api/posts", authenticate, (req: AuthenticatedRequest, res) => {
   } catch (err: any) {
     res.status(400).json({ error: err.message || "Invalid post data" });
   }
+});
+
+// --- CAMPAIGNS & CHANNELS ---
+
+app.get("/api/campaigns", authenticate, (req: AuthenticatedRequest, res) => {
+  const rows = db.prepare("SELECT * FROM campaigns WHERE business_id=? ORDER BY created_at DESC").all(req.user!.businessId) as any[];
+  res.json({
+    campaigns: rows.map(row => ({
+      id: row.id,
+      businessId: row.business_id,
+      name: row.name,
+      objective: row.objective,
+      startDate: row.start_date,
+      endDate: row.end_date,
+      status: row.status,
+      steps: JSON.parse(row.steps_json || "[]"),
+      aiPlanGenerated: Boolean(row.ai_plan_generated),
+      createdAt: row.created_at,
+    })),
+  });
+});
+
+app.post("/api/campaigns", authenticate, (req: AuthenticatedRequest, res) => {
+  try {
+    const data = createCampaignSchema.parse(req.body);
+    const businessId = req.user!.businessId;
+    const id = `campaign-${crypto.randomUUID()}`;
+    const now = new Date().toISOString();
+    db.prepare(`
+      INSERT INTO campaigns(id,business_id,name,objective,start_date,end_date,status,steps_json,ai_plan_generated,created_at)
+      VALUES(?,?,?,?,?,?,?,?,?,?)
+    `).run(id,businessId,data.name,data.objective,data.startDate,data.endDate,data.status,JSON.stringify(data.steps),data.aiPlanGenerated?1:0,now);
+    queueMarketingEvent({
+      businessId,
+      type:"marketing.campaign_created",
+      subjectId:id,
+      payload:{ status:data.status, stepCount:data.steps.length, aiPlanGenerated:data.aiPlanGenerated },
+    });
+    res.status(201).json({ campaign:{ id,businessId,...data,createdAt:now } });
+  } catch (error:any) {
+    res.status(400).json({ error:error?.message || "Invalid campaign." });
+  }
+});
+
+app.get("/api/social-accounts", authenticate, (req: AuthenticatedRequest, res) => {
+  const rows = db.prepare("SELECT id,business_id,platform,account_name,account_handle,connected,follower_count,last_synced_at FROM social_accounts WHERE business_id=? ORDER BY platform")
+    .all(req.user!.businessId) as any[];
+  res.json({
+    socialAccounts: rows.map(row => ({
+      id:row.id,
+      businessId:row.business_id,
+      platform:row.platform,
+      accountName:row.account_name,
+      accountHandle:row.account_handle,
+      connected:Boolean(row.connected),
+      followerCount:Number(row.follower_count || 0),
+      lastSyncedAt:row.last_synced_at,
+    })),
+  });
+});
+
+app.post("/api/social-accounts", authenticate, (_req, res) => {
+  res.status(501).json({
+    error:"Direct social account connection requires the official provider OAuth adapter. V79 will not simulate a connected account.",
+    code:"PROVIDER_OAUTH_REQUIRED",
+  });
 });
 
 // --- AI GENERATION ENDPOINTS WITH CREDIT DEDUCTION & MODEL ROUTING ---
