@@ -37,26 +37,12 @@ export const AiReviewAssistantView: React.FC<AiReviewAssistantViewProps> = ({
     return r.sentiment === filterSentiment;
   });
 
-  const avgRating = (reviewList.reduce((sum, r) => sum + r.rating, 0) / reviewList.length).toFixed(1);
+  const avgRating = reviewList.length
+    ? (reviewList.reduce((sum, r) => sum + r.rating, 0) / reviewList.length).toFixed(1)
+    : "—";
 
-  const handleGenerateResponse = (reviewId: string) => {
-    if (onDeductCredits && !onDeductCredits(15, 'AI Review Response Generation')) return;
-
-    setGeneratingId(reviewId);
-    setTimeout(() => {
-      setReviewList((prev) =>
-        prev.map((r) => {
-          if (r.id === reviewId) {
-            return {
-              ...r,
-              aiSuggestedResponse: `Warm greetings from ${business.name}! Thank you for your review. We take great pride in our wood-fired flavors and island hospitality. Looking forward to welcoming you back soon! 🌴✨`
-            };
-          }
-          return r;
-        })
-      );
-      setGeneratingId(null);
-    }, 1000);
+  const handleGenerateResponse = (_reviewId: string) => {
+    window.alert('Connect a supported review provider before generating or sending review responses.');
   };
 
   const handleSendResponse = (reviewId: string) => {
@@ -85,7 +71,7 @@ export const AiReviewAssistantView: React.FC<AiReviewAssistantViewProps> = ({
               Customer Feedback & Reputation Hub
             </h1>
             <p className="text-xs sm:text-sm text-blue-200/90 max-w-2xl leading-relaxed">
-              Import Google, Facebook, and TripAdvisor reviews. Automatically detect recurring feedback, reply in your authentic brand voice, and convert 5-star customer praise into high-converting social media posts.
+              Connected review providers will appear here. V79 does not invent reviews, ratings or responses when no verified provider data is available.
             </p>
           </div>
 
