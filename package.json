@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "test": "V79_MARKETING_SEED_DEMO=1 V79_ENABLE_SIMULATED_PUBLISHER=1 JWT_SECRET=v79-marketing-test-secret-32-characters-minimum vitest run"
+    "test": "V79_MARKETING_SEED_DEMO=1 V79_ENABLE_SIMULATED_PUBLISHER=1 JWT_SECRET=v79-marketing-test-secret-32-characters-minimum vitest run --maxWorkers=1 --fileParallelism=false"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
