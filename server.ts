@@ -192,6 +192,10 @@ app.post("/api/auth/login", authLimiter, (req, res) => {
     const data = loginSchema.parse(req.body);
     const user = db.prepare("SELECT * FROM users WHERE email = ?").get(data.email) as any;
 
+    if (user?.hub_user_id) {
+      const hubUrl = String(process.env.V79_HUB_PUBLIC_URL || "https://hub.v79sl.com").replace(/\/$/, "");
+      return res.status(410).json({ error: "This V79 Marketing account is managed through V79 Hub.", code: "HUB_AUTH_REQUIRED", hubUrl });
+    }
     if (!user || !bcrypt.compareSync(data.password, user.password_hash)) {
       return res.status(401).json({ error: "Invalid email or password." });
     }
@@ -204,7 +208,7 @@ app.post("/api/auth/login", authLimiter, (req, res) => {
       businessId: user.business_id,
     });
 
-    res.cookie("v79_marketing_session", token, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", maxAge: 12 * 60 * 60 * 1000, path: "/" });
+    res.cookie("v79_marketing_session", token, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", maxAge: 30 * 60 * 1000, path: "/" });
 
     res.json({
       success: true,
@@ -363,7 +367,7 @@ app.get("/api/platform/launch", authLimiter, async (req, res) => {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
-      maxAge: 12 * 60 * 60 * 1000,
+      maxAge: 30 * 60 * 1000,
       path: "/",
     });
     return res.redirect(302, "/");
