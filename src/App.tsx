@@ -127,7 +127,7 @@ export default function App() {
         userName: currentUser.name,
         action: 'UTM_CAMPAIGN_ATTRIBUTION',
         details: `User launched workspace attributed to campaign: source=${utmParams.source || 'direct'}, medium=${utmParams.medium || 'organic'}, campaign=${utmParams.campaign || 'default'}`,
-        ipAddress: '190.102.45.12',
+        ipAddress: 'browser',
         timestamp: new Date().toISOString(),
       };
       setAuditLogs((prev) => [newLog, ...prev]);
@@ -151,8 +151,8 @@ export default function App() {
   const [aiBrain, setAiBrain] = useState<AIBusinessBrain>(INITIAL_BUSINESS_BRAIN);
   const [marketingScore, setMarketingScore] = useState<MarketingScoreData>(INITIAL_MARKETING_SCORE);
   const [weeklyReport, setWeeklyReport] = useState<WeeklyHealthReport>(INITIAL_WEEKLY_HEALTH_REPORT);
-  const [reviews, setReviews] = useState<CustomerReview[]>(INITIAL_REVIEWS);
-  const [competitors, setCompetitors] = useState<Competitor[]>(INITIAL_COMPETITORS);
+  const [reviews, setReviews] = useState<CustomerReview[]>([]);
+  const [competitors, setCompetitors] = useState<Competitor[]>([]);
   const [caribbeanEvents, setCaribbeanEvents] = useState<CaribbeanEvent[]>(INITIAL_CARIBBEAN_EVENTS);
 
   // In-App Notification State
@@ -170,63 +170,6 @@ export default function App() {
 
   const handleClearNotification = (id: string) => {
     setNotifications((prev) => prev.filter((n) => n.id !== id));
-  };
-
-  const handleSimulateNotification = (category: NotificationCategory) => {
-    const now = new Date().toISOString();
-    let newNotif: InAppNotification;
-
-    if (category === 'CAMPAIGN_MILESTONE') {
-      newNotif = {
-        id: `notif-${Date.now()}`,
-        businessId: currentBusiness.id,
-        category: 'CAMPAIGN_MILESTONE',
-        title: 'New Campaign Milestone: 15,000 Reach!',
-        message: 'Your cross-channel marketing campaign hit a new milestone with 1,240 link clicks today.',
-        timestamp: now,
-        read: false,
-        severity: 'success',
-        actionTab: 'campaigns',
-      };
-    } else if (category === 'LOW_CREDIT') {
-      newNotif = {
-        id: `notif-${Date.now()}`,
-        businessId: currentBusiness.id,
-        category: 'LOW_CREDIT',
-        title: 'Alert: Low Credit Balance Warning',
-        message: 'You have fewer than 200 AI credits remaining. Top up to continue automated post generation.',
-        timestamp: now,
-        read: false,
-        severity: 'warning',
-        actionTab: 'billing',
-      };
-    } else if (category === 'NEW_REVIEW') {
-      newNotif = {
-        id: `notif-${Date.now()}`,
-        businessId: currentBusiness.id,
-        category: 'NEW_REVIEW',
-        title: 'New Google Customer Review Alert',
-        message: 'David Miller rated your business 5 stars: "Outstanding customer service and fast delivery!"',
-        timestamp: now,
-        read: false,
-        severity: 'info',
-        actionTab: 'reviews',
-      };
-    } else {
-      newNotif = {
-        id: `notif-${Date.now()}`,
-        businessId: currentBusiness.id,
-        category: 'SYSTEM',
-        title: 'System Optimization Complete',
-        message: 'AI Copy models updated with latest localized trend parameters.',
-        timestamp: now,
-        read: false,
-        severity: 'info',
-        actionTab: 'dashboard',
-      };
-    }
-
-    setNotifications((prev) => [newNotif, ...prev]);
   };
 
   const [currentBusiness, setCurrentBusiness] = useState<Business>(INITIAL_BUSINESSES[0]);
@@ -474,7 +417,6 @@ export default function App() {
         onMarkNotificationRead={handleMarkNotificationRead}
         onMarkAllNotificationsRead={handleMarkAllNotificationsRead}
         onClearNotification={handleClearNotification}
-        onSimulateNotification={handleSimulateNotification}
       />
 
       {/* Main App Canvas Body */}
@@ -495,13 +437,14 @@ export default function App() {
             socialAccounts={socialAccounts}
             currentUser={currentUser}
             usageLimits={{
-              aiPostsUsed: 250,
-              aiPostsLimit: 1000,
-              aiImagesUsed: 15,
-              aiImagesLimit: 50,
-              campaignsUsed: 3,
-              campaignsLimit: 10,
-            }}
+              businessId: currentBusiness.id,
+              aiPostsUsed: posts.length,
+              aiPostsLimit: 0,
+              aiImagesUsed: generatedImages.length,
+              aiImagesLimit: 0,
+              socialAccountsConnected: socialAccounts.filter(account => account.connected).length,
+              socialAccountsLimit: 0,
+            } as any}
             onNavigate={(tab) => setCurrentView(tab as ViewType)}
             onQuickGenerate={(prompt) => {
               setCurrentView('ai-assistant');
