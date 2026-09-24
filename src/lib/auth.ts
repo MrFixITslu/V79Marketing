@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 
-const TOKEN_EXPIRY = "12h";
+const TOKEN_EXPIRY = "30m";
 const ISSUER = "v79-marketing";
 const AUDIENCE = "v79-marketing";
 
