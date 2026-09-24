@@ -184,12 +184,18 @@ export default function App() {
       try {
         const sessionResponse = await fetch('/api/auth/me', { credentials: 'same-origin' });
         if (!sessionResponse.ok) {
-          if (!cancelled) setSessionState('unauthenticated');
+          if (!cancelled) {
+            setSessionState('unauthenticated');
+            window.location.replace('/api/platform/start');
+          }
           return;
         }
         const session = await sessionResponse.json();
         if (cancelled || !session?.user || !session?.business) {
-          if (!cancelled) setSessionState('unauthenticated');
+          if (!cancelled) {
+            setSessionState('unauthenticated');
+            window.location.replace('/api/platform/start');
+          }
           return;
         }
         setCurrentUser(session.user);
