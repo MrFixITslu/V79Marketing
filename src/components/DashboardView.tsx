@@ -245,14 +245,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <p className="text-[10px] text-slate-500">Flyers & posters</p>
           </button>
 
-          <button
-            onClick={() => onNavigate('ai-video')}
-            className="p-3.5 rounded-2xl bg-slate-50 hover:bg-pink-50 border border-slate-200 hover:border-pink-300 text-left space-y-1 transition-all group cursor-pointer"
-          >
-            <Video className="w-5 h-5 text-pink-600 group-hover:scale-110 transition-transform" />
-            <p className="font-bold text-slate-900">AI Video Studio</p>
-            <p className="text-[10px] text-slate-500">9:16 Reels & TikTok</p>
-          </button>
+          
 
           <button
             onClick={() => onNavigate('reviews')}
