@@ -192,6 +192,10 @@ app.post("/api/auth/login", authLimiter, (req, res) => {
     const data = loginSchema.parse(req.body);
     const user = db.prepare("SELECT * FROM users WHERE email = ?").get(data.email) as any;
 
+    if (user?.hub_user_id) {
+      const hubUrl = String(process.env.V79_HUB_PUBLIC_URL || "https://hub.v79sl.com").replace(/\/$/, "");
+      return res.status(410).json({ error: "This V79 Marketing account is managed through V79 Hub.", code: "HUB_AUTH_REQUIRED", hubUrl });
+    }
     if (!user || !bcrypt.compareSync(data.password, user.password_hash)) {
       return res.status(401).json({ error: "Invalid email or password." });
     }
