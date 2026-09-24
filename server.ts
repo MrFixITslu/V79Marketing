@@ -119,6 +119,34 @@ function getGenAI() {
   });
 }
 
+async function tryOllamaJson(prompt: string) {
+  const baseUrl = String(process.env.OLLAMA_BASE_URL || "").trim();
+  const model = String(process.env.OLLAMA_MODEL || "qwen2.5:3b").trim();
+  if (!baseUrl || !model) return null;
+  try {
+    const response = await fetch(new URL("/api/generate", baseUrl), {
+      method:"POST",
+      headers:{"content-type":"application/json"},
+      body:JSON.stringify({
+        model,
+        prompt,
+        format:"json",
+        stream:false,
+        keep_alive:"10m",
+        options:{temperature:0.6},
+      }),
+      signal:AbortSignal.timeout(45_000),
+    });
+    if (!response.ok) throw new Error(`Ollama HTTP ${response.status}`);
+    const body:any = await response.json();
+    if (!body?.response) return null;
+    return JSON.parse(body.response);
+  } catch (error:any) {
+    console.warn("[V79 Marketing] Ollama generation unavailable:", error?.message || error);
+    return null;
+  }
+}
+
 // Zod Validation Schemas
 const loginSchema = z.object({
   email: z.string().email(),
@@ -666,28 +694,35 @@ app.post("/api/ai/generate-text", authenticate, aiGenerationLimiter, async (req:
       return res.status(402).json({ error: deduction.error });
     }
 
-    const ai = getGenAI();
-    if (ai) {
-      const response = await ai.models.generateContent({
-        model: "gemini-3.6-flash",
-        contents: `You are an expert Caribbean & global digital marketing strategist for "V79 Marketing".
-Generate engaging, platform-customized social media marketing posts for the following prompt and business:
+    const generationPrompt = `You are an expert Caribbean and global digital marketing strategist for V79 Marketing.
+Create accurate, useful, platform-specific marketing copy. Do not invent discounts, product claims, addresses, awards or customer results that were not supplied.
 
 Business Name: ${businessName || "My Business"}
-Industry: ${industry || "Retail / Hospitality"}
-Brand Voice: ${brandVoice || "Warm, energetic, welcoming"}
-Location: ${location || "Caribbean / St. Lucia"}
-Target Audience: ${targetAudience || "Local & international clients"}
+Industry: ${industry || "General"}
+Brand Voice: ${brandVoice || "Professional and approachable"}
+Location: ${location || "Caribbean"}
+Target Audience: ${targetAudience || "Current and prospective customers"}
 User Goal/Prompt: "${prompt}"
 
-Return JSON matching this schema:
+Return only JSON with this exact shape:
 {
   "facebook": { "caption": "...", "hashtags": ["#tag1", "#tag2"] },
   "instagram": { "caption": "...", "hashtags": ["#tag1", "#tag2"] },
   "linkedin": { "caption": "...", "hashtags": ["#tag1", "#tag2"] },
   "tiktok": { "caption": "...", "hashtags": ["#tag1", "#tag2"] },
   "whatsapp": { "caption": "...", "hashtags": [] }
-}`,
+}`;
+
+    const ollamaData:any = await tryOllamaJson(generationPrompt);
+    if (ollamaData?.facebook && ollamaData?.instagram && ollamaData?.linkedin && ollamaData?.tiktok && ollamaData?.whatsapp) {
+      return res.json({ success:true, data:ollamaData, source:"ollama", remainingCredits:deduction.remainingCredits });
+    }
+
+    const ai = getGenAI();
+    if (ai) {
+      const response = await ai.models.generateContent({
+        model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
+        contents: generationPrompt,
         config: {
           responseMimeType: "application/json",
           responseSchema: {
@@ -711,27 +746,27 @@ Return JSON matching this schema:
     }
 
     // Fallback response
-    const bName = businessName || "Isle Spice Grill & Lounge";
-    const loc = location || "Rodney Bay, St. Lucia";
+    const bName = businessName || "Your Business";
+    const loc = location || "your market";
     const fallbackData = {
       facebook: {
-        caption: `✨ Special Highlight from ${bName}! ${prompt}. Visit us in ${loc} or contact us directly to learn more. Bring a friend and make memories today! 🌴🔥`,
-        hashtags: [`#${bName.replace(/\s+/g, "")}`, "#CaribbeanBusiness", `#${loc.split(",")[0].replace(/\s+/g, "")}`, "#V79MarketingHub", "#LocalBrand"],
+        caption: `${bName}: ${prompt}. Contact us to learn more about availability, pricing and next steps in ${loc}.`,
+        hashtags: [`#${bName.replace(/\s+/g, "")}`, "#CaribbeanBusiness", "#V79Marketing"],
       },
       instagram: {
-        caption: `Golden moments with ${bName} ✨ ${prompt}. Tap the link in our bio to explore or place your order now! 📍 ${loc} 🌴`,
-        hashtags: [`#${bName.replace(/\s+/g, "")}`, "#IslandLife", "#SupportLocal", "#CaribbeanVibes", "#V79Digital"],
+        caption: `${prompt} — from ${bName}. Learn more through our official profile or contact us directly.`,
+        hashtags: [`#${bName.replace(/\s+/g, "")}`, "#SupportLocal", "#CaribbeanBusiness"],
       },
       linkedin: {
-        caption: `${bName} is proud to introduce our latest initiative: "${prompt}". Serving our community and driving business growth in ${loc}. Join us in celebrating local excellence!`,
-        hashtags: ["#BusinessGrowth", "#CaribbeanEnterprise", "#SaaSImpact", "#Leadership"],
+        caption: `${bName} is sharing an update: "${prompt}". Contact us for the details relevant to your business or organisation.`,
+        hashtags: ["#BusinessGrowth", "#CaribbeanEnterprise", "#SmallBusiness"],
       },
       tiktok: {
-        caption: `POV: You just checked out the newest offer at ${bName} in ${loc}! 🔥👀 Don't miss out on this!`,
-        hashtags: ["#CaribbeanTikTok", "#IslandEats", "#ViralVibes", "#LocalTreasure"],
+        caption: `${bName}: ${prompt}. Check our official details to learn more.`,
+        hashtags: ["#CaribbeanBusiness", "#LocalBusiness"],
       },
       whatsapp: {
-        caption: `📢 EXCLUSIVE ANNOUNCEMENT from ${bName}: ${prompt}! Reply DIRECTLY to this message to lock in your offer or book today! 📲`,
+        caption: `Update from ${bName}: ${prompt}. Reply to this message if you would like more information.`,
         hashtags: [],
       },
     };
@@ -752,7 +787,7 @@ app.post("/api/ai/generate-image", authenticate, aiGenerationLimiter, async (req
       req.user!.id,
       req.user!.name,
       CREDIT_COSTS.aiImage,
-      `AI Image Generation: "${prompt}"`,
+      `Branded graphic generation: "${prompt}"`,
       req.ip || "127.0.0.1"
     );
 
@@ -796,7 +831,7 @@ app.post("/api/ai/generate-image", authenticate, aiGenerationLimiter, async (req
     return res.json({
       success: true,
       imageUrl: `data:image/svg+xml;base64,${base64Svg}`,
-      source: "svg-canvas",
+      source: "brand-template",
       remainingCredits: deduction.remainingCredits,
     });
   } catch (error: any) {
@@ -827,25 +862,32 @@ app.post("/api/ai/generate-campaign-plan", authenticate, aiGenerationLimiter, as
       return res.status(402).json({ error: deduction.error });
     }
 
-    const ai = getGenAI();
-    if (ai) {
-      try {
-        const response = await ai.models.generateContent({
-          model: "gemini-3.6-flash",
-          contents: `You are a world-class marketing director for "${businessName || "V79 Partner"}" in the "${industry || "Retail & Hospitality"}" sector.
-Generate a structured 4-step multi-channel social campaign for:
+    const campaignPrompt = `You are a marketing strategist for "${businessName || "V79 Partner"}" in the "${industry || "General"}" sector.
+Build a practical four-step multi-channel campaign. Do not invent discounts, performance results, awards, stock levels or product claims that are not in the objective.
 Campaign Title: "${campaignName}"
 Objective: "${objective}"
 
-Return JSON matching this schema:
+Return only JSON:
 {
   "steps": [
     { "dayNumber": 1, "channel": "facebook", "postTitle": "...", "caption": "...", "suggestedTime": "10:00 AM" },
     { "dayNumber": 3, "channel": "instagram", "postTitle": "...", "caption": "...", "suggestedTime": "04:30 PM" },
-    { "dayNumber": 7, "channel": "tiktok", "postTitle": "...", "caption": "...", "suggestedTime": "06:00 PM" },
+    { "dayNumber": 7, "channel": "linkedin", "postTitle": "...", "caption": "...", "suggestedTime": "11:00 AM" },
     { "dayNumber": 14, "channel": "whatsapp", "postTitle": "...", "caption": "...", "suggestedTime": "09:30 AM" }
   ]
-}`,
+}`;
+
+    const ollamaPlan:any = await tryOllamaJson(campaignPrompt);
+    if (Array.isArray(ollamaPlan?.steps)) {
+      return res.json({ success:true, steps:ollamaPlan.steps, source:"ollama", remainingCredits:deduction.remainingCredits });
+    }
+
+    const ai = getGenAI();
+    if (ai) {
+      try {
+        const response = await ai.models.generateContent({
+          model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
+          contents: campaignPrompt,
           config: {
             responseMimeType: "application/json",
           },
@@ -874,28 +916,28 @@ Return JSON matching this schema:
         dayNumber: 1,
         channel: "facebook",
         postTitle: "Campaign Kickoff & Core Value Offer",
-        caption: `Announcement from ${bName}: ${objective}. We are proud to deliver exceptional service and premium experiences to our clients. Discover our latest offerings and message us directly to book or reserve today.`,
+        caption: `${bName}: ${objective}. Contact us for verified details, availability and next steps.`,
         suggestedTime: "10:00 AM",
       },
       {
         dayNumber: 3,
         channel: "instagram",
         postTitle: "Visual Spotlight & Engagement Reel",
-        caption: `Elevate your experience with ${bName}. Experience ${campaignName} with verified quality and authentic care. Link in bio to explore full details and secure your reservation.`,
+        caption: `${campaignName} from ${bName}. Explore the official details and contact us if you would like to know more.`,
         suggestedTime: "04:30 PM",
       },
       {
         dayNumber: 7,
-        channel: "tiktok",
-        postTitle: "Behind-the-Scenes Showcase Clip",
-        caption: `Exclusive behind-the-scenes look at how ${bName} delivers ${campaignName}. Verified local craftsmanship and premium standards.`,
+        channel: "linkedin",
+        postTitle: "Business Value Spotlight",
+        caption: `A closer look at ${campaignName} from ${bName}. Follow our official updates for more information.`,
         suggestedTime: "06:00 PM",
       },
       {
         dayNumber: 14,
         channel: "whatsapp",
         postTitle: "VIP Subscriber Priority Invitation",
-        caption: `Priority update from ${bName}: As a valued client, you receive early access to our ${campaignName}. Reply directly to this message to speak with our reservations desk.`,
+        caption: `Update from ${bName}: ${campaignName}. Reply if you would like the verified details or help choosing the right option.`,
         suggestedTime: "09:30 AM",
       },
     ];
@@ -1135,7 +1177,7 @@ app.get("/api/admin/metrics", authenticate, requireRole(["PLATFORM_ADMIN"]), (re
     activeSubscriptions: businesses.filter((b: any) => b.plan !== "FREE").length,
     revenueXCD: totalRevenueXCD,
     revenueUSD: totalRevenueUSD,
-    systemHealth: "99.98% Operational",
+    systemHealth: "Application responding",
     auditLogs,
     invoices,
   });
@@ -1145,9 +1187,9 @@ app.get("/api/docs", (req, res) => {
   res.json({
     title: "V79 Marketing API Documentation",
     version: "3.0.0",
-    description: "SaaS REST API for digital marketing automation, business profiles, social scheduling & Gemini AI",
+    description: "V79 Marketing API for Hub-managed business marketing workflows",
     endpoints: [
-      { method: "POST", path: "/api/auth/register", description: "Register new business workspace & owner" },
+      { method: "GET", path: "/api/platform/start", description: "Start Hub-managed access to V79 Marketing" },
       { method: "POST", path: "/api/auth/login", description: "Authenticate user & issue HTTP-Only JWT token" },
       { method: "GET", path: "/api/auth/me", description: "Get currently authenticated user & business session" },
       { method: "GET", path: "/api/health", description: "System health check" },
