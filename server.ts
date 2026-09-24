@@ -276,6 +276,11 @@ app.get("/api/platform/start", (_req, res) => {
   res.redirect(302, `${hubUrl}/?return=marketing`);
 });
 
+app.get("/api/platform/hub", (_req, res) => {
+  const hubUrl = String(process.env.V79_HUB_PUBLIC_URL || "https://hub.v79sl.com").replace(/\/$/, "");
+  res.redirect(302, hubUrl);
+});
+
 app.get("/api/platform/launch", authLimiter, async (req, res) => {
   const ticket = cleanValue(req.query.ticket);
   if (!ticket || !/^[A-Za-z0-9_-]{32,180}$/.test(ticket)) {
