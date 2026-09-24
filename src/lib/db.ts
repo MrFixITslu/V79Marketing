@@ -261,7 +261,7 @@ function seedInitialData() {
   const defaultPasswordHash = bcrypt.hashSync(process.env.V79_DEMO_PASSWORD || "development-demo-only", 10);
 
   const insertBusiness = db.prepare(`
-    INSERT INTO businesses (id, name, slug, logo_url, cover_image_url, industry, description, location, phone, email, website, whatsapp, opening_hours_json, products_json, services_json, brand_profile_json, plan, created_at)
+    INSERT OR IGNORE INTO businesses (id, name, slug, logo_url, cover_image_url, industry, description, location, phone, email, website, whatsapp, opening_hours_json, products_json, services_json, brand_profile_json, plan, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
@@ -289,7 +289,7 @@ function seedInitialData() {
   }
 
   const insertUser = db.prepare(`
-    INSERT INTO users (id, email, password_hash, name, role, avatar_url, email_verified, two_factor_enabled, business_id, created_at)
+    INSERT OR IGNORE INTO users (id, email, password_hash, name, role, avatar_url, email_verified, two_factor_enabled, business_id, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
