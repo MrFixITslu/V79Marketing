@@ -72,12 +72,12 @@ Use HTTPS.
 
 ## Data and backups
 
-Persistent application data is stored under `./data`, including:
+Persistent application data is stored in the Docker volume `v79marketing_v79_data`, including:
 - `v79_marketing.sqlite`
 - SQLite WAL/SHM files when active
 - pending platform event outbox records
 
-Back up the complete `data` directory consistently.
+This reuses the volume attached to the previous `v79marketing-app` service. A one-shot preparation container assigns the volume to the non-root application user before each startup. If your previous deployment used a host `./data` bind mount instead, back up and copy that data into this volume before switching; do not remove the host directory until a restore has been tested. Back up the volume consistently, including the database and its WAL files. The image only uses the production `DATABASE_PATH=/app/data/v79_marketing.sqlite`; check any override before migrating.
 
 ## Validation
 
@@ -95,3 +95,8 @@ CI uses Node.js 22 because the current native SQLite dependency requires Node 22
 
 V79 Marketing currently prepares and queues content. Official social-network publishing requires provider OAuth applications and credentials. The application refuses to report an unverified channel as connected or a queued item as published.
 
+## Automatic server deployment
+
+After a validated merge to `main`, the delivery workflow deploys the `v79-marketing` service through Tailscale and pinned SSH. Publication to GHCR alone never changes the server. In GitHub **Settings → Environments → production**, configure the secrets `TAILSCALE_AUTHKEY`, `DEPLOY_HOST` (the server's Tailscale address), `DEPLOY_USER`, `DEPLOY_SSH_KEY` (private deploy key), and `DEPLOY_KNOWN_HOSTS` (independently verified host key). Restrict who can change the production environment. Configure environment variables `DEPLOY_ROOT` (absolute existing server directory containing this app's Compose file and `.env`), `DEPLOY_PROJECT` (the current Compose project shown by `docker inspect`), and optional `DEPLOY_SSH_PORT` (default 22).
+
+The deploy user needs Docker and `rsync` access and the server must already have `proxy_network`. Before enabling the workflow, back up the application's existing data, encryption keys, uploads, databases and `.env` and verify a restore. The script preserves `.env`, `data`, `uploads`, backups and existing `.git`; it updates the app in place, starts only `v79-marketing` and checks its HTTP readiness inside the container. It does not remove orphan containers or volumes. Source removed from Git may remain in the server directory because deployment intentionally does not delete unknown local files. A first merge will fail closed if a required secret, mount, project, or server directory is absent. Review Actions → deploy and record the `.deployed_sha` in the server directory after each successful release.

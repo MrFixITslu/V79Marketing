@@ -8,10 +8,8 @@ import {
   GeneratedImage,
   AuditLog,
   Invoice,
-  PlanTier,
   SocialPlatform,
   CreditBalance,
-  CreditCostConfig,
   AIBusinessBrain,
   MarketingScoreData,
   WeeklyHealthReport,
@@ -31,7 +29,6 @@ import {
   INITIAL_AUDIT_LOGS,
   INITIAL_INVOICES,
   DEFAULT_CREDIT_BALANCE as INITIAL_CREDIT_BALANCE,
-  DEFAULT_CREDIT_COSTS as INITIAL_CREDIT_COSTS,
   DEFAULT_BUSINESS_BRAIN as INITIAL_BUSINESS_BRAIN,
   DEFAULT_MARKETING_SCORE as INITIAL_MARKETING_SCORE,
   DEFAULT_WEEKLY_HEALTH_REPORT as INITIAL_WEEKLY_HEALTH_REPORT,
@@ -51,7 +48,6 @@ import { ContentCalendar } from './components/ContentCalendar';
 import { CampaignBuilder } from './components/CampaignBuilder';
 import { SocialAccountsManager } from './components/SocialAccountsManager';
 import { AnalyticsDashboard } from './components/AnalyticsDashboard';
-import { PricingPage } from './components/PricingPage';
 import { AdminPortal } from './components/AdminPortal';
 import { AuthModal } from './components/AuthModal';
 
@@ -59,12 +55,9 @@ import { AiBrainView } from './components/AiBrainView';
 import { AiReviewAssistantView } from './components/AiReviewAssistantView';
 import { CompetitorIntelligenceView } from './components/CompetitorIntelligenceView';
 import { AiBrandKitView } from './components/AiBrandKitView';
-import { AiVideoStudioView } from './components/AiVideoStudioView';
-import { CreditStoreModal } from './components/CreditStoreModal';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { CustomerPipelineView } from './components/CustomerPipelineView';
 import { OneIdeaCampaignView } from './components/OneIdeaCampaignView';
-import { FixMyMarketingModal } from './components/FixMyMarketingModal';
 import { CustomerInquiry } from './types';
 
 export type ViewType =
@@ -75,7 +68,6 @@ export type ViewType =
   | 'ai_brain'
   | 'ai-assistant'
   | 'ai-image'
-  | 'ai-video'
   | 'reviews'
   | 'competitors'
   | 'brand_kit'
@@ -147,7 +139,6 @@ export default function App() {
 
   // New V79 AI Platform States
   const [creditBalance, setCreditBalance] = useState<CreditBalance>(INITIAL_CREDIT_BALANCE);
-  const [creditCosts, setCreditCosts] = useState<CreditCostConfig>(INITIAL_CREDIT_COSTS);
   const [aiBrain, setAiBrain] = useState<AIBusinessBrain>(INITIAL_BUSINESS_BRAIN);
   const [marketingScore, setMarketingScore] = useState<MarketingScoreData>(INITIAL_MARKETING_SCORE);
   const [weeklyReport, setWeeklyReport] = useState<WeeklyHealthReport>(INITIAL_WEEKLY_HEALTH_REPORT);
@@ -175,8 +166,6 @@ export default function App() {
   const [currentBusiness, setCurrentBusiness] = useState<Business>(INITIAL_BUSINESSES[0]);
   const [currentUser, setCurrentUser] = useState<User>(INITIAL_USERS[0]);
   const [showAuthModal, setShowAuthModal] = useState(false);
-  const [showCreditStoreModal, setShowCreditStoreModal] = useState(false);
-  const [showFixModal, setShowFixModal] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -247,7 +236,7 @@ export default function App() {
     const total = creditBalance.monthlyAllowance + creditBalance.purchasedCredits + creditBalance.bonusCredits;
     const remaining = total - creditBalance.usedCredits;
     if (remaining < amount) {
-      setShowCreditStoreModal(true);
+      setCurrentView('billing');
       return false;
     }
 
@@ -270,10 +259,6 @@ export default function App() {
     setAuditLogs([newLog, ...auditLogs]);
 
     return true;
-  };
-
-  const handleBuyCredits = (_amount: number) => {
-    window.location.assign('/api/platform/hub');
   };
 
   // Sync selected business when user changes
@@ -312,8 +297,7 @@ export default function App() {
     }).catch((error) => console.error('Business profile save failed:', error));
   };
 
-  const handleSchedulePost = (newPost: Partial<Post>) => {
-    void (async () => {
+  const handleSchedulePost = async (newPost: Partial<Post>): Promise<void> => {
       const response = await fetch('/api/posts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -329,7 +313,6 @@ export default function App() {
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(body.error || 'Could not schedule the post.');
       if (body.post) setPosts((items) => [body.post, ...items.filter((item) => item.id !== body.post.id)]);
-    })().catch((error) => console.error('Post scheduling failed:', error));
   };
 
   const handleCreateCampaign = (newCamp: Campaign) => {
@@ -359,10 +342,6 @@ export default function App() {
 
   const handleConnectChannel = (_platform: SocialPlatform, _handle: string) => {
     window.alert('This channel needs the official provider OAuth connection before V79 can publish to it. No connection will be simulated.');
-  };
-
-  const handleUpgradePlan = (_plan: PlanTier) => {
-    window.location.assign('/api/platform/hub');
   };
 
   if (sessionState === 'loading') {
@@ -524,13 +503,6 @@ export default function App() {
           />
         )}
 
-        {currentView === 'ai-video' && (
-          <AiVideoStudioView
-            business={currentBusiness}
-            onDeductCredits={handleDeductCredits}
-          />
-        )}
-
         {currentView === 'reviews' && (
           <AiReviewAssistantView
             reviews={reviews}
@@ -619,19 +591,6 @@ export default function App() {
         )}
       </main>
 
-      {/* Credit Add-On Store Modal */}
-      {showCreditStoreModal && (
-        <CreditStoreModal
-          creditBalance={creditBalance}
-          creditCosts={creditCosts}
-          business={currentBusiness}
-          currency={currency}
-          onClose={() => setShowCreditStoreModal(false)}
-          onBuyCredits={handleBuyCredits}
-          onNavigateToBilling={() => setCurrentView('billing')}
-        />
-      )}
-
       {/* Status Bar / Footer */}
       <footer className="mt-auto border-t border-slate-200 bg-white px-8 py-3 text-[11px] font-bold text-slate-400 flex items-center justify-between">
         <div className="flex items-center gap-4">
@@ -659,4 +618,3 @@ export default function App() {
     </div>
   );
 }
-
