@@ -255,10 +255,12 @@ export default function App() {
         setBusinesses([session.business]);
         setSessionState('authenticated');
 
-        const [postResponse, customerResponse, creditResponse] = await Promise.all([
+        const [postResponse, customerResponse, creditResponse, campaignResponse, socialResponse] = await Promise.all([
           fetch('/api/posts', { credentials: 'same-origin' }),
           fetch('/api/customers', { credentials: 'same-origin' }),
           fetch('/api/credits/balance', { credentials: 'same-origin' }),
+          fetch('/api/campaigns', { credentials: 'same-origin' }),
+          fetch('/api/social-accounts', { credentials: 'same-origin' }),
         ]);
         if (postResponse.ok) {
           const body = await postResponse.json();
@@ -271,6 +273,14 @@ export default function App() {
         if (creditResponse.ok) {
           const body = await creditResponse.json();
           if (!cancelled && body.balance) setCreditBalance(body.balance);
+        }
+        if (campaignResponse.ok) {
+          const body = await campaignResponse.json();
+          if (!cancelled) setCampaigns(body.campaigns || []);
+        }
+        if (socialResponse.ok) {
+          const body = await socialResponse.json();
+          if (!cancelled) setSocialAccounts(body.socialAccounts || []);
         }
       } catch {
         if (!cancelled) setSessionState('unauthenticated');
@@ -331,49 +341,75 @@ export default function App() {
 
   const handleUpdateBusiness = (updated: Business) => {
     setCurrentBusiness(updated);
-    setBusinesses(businesses.map((b) => (b.id === updated.id ? updated : b)));
+    setBusinesses((items) => items.map((b) => (b.id === updated.id ? updated : b)));
+    void fetch(`/api/businesses/${encodeURIComponent(updated.id)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updated),
+    }).then(async (response) => {
+      if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || 'Could not save business profile.');
+      const body = await response.json();
+      if (body.business) setCurrentBusiness({
+        ...updated,
+        name: body.business.name ?? updated.name,
+        industry: body.business.industry ?? updated.industry,
+        description: body.business.description ?? updated.description,
+        location: body.business.location ?? updated.location,
+        phone: body.business.phone ?? updated.phone,
+        email: body.business.email ?? updated.email,
+        website: body.business.website ?? updated.website,
+        whatsapp: body.business.whatsapp ?? updated.whatsapp,
+      });
+    }).catch((error) => console.error('Business profile save failed:', error));
   };
 
   const handleSchedulePost = (newPost: Partial<Post>) => {
-    const postObj: Post = {
-      id: `post-${Date.now()}`,
-      businessId: currentBusiness.id,
-      title: newPost.title || 'New AI Social Post',
-      authorId: currentUser.id,
-      authorName: currentUser.name,
-      content: newPost.content || {
-        facebook: { caption: 'Check out our latest update!', hashtags: [] }
-      },
-      scheduledFor: newPost.scheduledFor || new Date().toISOString(),
-      status: 'SCHEDULED',
-      mediaUrls: newPost.mediaUrls || [currentBusiness.coverImageUrl],
-      createdAt: new Date().toISOString(),
-      analytics: { reach: 0, impressions: 0, engagement: 0, clicks: 0 }
-    };
-
-    setPosts([postObj, ...posts]);
+    void (async () => {
+      const response = await fetch('/api/posts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          businessId: currentBusiness.id,
+          title: newPost.title || 'New marketing post',
+          content: newPost.content || {},
+          mediaUrls: (newPost.mediaUrls || []).filter(Boolean),
+          scheduledFor: newPost.scheduledFor || new Date().toISOString(),
+          campaignId: newPost.campaignId,
+        }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error || 'Could not schedule the post.');
+      if (body.post) setPosts((items) => [body.post, ...items.filter((item) => item.id !== body.post.id)]);
+    })().catch((error) => console.error('Post scheduling failed:', error));
   };
 
   const handleCreateCampaign = (newCamp: Campaign) => {
-    setCampaigns([newCamp, ...campaigns]);
+    void (async () => {
+      const response = await fetch('/api/campaigns', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name:newCamp.name,
+          objective:newCamp.objective,
+          startDate:newCamp.startDate,
+          endDate:newCamp.endDate,
+          status:newCamp.status,
+          steps:newCamp.steps,
+          aiPlanGenerated:newCamp.aiPlanGenerated,
+        }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error || 'Could not create campaign.');
+      if (body.campaign) setCampaigns((items) => [body.campaign, ...items.filter((item) => item.id !== body.campaign.id)]);
+    })().catch((error) => console.error('Campaign save failed:', error));
   };
 
   const handleSaveImageToLibrary = (img: GeneratedImage) => {
     setGeneratedImages([img, ...generatedImages]);
   };
 
-  const handleConnectChannel = (platform: SocialPlatform, handle: string) => {
-    const newAccount: SocialAccount = {
-      id: `sa-${Date.now()}`,
-      businessId: currentBusiness.id,
-      platform,
-      accountName: `${currentBusiness.name} ${platform}`,
-      accountHandle: handle,
-      followerCount: 1250,
-      connected: true,
-      lastSyncedAt: new Date().toISOString(),
-    };
-    setSocialAccounts([...socialAccounts, newAccount]);
+  const handleConnectChannel = (_platform: SocialPlatform, _handle: string) => {
+    window.alert('This channel needs the official provider OAuth connection before V79 can publish to it. No connection will be simulated.');
   };
 
   const handleUpgradePlan = (_plan: PlanTier) => {
@@ -479,10 +515,25 @@ export default function App() {
           <CustomerPipelineView
             business={currentBusiness}
             customers={customers}
-            onAddCustomer={(newCust) => setCustomers([newCust, ...customers])}
-            onUpdateCustomerStatus={(id, status) =>
-              setCustomers(customers.map((c) => (c.id === id ? { ...c, status } : c)))
-            }
+            onAddCustomer={(newCust) => {
+              void fetch('/api/customers', {
+                method:'POST',
+                headers:{'Content-Type':'application/json'},
+                body:JSON.stringify(newCust),
+              }).then(async response => {
+                const body=await response.json().catch(()=>({}));
+                if(!response.ok) throw new Error(body.error || 'Could not add customer.');
+                if(body.customer) setCustomers(items => [body.customer, ...items]);
+              }).catch(error => console.error('Customer save failed:', error));
+            }}
+            onUpdateCustomerStatus={(id, status) => {
+              setCustomers(items => items.map(c => c.id===id ? {...c,status} : c));
+              void fetch(`/api/customers/${encodeURIComponent(id)}/status`, {
+                method:'PATCH',
+                headers:{'Content-Type':'application/json'},
+                body:JSON.stringify({status}),
+              }).catch(error => console.error('Customer status update failed:', error));
+            }}
           />
         )}
 
