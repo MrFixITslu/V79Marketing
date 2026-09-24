@@ -13,7 +13,10 @@ services:
       TRUST_PROXY: ${TRUST_PROXY:-1}
       DATABASE_PATH: ${DATABASE_PATH:-/app/data/v79_marketing.sqlite}
       JWT_SECRET: ${JWT_SECRET}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:3b}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
       V79_HUB_PUBLIC_URL: ${V79_HUB_PUBLIC_URL:-https://hub.v79sl.com}
       V79_HUB_INTERNAL_URL: ${V79_HUB_INTERNAL_URL:-http://v79-hub:3040}
       V79_MARKETING_LAUNCH_SECRET: ${V79_MARKETING_LAUNCH_SECRET}
