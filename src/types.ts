@@ -1,6 +1,6 @@
 export type UserRole = 'PLATFORM_ADMIN' | 'BUSINESS_OWNER' | 'MARKETING_STAFF' | 'CONTENT_CREATOR';
 
-export type PlanTier = 'FREE' | 'STARTER' | 'GROWTH' | 'PROFESSIONAL' | 'ENTERPRISE';
+export type PlanTier = 'FREE' | 'STARTER' | 'GROWTH' | 'PROFESSIONAL' | 'ENTERPRISE' | 'START' | 'BUSINESS' | 'ADVANTAGE' | 'HUB';
 
 export type PostStatus = 'DRAFT' | 'PENDING_APPROVAL' | 'SCHEDULED' | 'PUBLISHED' | 'FAILED';
 

@@ -15,16 +15,15 @@ import {
   INITIAL_COMPETITORS
 } from "./constants.js";
 
-const dataDir = path.join(process.cwd(), "data");
-if (!fs.existsSync(dataDir)) {
-  fs.mkdirSync(dataDir, { recursive: true });
-}
+const configuredPath = String(process.env.DATABASE_PATH || "").trim();
+const dbPath = configuredPath ? path.resolve(configuredPath) : path.join(process.cwd(), "data", "v79_marketing.sqlite");
+const dataDir = path.dirname(dbPath);
+if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true, mode: 0o700 });
 
-const dbPath = path.join(dataDir, "v79_marketing.sqlite");
 export const db = new Database(dbPath);
-
-// Enable WAL mode for high concurrency
 db.pragma("journal_mode = WAL");
+db.pragma("foreign_keys = ON");
+db.pragma("busy_timeout = 5000");
 
 export function initDb() {
   db.exec(`
@@ -39,6 +38,7 @@ export function initDb() {
       verification_token TEXT,
       two_factor_enabled INTEGER NOT NULL DEFAULT 0,
       business_id TEXT NOT NULL,
+      hub_user_id TEXT UNIQUE,
       created_at TEXT NOT NULL
     );
 
@@ -59,7 +59,8 @@ export function initDb() {
       products_json TEXT,
       services_json TEXT,
       brand_profile_json TEXT,
-      plan TEXT NOT NULL DEFAULT 'FREE',
+      plan TEXT NOT NULL DEFAULT 'HUB',
+      hub_organization_id TEXT UNIQUE,
       created_at TEXT NOT NULL
     );
 
@@ -215,19 +216,52 @@ export function initDb() {
       action_target TEXT,
       FOREIGN KEY (business_id) REFERENCES businesses(id) ON DELETE CASCADE
     );
+
+    CREATE TABLE IF NOT EXISTS platform_event_outbox (
+      id TEXT PRIMARY KEY,
+      business_id TEXT NOT NULL,
+      event_type TEXT NOT NULL,
+      subject_id TEXT,
+      correlation_id TEXT,
+      occurred_at TEXT NOT NULL,
+      payload_json TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      attempts INTEGER NOT NULL DEFAULT 0,
+      next_attempt_at TEXT NOT NULL,
+      last_error TEXT,
+      sent_at TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (business_id) REFERENCES businesses(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_platform_event_pending
+      ON platform_event_outbox(status, next_attempt_at);
   `);
 
-  seedInitialData();
+  ensureColumn("businesses", "hub_organization_id", "TEXT");
+  ensureColumn("users", "hub_user_id", "TEXT");
+  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_businesses_hub_org ON businesses(hub_organization_id) WHERE hub_organization_id IS NOT NULL;");
+  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_hub_user ON users(hub_user_id) WHERE hub_user_id IS NOT NULL;");
+
+  if (process.env.NODE_ENV !== "production" && process.env.V79_MARKETING_SEED_DEMO === "1") {
+    seedInitialData();
+  }
+}
+
+function ensureColumn(table: string, column: string, definition: string) {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all() as any[];
+  if (!columns.some(item => item.name === column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
 }
 
 function seedInitialData() {
   const userCount = (db.prepare("SELECT COUNT(*) as count FROM users").get() as any).count;
   if (userCount > 0) return;
 
-  const defaultPasswordHash = bcrypt.hashSync("V79Marketing2026!", 10);
+  const defaultPasswordHash = bcrypt.hashSync(process.env.V79_DEMO_PASSWORD || "development-demo-only", 10);
 
   const insertBusiness = db.prepare(`
-    INSERT INTO businesses (id, name, slug, logo_url, cover_image_url, industry, description, location, phone, email, website, whatsapp, opening_hours_json, products_json, services_json, brand_profile_json, plan, created_at)
+    INSERT OR IGNORE INTO businesses (id, name, slug, logo_url, cover_image_url, industry, description, location, phone, email, website, whatsapp, opening_hours_json, products_json, services_json, brand_profile_json, plan, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
@@ -255,7 +289,7 @@ function seedInitialData() {
   }
 
   const insertUser = db.prepare(`
-    INSERT INTO users (id, email, password_hash, name, role, avatar_url, email_verified, two_factor_enabled, business_id, created_at)
+    INSERT OR IGNORE INTO users (id, email, password_hash, name, role, avatar_url, email_verified, two_factor_enabled, business_id, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 

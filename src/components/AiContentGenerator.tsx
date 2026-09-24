@@ -34,44 +34,23 @@ export const AiContentGenerator: React.FC<AiContentGeneratorProps> = ({
   initialPrompt = '',
 }) => {
   const [selectedCategory, setSelectedCategory] = useState<'offer' | 'product' | 'event' | 'story' | 'holiday'>('offer');
-  const [itemName, setItemName] = useState('Friday Sunset 2-for-1 Rum Punch');
-  const [specialDetail, setSpecialDetail] = useState('50% off tropical pitchers from 5-7 PM with live reggae music');
-  const [prompt, setPrompt] = useState(initialPrompt || "Create a Friday sunset happy hour promotion with 2-for-1 cocktails");
+  const [itemName, setItemName] = useState('');
+  const [specialDetail, setSpecialDetail] = useState('');
+  const [prompt, setPrompt] = useState(initialPrompt);
   const [isGenerating, setIsGenerating] = useState(false);
   const [activePlatform, setActivePlatform] = useState<SocialPlatform | 'whatsapp'>('facebook');
   const [copied, setCopied] = useState(false);
   const [scheduledSuccess, setScheduledSuccess] = useState(false);
 
   const categories = [
-    { id: 'offer', label: 'Special Offer / Sale', icon: Gift, defaultItem: 'Friday Sunset 2-for-1 Cocktail Special', defaultDetail: '50% off pitchers 5-7 PM' },
-    { id: 'product', label: 'Product / Menu Dish', icon: ShoppingBag, defaultItem: 'Jerk Glazed Pork Ribs', defaultDetail: 'Slow-smoked over pimento wood with plantain mash' },
-    { id: 'event', label: 'Event / Party', icon: CalendarDays, defaultItem: 'Live Reggae Sunset Sessions', defaultDetail: 'Every Friday night from 6:30 PM' },
-    { id: 'story', label: 'Customer Appreciation', icon: Heart, defaultItem: 'Thank you Rodney Bay Community', defaultDetail: 'Celebrating our 5-star customer milestone' },
-    { id: 'holiday', label: 'Holiday & Festival', icon: Megaphone, defaultItem: 'Creole Heritage Month Feast', defaultDetail: 'Authentic kwéyòl dishes & cultural music' },
+    { id: 'offer', label: 'Special Offer / Sale', icon: Gift, defaultItem: '', defaultDetail: '' },
+    { id: 'product', label: 'Product / Service', icon: ShoppingBag, defaultItem: '', defaultDetail: '' },
+    { id: 'event', label: 'Event', icon: CalendarDays, defaultItem: '', defaultDetail: '' },
+    { id: 'story', label: 'Customer / Brand Story', icon: Heart, defaultItem: '', defaultDetail: '' },
+    { id: 'holiday', label: 'Holiday & Festival', icon: Megaphone, defaultItem: '', defaultDetail: '' },
   ];
 
-  const [generatedContent, setGeneratedContent] = useState<any>({
-    facebook: {
-      caption: `🍹 Sunset looks better with a Pitons Rum Punch in hand! Join us at ${business.name} this Friday from 5 PM to 7 PM for 2-for-1 cocktails on our waterfront deck. Fresh passion fruit, local rum & live acoustic reggae! Tag who you are bringing! 🌴✨`,
-      hashtags: [`#${business.name.replace(/\s+/g, '')}`, '#SunsetHappyHour', '#CaribbeanCocktails', '#StLuciaEats']
-    },
-    instagram: {
-      caption: `Golden hour at ${business.name} hits different 🌅✨ 2-for-1 Rum Punch every Friday 5-7 PM. Reserve your waterfront sunset table via the link in our bio! 🥂🔥`,
-      hashtags: ['#RodneyBayMarina', '#CaribbeanFoodie', '#RumPunchSpecial', '#V79Marketing']
-    },
-    linkedin: {
-      caption: `Corporate Friday Sunset Mixer at ${business.name}: Networking, waterfront ambiance, and artisanal Caribbean cocktails. Treat your team to golden hour in Rodney Bay.`,
-      hashtags: ['#HospitalityIndustry', '#CaribbeanBusiness', '#TeamMixer']
-    },
-    tiktok: {
-      caption: `POV: You found the ultimate sunset happy hour in St. Lucia 🍹🔥 Tag your travel bestie!`,
-      hashtags: ['#StLuciaTikTok', '#RodneyBay', '#CaribbeanVibes']
-    },
-    whatsapp: {
-      caption: `🔥 FRIDAY SUNSET SPECIAL at ${business.name}! Enjoy 2-for-1 Rum Punch from 5-7 PM. Reply "RESERVE" to lock in your table now!`,
-      hashtags: []
-    }
-  });
+  const [generatedContent, setGeneratedContent] = useState<any>({});
 
   const handleCategorySelect = (catId: any) => {
     const cat = categories.find((c) => c.id === catId);
@@ -208,7 +187,7 @@ export const AiContentGenerator: React.FC<AiContentGeneratorProps> = ({
                 type="text"
                 value={itemName}
                 onChange={(e) => setItemName(e.target.value)}
-                placeholder="e.g., Weekend Sunset Rum Punch Special"
+                placeholder="e.g., September service special"
                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-500 font-medium"
               />
             </div>
@@ -218,7 +197,7 @@ export const AiContentGenerator: React.FC<AiContentGeneratorProps> = ({
                 type="text"
                 value={specialDetail}
                 onChange={(e) => setSpecialDetail(e.target.value)}
-                placeholder="e.g., Buy 1 get 1 free from 5-7 PM on Fridays"
+                placeholder="e.g., 15% off for bookings made this week"
                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-500 font-medium"
               />
             </div>

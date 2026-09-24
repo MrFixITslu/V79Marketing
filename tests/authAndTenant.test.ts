@@ -43,7 +43,7 @@ describe("V79 Marketing Hub — Production Security & Workflow Test Suite", () =
     // Attempt to deduct massive credit amount exceeding balance
     const deduction = deductCredits("bus-1", "user-test-1", "Test User", 9999999, "Exceeding Operation", "127.0.0.1");
     expect(deduction.success).toBe(false);
-    expect(deduction.error).toContain("Insufficient V79 AI Credits");
+    expect(deduction.error).toContain("Monthly V79 AI allowance reached");
   });
 
   it("4. Tenant Isolation: Users from Business A cannot mutate Business B", () => {

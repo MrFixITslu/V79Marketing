@@ -47,6 +47,22 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   const totalFollowers = socialAccounts.reduce((sum, sa) => sum + (sa.connected ? sa.followerCount : 0), 0);
   const scheduledPosts = posts.filter((p) => p.status === 'SCHEDULED');
+  const publishedPosts = posts.filter((p) => p.status === 'PUBLISHED');
+  const profileSignals = [
+    currentBusiness.name,
+    currentBusiness.industry,
+    currentBusiness.description,
+    currentBusiness.location,
+    currentBusiness.email,
+    currentBusiness.website,
+    currentBusiness.brandProfile?.brandVoice,
+    currentBusiness.brandProfile?.targetAudience,
+  ];
+  const completedProfileSignals = profileSignals.filter((value) => String(value || '').trim()).length;
+  const profileReadiness = Math.round((completedProfileSignals / profileSignals.length) * 100);
+  const connectedChannels = socialAccounts.filter((account) => account.connected).length;
+  const activitySignals = [profileReadiness >= 75, connectedChannels > 0, scheduledPosts.length > 0 || publishedPosts.length > 0];
+  const workspaceReadiness = Math.round((activitySignals.filter(Boolean).length / activitySignals.length) * 100);
 
   const handlePromptSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -99,106 +115,71 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       </div>
 
-      {/* Marketing Score & Priority AI Tasks Widget */}
+      {/* Verified workspace readiness */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Score Radial Card */}
-        <div className="lg:col-span-4 bg-gradient-to-br from-slate-900 to-indigo-950 rounded-3xl p-6 text-white shadow-xl flex flex-col justify-between border border-slate-800 relative overflow-hidden">
-          <div className="space-y-1">
-            <span className="text-[10px] font-black uppercase tracking-widest bg-emerald-500/20 text-emerald-300 px-2.5 py-1 rounded-full">
-              AI Marketing Health Engine
+        <div className="lg:col-span-4 bg-gradient-to-br from-slate-900 to-indigo-950 rounded-3xl p-6 text-white shadow-xl flex flex-col justify-between border border-slate-800">
+          <div>
+            <span className="text-[10px] font-black uppercase tracking-widest bg-cyan-500/20 text-cyan-200 px-2.5 py-1 rounded-full">
+              Verified workspace signals
             </span>
-            <h3 className="text-lg font-black text-white pt-2">Overall Marketing Score</h3>
+            <h3 className="text-lg font-black text-white pt-3">Marketing readiness</h3>
+            <p className="mt-1 text-xs leading-5 text-slate-400">Calculated only from information and activity currently stored in V79 Marketing.</p>
           </div>
 
-          <div className="my-6 flex items-center justify-center relative">
-            <div className="w-36 h-36 rounded-full border-8 border-emerald-500/20 flex flex-col items-center justify-center text-center relative bg-slate-900/80 shadow-inner">
-              <span className="text-4xl font-black font-mono text-emerald-400">84</span>
-              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">/ 100 HEALTH</span>
+          <div className="my-6 flex items-center justify-center">
+            <div className="w-36 h-36 rounded-full border-8 border-cyan-500/20 flex flex-col items-center justify-center text-center bg-slate-900/80 shadow-inner">
+              <span className="text-4xl font-black font-mono text-cyan-300">{workspaceReadiness}</span>
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">/ 100 READY</span>
             </div>
           </div>
 
           <div className="space-y-2 text-xs">
-            <div className="flex justify-between text-slate-300 font-medium">
-              <span>Brand Completeness</span>
-              <span className="font-bold text-emerald-400">92%</span>
-            </div>
-            <div className="flex justify-between text-slate-300 font-medium">
-              <span>Posting Consistency</span>
-              <span className="font-bold text-emerald-400">85%</span>
-            </div>
-            <div className="flex justify-between text-slate-300 font-medium">
-              <span>Review Activity</span>
-              <span className="font-bold text-emerald-400">88%</span>
-            </div>
+            <div className="flex justify-between text-slate-300"><span>Business profile</span><span className="font-bold text-white">{profileReadiness}%</span></div>
+            <div className="flex justify-between text-slate-300"><span>Connected channels</span><span className="font-bold text-white">{connectedChannels}</span></div>
+            <div className="flex justify-between text-slate-300"><span>Scheduled content</span><span className="font-bold text-white">{scheduledPosts.length}</span></div>
           </div>
         </div>
 
-        {/* Priority AI Tasks Card */}
-        <div className="lg:col-span-8 bg-white rounded-3xl p-6 border border-slate-200 shadow-xs space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="font-black text-slate-900 text-lg">AI Priority Recommended Actions</h3>
-              <p className="text-xs text-slate-500">Complete tasks to improve your marketing health score</p>
-            </div>
-            <span className="bg-amber-100 text-amber-800 font-bold text-xs px-3 py-1 rounded-full">
-              +750 Potential Bonus Credits
-            </span>
+        <div className="lg:col-span-8 bg-white rounded-3xl p-6 border border-slate-200 shadow-xs">
+          <div>
+            <h3 className="font-black text-slate-900 text-lg">Recommended next actions</h3>
+            <p className="text-xs text-slate-500">Based on gaps V79 can verify—not estimated reach or invented engagement.</p>
           </div>
 
-          <div className="space-y-3">
-            <div
-              onClick={() => onNavigate('reviews')}
-              className="p-3.5 bg-slate-50 hover:bg-blue-50/60 rounded-2xl border border-slate-200 hover:border-blue-300 transition-all cursor-pointer flex items-center justify-between"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center font-bold">
-                  <MessageSquare className="w-4 h-4" />
+          <div className="mt-5 space-y-3">
+            {profileReadiness < 100 && (
+              <button onClick={() => onNavigate('profile-builder')} className="w-full p-4 bg-slate-50 hover:bg-blue-50 rounded-2xl border border-slate-200 text-left flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center"><Building2 className="w-4 h-4"/></div>
+                  <div><div className="font-bold text-slate-900 text-xs">Complete your business profile</div><div className="text-[11px] text-slate-500">A complete profile improves the context used for campaign generation.</div></div>
                 </div>
-                <div>
-                  <h4 className="font-bold text-slate-900 text-xs">Connect Google Business review auto-responder</h4>
-                  <p className="text-[11px] text-slate-500">14 unhandled customer reviews awaiting response</p>
+                <ArrowRight className="w-4 h-4 text-slate-400"/>
+              </button>
+            )}
+            {connectedChannels === 0 && (
+              <button onClick={() => onNavigate('social-channels')} className="w-full p-4 bg-slate-50 hover:bg-blue-50 rounded-2xl border border-slate-200 text-left flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center"><ExternalLink className="w-4 h-4"/></div>
+                  <div><div className="font-bold text-slate-900 text-xs">Connect a verified marketing channel</div><div className="text-[11px] text-slate-500">Only official provider connections count as connected channels.</div></div>
                 </div>
+                <ArrowRight className="w-4 h-4 text-slate-400"/>
+              </button>
+            )}
+            {scheduledPosts.length === 0 && (
+              <button onClick={() => onNavigate('ai-assistant')} className="w-full p-4 bg-slate-50 hover:bg-blue-50 rounded-2xl border border-slate-200 text-left flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center"><Sparkles className="w-4 h-4"/></div>
+                  <div><div className="font-bold text-slate-900 text-xs">Build your next content item</div><div className="text-[11px] text-slate-500">Create content now; publishing remains queued until an official channel adapter is connected.</div></div>
+                </div>
+                <ArrowRight className="w-4 h-4 text-slate-400"/>
+              </button>
+            )}
+            {profileReadiness === 100 && connectedChannels > 0 && scheduledPosts.length > 0 && (
+              <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-200 flex items-center gap-3">
+                <CheckCircle2 className="w-5 h-5 text-emerald-700"/>
+                <div><div className="font-bold text-emerald-900 text-xs">Core marketing workspace is ready</div><div className="text-[11px] text-emerald-700">Continue monitoring real campaign and customer activity.</div></div>
               </div>
-              <span className="text-xs font-bold text-emerald-700 bg-emerald-100 px-2.5 py-1 rounded-lg">
-                +150 Credits
-              </span>
-            </div>
-
-            <div
-              onClick={() => onNavigate('ai-assistant')}
-              className="p-3.5 bg-slate-50 hover:bg-blue-50/60 rounded-2xl border border-slate-200 hover:border-blue-300 transition-all cursor-pointer flex items-center justify-between"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center font-bold">
-                  <Sparkles className="w-4 h-4" />
-                </div>
-                <div>
-                  <h4 className="font-bold text-slate-900 text-xs">Generate 30-Day Saint Lucia Creole Month Campaign</h4>
-                  <p className="text-[11px] text-slate-500">Automated 30-day posting schedule for Caribbean event</p>
-                </div>
-              </div>
-              <span className="text-xs font-bold text-emerald-700 bg-emerald-100 px-2.5 py-1 rounded-lg">
-                +300 Credits
-              </span>
-            </div>
-
-            <div
-              onClick={() => onNavigate('ai-video')}
-              className="p-3.5 bg-slate-50 hover:bg-blue-50/60 rounded-2xl border border-slate-200 hover:border-blue-300 transition-all cursor-pointer flex items-center justify-between"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-pink-100 text-pink-700 flex items-center justify-center font-bold">
-                  <Video className="w-4 h-4" />
-                </div>
-                <div>
-                  <h4 className="font-bold text-slate-900 text-xs">Publish vertical Video Reel for Friday Sunset Happy Hour</h4>
-                  <p className="text-[11px] text-slate-500">Boost engagement on Instagram Reels & TikTok</p>
-                </div>
-              </div>
-              <span className="text-xs font-bold text-emerald-700 bg-emerald-100 px-2.5 py-1 rounded-lg">
-                +200 Credits
-              </span>
-            </div>
+            )}
           </div>
         </div>
       </div>
@@ -218,7 +199,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 type="text"
                 value={quickPrompt}
                 onChange={(e) => setQuickPrompt(e.target.value)}
-                placeholder="Describe your campaign e.g., 2-for-1 Rum Punch Sunset Happy Hour this Friday..."
+                placeholder="Describe the product, service, event or offer you want to promote..."
                 className="w-full bg-white/20 border border-white/30 rounded-xl px-4 py-3 text-sm text-white placeholder-white/70 focus:outline-none focus:ring-2 focus:ring-white/50 backdrop-blur-sm font-medium"
               />
             </div>
@@ -264,14 +245,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <p className="text-[10px] text-slate-500">Flyers & posters</p>
           </button>
 
-          <button
-            onClick={() => onNavigate('ai-video')}
-            className="p-3.5 rounded-2xl bg-slate-50 hover:bg-pink-50 border border-slate-200 hover:border-pink-300 text-left space-y-1 transition-all group cursor-pointer"
-          >
-            <Video className="w-5 h-5 text-pink-600 group-hover:scale-110 transition-transform" />
-            <p className="font-bold text-slate-900">AI Video Studio</p>
-            <p className="text-[10px] text-slate-500">9:16 Reels & TikTok</p>
-          </button>
+          
 
           <button
             onClick={() => onNavigate('reviews')}

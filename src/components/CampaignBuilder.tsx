@@ -23,8 +23,8 @@ export const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
   campaigns,
   onCreateCampaign,
 }) => {
-  const [campaignName, setCampaignName] = useState('Summer Waterfront Sunset Series 2026');
-  const [objective, setObjective] = useState('Drive Friday sunset cocktail reservations & boost waterfront dinner foot traffic by 35%');
+  const [campaignName, setCampaignName] = useState('');
+  const [objective, setObjective] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
 
   const [activeCampaign, setActiveCampaign] = useState<Campaign>(campaigns[0]);
@@ -90,7 +90,7 @@ export const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
           </div>
           <h1 className="text-2xl font-bold text-white tracking-tight">Campaign Manager</h1>
           <p className="text-xs text-slate-400 mt-1">
-            Generate 30-day structured multi-channel campaign roadmaps with Gemini AI
+            Generate a structured multi-channel campaign roadmap with V79 AI
           </p>
         </div>
       </div>
@@ -110,7 +110,7 @@ export const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
                 type="text"
                 value={campaignName}
                 onChange={(e) => setCampaignName(e.target.value)}
-                placeholder="e.g. Waterfront Sunset Showcase, Seasonal Launch"
+                placeholder="e.g. September Customer Growth Campaign"
                 className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 focus:bg-white"
               />
             </div>
@@ -121,7 +121,7 @@ export const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
                 type="text"
                 value={objective}
                 onChange={(e) => setObjective(e.target.value)}
-                placeholder="e.g. Increase weekend reservations by 30% and boost cocktail sales"
+                placeholder="e.g. Generate qualified enquiries and increase repeat business"
                 className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 focus:bg-white"
               />
             </div>

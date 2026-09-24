@@ -160,7 +160,6 @@ export const Navbar: React.FC<NavbarProps> = ({
         { id: 'one-idea-campaign', label: 'One Idea → Campaign', icon: Layers, badge: 'Popular', desc: 'Single prompt to full campaign' },
         { id: 'ai-assistant', label: 'Zero-Prompt Creator', icon: Sparkles, desc: 'Guided post & promo captions' },
         { id: 'ai-image', label: 'Graphic Studio', icon: ImageIcon, desc: 'Social posters & banners' },
-        { id: 'ai-video', label: 'Short Video Reels', icon: Video, desc: 'Vertical 9:16 TikTok & IG Reels' },
       ],
     },
     {

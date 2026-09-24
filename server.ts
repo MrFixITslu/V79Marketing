@@ -19,45 +19,68 @@ import {
 } from "./src/lib/auth.js";
 import { getCreditBalance, deductCredits, addCredits, CREDIT_COSTS } from "./src/lib/creditService.js";
 import { startPublisherWorker, processScheduledPosts } from "./src/lib/publisher.ts";
+import { consumeHubLaunchTicket, verifyHubSummaryRequest } from "./src/lib/platform.js";
+import { queueMarketingEvent, startPlatformEventPump } from "./src/lib/platformEvents.js";
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 
-// Initialize Database & Seed
 initDb();
-
-// Start Background Publisher Queue Worker
 startPublisherWorker(15000);
+startPlatformEventPump(30000);
 
-// Security Middleware Setup - Configured for AI Studio iframe embedding
+app.disable("x-powered-by");
+if (process.env.TRUST_PROXY === "1") app.set("trust proxy", 1);
 app.use(
   helmet({
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+        scriptSrc: ["'self'"],
         styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
         fontSrc: ["'self'", "https://fonts.gstatic.com"],
-        imgSrc: ["'self'", "data:", "https://images.unsplash.com", "https://*.googleusercontent.com"],
+        imgSrc: ["'self'", "data:", "blob:", "https:"],
         connectSrc: ["'self'", "https://generativelanguage.googleapis.com"],
-        frameAncestors: ["'self'", "https://ai.studio", "https://*.google.com", "https://*.run.app"],
+        frameAncestors: ["'none'"],
+        objectSrc: ["'none'"],
+        baseUri: ["'self'"],
+        formAction: ["'self'"],
       },
     },
-    frameguard: false,
+    frameguard: { action: "deny" },
     crossOriginEmbedderPolicy: false,
-    crossOriginResourcePolicy: { policy: "cross-origin" },
+    crossOriginResourcePolicy: { policy: "same-origin" },
+    referrerPolicy: { policy: "strict-origin-when-cross-origin" },
   })
 );
 
-app.use(
-  cors({
-    origin: process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(",") : true,
-    credentials: true,
-  })
-);
+const allowedOrigins = String(process.env.ALLOWED_ORIGINS || "").split(",").map(v => v.trim()).filter(Boolean);
+if (allowedOrigins.length) {
+  app.use(cors({ origin: allowedOrigins, credentials: true }));
+}
 
-app.use(express.json({ limit: "10mb" }));
+app.use(express.json({ limit: "2mb" }));
 app.use(cookieParser());
+
+function canonicalOrigin(req: express.Request) {
+  const configured = String(process.env.APP_URL || "").trim();
+  if (configured) {
+    try { return new URL(configured).origin; } catch {}
+  }
+  return `${req.protocol}://${req.get("host")}`;
+}
+
+app.use((req, res, next) => {
+  if (["GET","HEAD","OPTIONS"].includes(req.method) || !req.path.startsWith("/api/")) return next();
+  const origin = req.headers.origin;
+  if (!origin) return res.status(403).json({ error: "Origin header required." });
+  try {
+    if (new URL(origin).origin !== canonicalOrigin(req)) return res.status(403).json({ error: "Cross-site request denied." });
+  } catch {
+    return res.status(403).json({ error: "Cross-site request denied." });
+  }
+  next();
+});
 
 // Rate Limiting Rules
 const globalApiLimiter = rateLimit({
@@ -96,15 +119,35 @@ function getGenAI() {
   });
 }
 
-// Zod Validation Schemas
-const registerSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(8),
-  name: z.string().min(2),
-  businessName: z.string().min(2),
-  industry: z.string().min(2),
-});
+async function tryOllamaJson(prompt: string) {
+  const baseUrl = String(process.env.OLLAMA_BASE_URL || "").trim();
+  const model = String(process.env.OLLAMA_MODEL || "qwen2.5:3b").trim();
+  if (!baseUrl || !model) return null;
+  try {
+    const response = await fetch(new URL("/api/generate", baseUrl), {
+      method:"POST",
+      headers:{"content-type":"application/json"},
+      body:JSON.stringify({
+        model,
+        prompt,
+        format:"json",
+        stream:false,
+        keep_alive:"10m",
+        options:{temperature:0.6},
+      }),
+      signal:AbortSignal.timeout(45_000),
+    });
+    if (!response.ok) throw new Error(`Ollama HTTP ${response.status}`);
+    const body:any = await response.json();
+    if (!body?.response) return null;
+    return JSON.parse(body.response);
+  } catch (error:any) {
+    console.warn("[V79 Marketing] Ollama generation unavailable:", error?.message || error);
+    return null;
+  }
+}
 
+// Zod Validation Schemas
 const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
@@ -119,52 +162,32 @@ const createPostSchema = z.object({
   campaignId: z.string().optional(),
 });
 
+const createCampaignSchema = z.object({
+  name: z.string().min(1).max(160),
+  objective: z.string().min(1).max(2000),
+  startDate: z.string().min(8).max(40),
+  endDate: z.string().min(8).max(40),
+  status: z.enum(["ACTIVE","PLANNED","COMPLETED"]).default("ACTIVE"),
+  steps: z.array(z.record(z.string(), z.any())).max(100).default([]),
+  aiPlanGenerated: z.boolean().default(false),
+});
+
 // --- AUTHENTICATION ROUTES ---
 
-app.post("/api/auth/register", authLimiter, (req, res) => {
-  try {
-    const data = registerSchema.parse(req.body);
-    const existing = db.prepare("SELECT * FROM users WHERE email = ?").get(data.email);
-    if (existing) {
-      return res.status(400).json({ error: "An account with this email already exists." });
-    }
-
-    const businessId = `bus-${Date.now()}`;
-    const userId = `user-${Date.now()}`;
-    const slug = data.businessName.toLowerCase().replace(/[^a-z0-9]+/g, "-");
-    const passwordHash = bcrypt.hashSync(data.password, 10);
-    const now = new Date().toISOString();
-
-    db.prepare(`
-      INSERT INTO businesses (id, name, slug, industry, description, location, plan, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, 'FREE', ?)
-    `).run(businessId, data.businessName, slug, data.industry, `${data.businessName} marketing workspace`, "Caribbean", now);
-
-    db.prepare(`
-      INSERT INTO users (id, email, password_hash, name, role, email_verified, two_factor_enabled, business_id, created_at)
-      VALUES (?, ?, ?, ?, 'BUSINESS_OWNER', 1, 0, ?, ?)
-    `).run(userId, data.email, passwordHash, data.name, businessId, now);
-
-    db.prepare(`
-      INSERT INTO credit_balances (business_id, monthly_allowance, purchased_credits, bonus_credits, used_credits, reset_date)
-      VALUES (?, 10000, 5000, 0, 0, ?)
-    `).run(businessId, new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString());
-
-    const token = generateToken({ id: userId, email: data.email, name: data.name, role: "BUSINESS_OWNER", businessId });
-    res.cookie("v79_token", token, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax" });
-
-    res.json({
-      success: true,
-      token,
-      user: { id: userId, email: data.email, name: data.name, role: "BUSINESS_OWNER", businessId },
-      business: { id: businessId, name: data.businessName, slug, industry: data.industry },
-    });
-  } catch (err: any) {
-    res.status(400).json({ error: err.message || "Registration failed" });
-  }
+app.post("/api/auth/register", authLimiter, (_req, res) => {
+  const hubUrl = String(process.env.V79_HUB_PUBLIC_URL || "https://hub.v79sl.com").replace(/\/$/, "");
+  return res.status(410).json({
+    error: "V79 Marketing accounts are created and managed by V79 Hub.",
+    code: "HUB_SIGNUP_REQUIRED",
+    hubUrl,
+  });
 });
 
 app.post("/api/auth/login", authLimiter, (req, res) => {
+  if (process.env.V79_ALLOW_LEGACY_LOGIN !== "1") {
+    const hubUrl = String(process.env.V79_HUB_PUBLIC_URL || "https://hub.v79sl.com").replace(/\/$/, "");
+    return res.status(410).json({ error: "Sign in through V79 Hub.", code: "HUB_AUTH_REQUIRED", hubUrl });
+  }
   try {
     const data = loginSchema.parse(req.body);
     const user = db.prepare("SELECT * FROM users WHERE email = ?").get(data.email) as any;
@@ -181,7 +204,7 @@ app.post("/api/auth/login", authLimiter, (req, res) => {
       businessId: user.business_id,
     });
 
-    res.cookie("v79_token", token, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax" });
+    res.cookie("v79_marketing_session", token, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", maxAge: 12 * 60 * 60 * 1000, path: "/" });
 
     res.json({
       success: true,
@@ -226,29 +249,190 @@ app.get("/api/auth/me", authenticate, (req: AuthenticatedRequest, res) => {
           id: business.id,
           name: business.name,
           slug: business.slug,
+          logoUrl: business.logo_url || "",
+          coverImageUrl: business.cover_image_url || "",
           industry: business.industry,
+          description: business.description || "",
+          location: business.location || "",
+          phone: business.phone || "",
+          email: business.email || "",
+          website: business.website || "",
+          whatsapp: business.whatsapp || "",
+          openingHours: JSON.parse(business.opening_hours_json || "[]"),
+          products: JSON.parse(business.products_json || "[]"),
+          services: JSON.parse(business.services_json || "[]"),
+          brandProfile: JSON.parse(business.brand_profile_json || "{}"),
           plan: business.plan,
+          createdAt: business.created_at,
         }
       : null,
   });
 });
 
 app.post("/api/auth/logout", (req, res) => {
-  res.clearCookie("v79_token");
+  res.clearCookie("v79_marketing_session", { path: "/" });
   res.json({ success: true, message: "Logged out successfully" });
+});
+
+
+// --- V79 HUB ACCESS & PLATFORM CONTRACTS ---
+
+function cleanValue(value: unknown) {
+  return typeof value === "string" ? value.trim().replace(/^['"]|['"]$/g, "") : "";
+}
+
+function uniqueSlug(base: string, organizationId: string) {
+  const seed = (base || "business").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 48) || "business";
+  const existing = db.prepare("SELECT id FROM businesses WHERE slug=? AND id<>?").get(seed, organizationId);
+  if (!existing) return seed;
+  return `${seed}-${organizationId.replace(/[^a-z0-9]/gi, "").slice(-8).toLowerCase()}`;
+}
+
+function provisionHubIdentity(session: Awaited<ReturnType<typeof consumeHubLaunchTicket>>) {
+  const businessId = session.organization.id;
+  const userId = `hub:${session.user.id}`;
+  const now = new Date().toISOString();
+  const role = session.role === "member" ? "MARKETING_STAFF" : "BUSINESS_OWNER";
+  const plan = String(session.plan || "HUB").toUpperCase();
+  const slug = uniqueSlug(session.organization.slug, businessId);
+
+  const tx = db.transaction(() => {
+    const business = db.prepare("SELECT id FROM businesses WHERE hub_organization_id=? OR id=?").get(session.organization.id, businessId) as any;
+    if (!business) {
+      db.prepare(`
+        INSERT INTO businesses
+          (id,name,slug,industry,description,location,plan,hub_organization_id,created_at)
+        VALUES (?,?,?,?,?,?,?,?,?)
+      `).run(businessId, session.organization.name, slug, "General", `${session.organization.name} marketing workspace`, "Caribbean", plan, session.organization.id, now);
+    } else {
+      db.prepare("UPDATE businesses SET name=?,slug=?,plan=?,hub_organization_id=? WHERE id=?")
+        .run(session.organization.name, slug, plan, session.organization.id, business.id);
+    }
+
+    const existingUser = db.prepare("SELECT id FROM users WHERE hub_user_id=? OR email=?").get(session.user.id, session.user.email.toLowerCase()) as any;
+    if (!existingUser) {
+      db.prepare(`
+        INSERT INTO users
+          (id,email,password_hash,name,role,email_verified,two_factor_enabled,business_id,hub_user_id,created_at)
+        VALUES (?,?,?,?,?,1,0,?,?,?)
+      `).run(userId, session.user.email.toLowerCase(), "hub-managed", session.user.name, role, businessId, session.user.id, now);
+    } else {
+      db.prepare("UPDATE users SET email=?,name=?,role=?,business_id=?,hub_user_id=? WHERE id=?")
+        .run(session.user.email.toLowerCase(), session.user.name, role, businessId, session.user.id, existingUser.id);
+    }
+
+    db.prepare(`
+      INSERT INTO credit_balances
+        (business_id,monthly_allowance,purchased_credits,bonus_credits,used_credits,reset_date)
+      VALUES (?,10000,0,0,0,?)
+      ON CONFLICT(business_id) DO NOTHING
+    `).run(businessId, new Date(Date.now() + 30*24*60*60*1000).toISOString());
+  });
+  tx();
+
+  const localUser = db.prepare("SELECT * FROM users WHERE hub_user_id=?").get(session.user.id) as any;
+  return { businessId, userId: localUser.id, role: localUser.role };
+}
+
+app.get("/api/platform/start", (_req, res) => {
+  const hubUrl = String(process.env.V79_HUB_PUBLIC_URL || "https://hub.v79sl.com").replace(/\/$/, "");
+  res.redirect(302, `${hubUrl}/?return=marketing`);
+});
+
+app.get("/api/platform/hub", (_req, res) => {
+  const hubUrl = String(process.env.V79_HUB_PUBLIC_URL || "https://hub.v79sl.com").replace(/\/$/, "");
+  res.redirect(302, hubUrl);
+});
+
+app.get("/api/platform/launch", authLimiter, async (req, res) => {
+  const ticket = cleanValue(req.query.ticket);
+  if (!ticket || !/^[A-Za-z0-9_-]{32,180}$/.test(ticket)) {
+    return res.status(400).send("Invalid V79 Hub launch ticket.");
+  }
+  try {
+    const hubSession = await consumeHubLaunchTicket(ticket);
+    const local = provisionHubIdentity(hubSession);
+    const token = generateToken({
+      id: local.userId,
+      email: hubSession.user.email,
+      name: hubSession.user.name,
+      role: local.role,
+      businessId: local.businessId,
+    });
+    res.cookie("v79_marketing_session", token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: 12 * 60 * 60 * 1000,
+      path: "/",
+    });
+    return res.redirect(302, "/");
+  } catch (error:any) {
+    console.warn("[V79 Marketing] Hub launch denied:", error?.message || error);
+    const hubUrl = String(process.env.V79_HUB_PUBLIC_URL || "https://hub.v79sl.com").replace(/\/$/, "");
+    return res.status(403).send(`V79 Marketing access was not granted. Return to <a href="${hubUrl}">V79 Hub</a>.`);
+  }
+});
+
+app.get("/api/platform/summary/:subject", (req, res) => {
+  const timestamp = cleanValue(req.get("x-v79-timestamp"));
+  const signature = cleanValue(req.get("x-v79-signature"));
+  const serviceId = cleanValue(req.get("x-v79-service-id"));
+  if (!verifyHubSummaryRequest({
+    method: req.method,
+    pathname: req.path,
+    timestamp,
+    signature,
+    serviceId,
+  })) return res.status(401).json({ error: "Invalid V79 Hub signature." });
+
+  const subject = cleanValue(req.params.subject);
+  const business = db.prepare("SELECT id,name,plan,created_at FROM businesses WHERE hub_organization_id=? OR id=? LIMIT 1").get(subject, subject) as any;
+  if (!business) return res.status(404).json({ error: "Marketing workspace not found." });
+
+  const scalar = (sql: string, ...params: any[]) => Number((db.prepare(sql).get(...params) as any)?.count || 0);
+  const statusRows = db.prepare("SELECT status,COUNT(*) AS count FROM posts WHERE business_id=? GROUP BY status").all(business.id) as any[];
+  const customerRows = db.prepare("SELECT status,COUNT(*) AS count FROM customers WHERE business_id=? GROUP BY status").all(business.id) as any[];
+  const postsByStatus = Object.fromEntries(statusRows.map(row => [row.status, Number(row.count)]));
+  const customersByStatus = Object.fromEntries(customerRows.map(row => [row.status, Number(row.count)]));
+  const credit = db.prepare("SELECT monthly_allowance,purchased_credits,bonus_credits,used_credits FROM credit_balances WHERE business_id=?").get(business.id) as any;
+
+  res.json({
+    product: "marketing",
+    subjectId: business.id,
+    generatedAt: new Date().toISOString(),
+    workspace: { name: business.name, plan: business.plan, createdAt: business.created_at },
+    metrics: {
+      posts: scalar("SELECT COUNT(*) AS count FROM posts WHERE business_id=?", business.id),
+      scheduledPosts: postsByStatus.SCHEDULED || 0,
+      publishedPosts: postsByStatus.PUBLISHED || 0,
+      campaigns: scalar("SELECT COUNT(*) AS count FROM campaigns WHERE business_id=?", business.id),
+      activeCampaigns: scalar("SELECT COUNT(*) AS count FROM campaigns WHERE business_id=? AND status='ACTIVE'", business.id),
+      customers: scalar("SELECT COUNT(*) AS count FROM customers WHERE business_id=?", business.id),
+      repeatCustomers: customersByStatus.REPEAT_CUSTOMER || 0,
+      connectedSocialAccounts: scalar("SELECT COUNT(*) AS count FROM social_accounts WHERE business_id=? AND connected=1", business.id),
+      aiCreditsRemaining: credit ? Math.max(0, Number(credit.monthly_allowance)+Number(credit.purchased_credits)+Number(credit.bonus_credits)-Number(credit.used_credits)) : 0,
+    },
+  });
 });
 
 // --- PUBLIC & HEALTH ROUTES ---
 
-app.get("/api/health", (req, res) => {
-  res.json({
-    status: "ok",
-    app: "V79 Marketing Hub",
-    owner: "V79 Digital",
-    version: "2.5.0",
-    database: "SQLite Connected",
-    timestamp: new Date().toISOString(),
-  });
+app.get("/api/health", (_req, res) => {
+  try {
+    db.prepare("SELECT 1").get();
+    res.json({
+      status: "ok",
+      app: "V79 Marketing",
+      owner: "V79 Digital",
+      version: "3.0.0",
+      authentication: "V79 Hub managed",
+      database: "SQLite",
+      timestamp: new Date().toISOString(),
+    });
+  } catch {
+    res.status(503).json({ status: "storage_unavailable", app: "V79 Marketing" });
+  }
 });
 
 app.get("/api/businesses/public/:slug", (req, res) => {
@@ -311,7 +495,7 @@ app.put("/api/businesses/:id", authenticate, requireTenantAccess, (req: Authenti
     updates.products ? JSON.stringify(updates.products) : existing.products_json,
     updates.services ? JSON.stringify(updates.services) : existing.services_json,
     updates.brandProfile ? JSON.stringify(updates.brandProfile) : existing.brand_profile_json,
-    updates.plan || existing.plan,
+    existing.plan,
     id
   );
 
@@ -333,27 +517,11 @@ app.get("/api/credits/balance", authenticate, (req: AuthenticatedRequest, res) =
   res.json({ balance, costs: CREDIT_COSTS });
 });
 
-app.post("/api/credits/buy", authenticate, (req: AuthenticatedRequest, res) => {
-  const { amount } = req.body;
-  if (!amount || amount <= 0) return res.status(400).json({ error: "Invalid credit amount" });
-
-  const balance = addCredits(req.user!.businessId, amount);
-
-  // Log purchase audit
-  db.prepare(`
-    INSERT INTO audit_logs (id, business_id, user_id, user_name, action, details, ip_address, timestamp)
-    VALUES (?, ?, ?, ?, 'CREDITS_PURCHASED', ?, ?, ?)
-  `).run(
-    `al-credit-${Date.now()}`,
-    req.user!.businessId,
-    req.user!.id,
-    req.user!.name,
-    `Purchased ${amount} V79 AI Credits`,
-    req.ip || "127.0.0.1",
-    new Date().toISOString()
-  );
-
-  res.json({ success: true, balance });
+app.post("/api/credits/buy", authenticate, (_req, res) => {
+  return res.status(410).json({
+    error: "Marketing credits and subscription entitlements are managed through V79 Hub.",
+    code: "HUB_BILLING_MANAGED",
+  });
 });
 
 app.get("/api/posts", authenticate, (req: AuthenticatedRequest, res) => {
@@ -407,6 +575,16 @@ app.post("/api/posts", authenticate, (req: AuthenticatedRequest, res) => {
       data.campaignId || null,
       now
     );
+    queueMarketingEvent({
+      businessId: data.businessId,
+      type: "marketing.post_scheduled",
+      subjectId: postId,
+      payload: {
+        scheduledFor: data.scheduledFor,
+        platformCount: Object.keys(data.content || {}).length,
+        campaignLinked: Boolean(data.campaignId),
+      },
+    });
 
     res.json({
       success: true,
@@ -427,6 +605,72 @@ app.post("/api/posts", authenticate, (req: AuthenticatedRequest, res) => {
   } catch (err: any) {
     res.status(400).json({ error: err.message || "Invalid post data" });
   }
+});
+
+// --- CAMPAIGNS & CHANNELS ---
+
+app.get("/api/campaigns", authenticate, (req: AuthenticatedRequest, res) => {
+  const rows = db.prepare("SELECT * FROM campaigns WHERE business_id=? ORDER BY created_at DESC").all(req.user!.businessId) as any[];
+  res.json({
+    campaigns: rows.map(row => ({
+      id: row.id,
+      businessId: row.business_id,
+      name: row.name,
+      objective: row.objective,
+      startDate: row.start_date,
+      endDate: row.end_date,
+      status: row.status,
+      steps: JSON.parse(row.steps_json || "[]"),
+      aiPlanGenerated: Boolean(row.ai_plan_generated),
+      createdAt: row.created_at,
+    })),
+  });
+});
+
+app.post("/api/campaigns", authenticate, (req: AuthenticatedRequest, res) => {
+  try {
+    const data = createCampaignSchema.parse(req.body);
+    const businessId = req.user!.businessId;
+    const id = `campaign-${crypto.randomUUID()}`;
+    const now = new Date().toISOString();
+    db.prepare(`
+      INSERT INTO campaigns(id,business_id,name,objective,start_date,end_date,status,steps_json,ai_plan_generated,created_at)
+      VALUES(?,?,?,?,?,?,?,?,?,?)
+    `).run(id,businessId,data.name,data.objective,data.startDate,data.endDate,data.status,JSON.stringify(data.steps),data.aiPlanGenerated?1:0,now);
+    queueMarketingEvent({
+      businessId,
+      type:"marketing.campaign_created",
+      subjectId:id,
+      payload:{ status:data.status, stepCount:data.steps.length, aiPlanGenerated:data.aiPlanGenerated },
+    });
+    res.status(201).json({ campaign:{ id,businessId,...data,createdAt:now } });
+  } catch (error:any) {
+    res.status(400).json({ error:error?.message || "Invalid campaign." });
+  }
+});
+
+app.get("/api/social-accounts", authenticate, (req: AuthenticatedRequest, res) => {
+  const rows = db.prepare("SELECT id,business_id,platform,account_name,account_handle,connected,follower_count,last_synced_at FROM social_accounts WHERE business_id=? ORDER BY platform")
+    .all(req.user!.businessId) as any[];
+  res.json({
+    socialAccounts: rows.map(row => ({
+      id:row.id,
+      businessId:row.business_id,
+      platform:row.platform,
+      accountName:row.account_name,
+      accountHandle:row.account_handle,
+      connected:Boolean(row.connected),
+      followerCount:Number(row.follower_count || 0),
+      lastSyncedAt:row.last_synced_at,
+    })),
+  });
+});
+
+app.post("/api/social-accounts", authenticate, (_req, res) => {
+  res.status(501).json({
+    error:"Direct social account connection requires the official provider OAuth adapter. V79 will not simulate a connected account.",
+    code:"PROVIDER_OAUTH_REQUIRED",
+  });
 });
 
 // --- AI GENERATION ENDPOINTS WITH CREDIT DEDUCTION & MODEL ROUTING ---
@@ -450,28 +694,35 @@ app.post("/api/ai/generate-text", authenticate, aiGenerationLimiter, async (req:
       return res.status(402).json({ error: deduction.error });
     }
 
-    const ai = getGenAI();
-    if (ai) {
-      const response = await ai.models.generateContent({
-        model: "gemini-3.6-flash",
-        contents: `You are an expert Caribbean & global digital marketing strategist for "V79 Marketing Hub".
-Generate engaging, platform-customized social media marketing posts for the following prompt and business:
+    const generationPrompt = `You are an expert Caribbean and global digital marketing strategist for V79 Marketing.
+Create accurate, useful, platform-specific marketing copy. Do not invent discounts, product claims, addresses, awards or customer results that were not supplied.
 
 Business Name: ${businessName || "My Business"}
-Industry: ${industry || "Retail / Hospitality"}
-Brand Voice: ${brandVoice || "Warm, energetic, welcoming"}
-Location: ${location || "Caribbean / St. Lucia"}
-Target Audience: ${targetAudience || "Local & international clients"}
+Industry: ${industry || "General"}
+Brand Voice: ${brandVoice || "Professional and approachable"}
+Location: ${location || "Caribbean"}
+Target Audience: ${targetAudience || "Current and prospective customers"}
 User Goal/Prompt: "${prompt}"
 
-Return JSON matching this schema:
+Return only JSON with this exact shape:
 {
   "facebook": { "caption": "...", "hashtags": ["#tag1", "#tag2"] },
   "instagram": { "caption": "...", "hashtags": ["#tag1", "#tag2"] },
   "linkedin": { "caption": "...", "hashtags": ["#tag1", "#tag2"] },
   "tiktok": { "caption": "...", "hashtags": ["#tag1", "#tag2"] },
   "whatsapp": { "caption": "...", "hashtags": [] }
-}`,
+}`;
+
+    const ollamaData:any = await tryOllamaJson(generationPrompt);
+    if (ollamaData?.facebook && ollamaData?.instagram && ollamaData?.linkedin && ollamaData?.tiktok && ollamaData?.whatsapp) {
+      return res.json({ success:true, data:ollamaData, source:"ollama", remainingCredits:deduction.remainingCredits });
+    }
+
+    const ai = getGenAI();
+    if (ai) {
+      const response = await ai.models.generateContent({
+        model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
+        contents: generationPrompt,
         config: {
           responseMimeType: "application/json",
           responseSchema: {
@@ -495,27 +746,27 @@ Return JSON matching this schema:
     }
 
     // Fallback response
-    const bName = businessName || "Isle Spice Grill & Lounge";
-    const loc = location || "Rodney Bay, St. Lucia";
+    const bName = businessName || "Your Business";
+    const loc = location || "your market";
     const fallbackData = {
       facebook: {
-        caption: `✨ Special Highlight from ${bName}! ${prompt}. Visit us in ${loc} or contact us directly to learn more. Bring a friend and make memories today! 🌴🔥`,
-        hashtags: [`#${bName.replace(/\s+/g, "")}`, "#CaribbeanBusiness", `#${loc.split(",")[0].replace(/\s+/g, "")}`, "#V79MarketingHub", "#LocalBrand"],
+        caption: `${bName}: ${prompt}. Contact us to learn more about availability, pricing and next steps in ${loc}.`,
+        hashtags: [`#${bName.replace(/\s+/g, "")}`, "#CaribbeanBusiness", "#V79Marketing"],
       },
       instagram: {
-        caption: `Golden moments with ${bName} ✨ ${prompt}. Tap the link in our bio to explore or place your order now! 📍 ${loc} 🌴`,
-        hashtags: [`#${bName.replace(/\s+/g, "")}`, "#IslandLife", "#SupportLocal", "#CaribbeanVibes", "#V79Digital"],
+        caption: `${prompt} — from ${bName}. Learn more through our official profile or contact us directly.`,
+        hashtags: [`#${bName.replace(/\s+/g, "")}`, "#SupportLocal", "#CaribbeanBusiness"],
       },
       linkedin: {
-        caption: `${bName} is proud to introduce our latest initiative: "${prompt}". Serving our community and driving business growth in ${loc}. Join us in celebrating local excellence!`,
-        hashtags: ["#BusinessGrowth", "#CaribbeanEnterprise", "#SaaSImpact", "#Leadership"],
+        caption: `${bName} is sharing an update: "${prompt}". Contact us for the details relevant to your business or organisation.`,
+        hashtags: ["#BusinessGrowth", "#CaribbeanEnterprise", "#SmallBusiness"],
       },
       tiktok: {
-        caption: `POV: You just checked out the newest offer at ${bName} in ${loc}! 🔥👀 Don't miss out on this!`,
-        hashtags: ["#CaribbeanTikTok", "#IslandEats", "#ViralVibes", "#LocalTreasure"],
+        caption: `${bName}: ${prompt}. Check our official details to learn more.`,
+        hashtags: ["#CaribbeanBusiness", "#LocalBusiness"],
       },
       whatsapp: {
-        caption: `📢 EXCLUSIVE ANNOUNCEMENT from ${bName}: ${prompt}! Reply DIRECTLY to this message to lock in your offer or book today! 📲`,
+        caption: `Update from ${bName}: ${prompt}. Reply to this message if you would like more information.`,
         hashtags: [],
       },
     };
@@ -536,7 +787,7 @@ app.post("/api/ai/generate-image", authenticate, aiGenerationLimiter, async (req
       req.user!.id,
       req.user!.name,
       CREDIT_COSTS.aiImage,
-      `AI Image Generation: "${prompt}"`,
+      `Branded graphic generation: "${prompt}"`,
       req.ip || "127.0.0.1"
     );
 
@@ -551,7 +802,7 @@ app.post("/api/ai/generate-image", authenticate, aiGenerationLimiter, async (req
 
     const brandCol = primaryColor || "#EA580C";
     const titleText = prompt || "Special Promotional Visual";
-    const subText = businessName || "V79 Marketing Hub";
+    const subText = businessName || "V79 Marketing";
 
     const svgString = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
       <defs>
@@ -580,7 +831,7 @@ app.post("/api/ai/generate-image", authenticate, aiGenerationLimiter, async (req
     return res.json({
       success: true,
       imageUrl: `data:image/svg+xml;base64,${base64Svg}`,
-      source: "svg-canvas",
+      source: "brand-template",
       remainingCredits: deduction.remainingCredits,
     });
   } catch (error: any) {
@@ -611,25 +862,32 @@ app.post("/api/ai/generate-campaign-plan", authenticate, aiGenerationLimiter, as
       return res.status(402).json({ error: deduction.error });
     }
 
-    const ai = getGenAI();
-    if (ai) {
-      try {
-        const response = await ai.models.generateContent({
-          model: "gemini-3.6-flash",
-          contents: `You are a world-class marketing director for "${businessName || "V79 Partner"}" in the "${industry || "Retail & Hospitality"}" sector.
-Generate a structured 4-step multi-channel social campaign for:
+    const campaignPrompt = `You are a marketing strategist for "${businessName || "V79 Partner"}" in the "${industry || "General"}" sector.
+Build a practical four-step multi-channel campaign. Do not invent discounts, performance results, awards, stock levels or product claims that are not in the objective.
 Campaign Title: "${campaignName}"
 Objective: "${objective}"
 
-Return JSON matching this schema:
+Return only JSON:
 {
   "steps": [
     { "dayNumber": 1, "channel": "facebook", "postTitle": "...", "caption": "...", "suggestedTime": "10:00 AM" },
     { "dayNumber": 3, "channel": "instagram", "postTitle": "...", "caption": "...", "suggestedTime": "04:30 PM" },
-    { "dayNumber": 7, "channel": "tiktok", "postTitle": "...", "caption": "...", "suggestedTime": "06:00 PM" },
+    { "dayNumber": 7, "channel": "linkedin", "postTitle": "...", "caption": "...", "suggestedTime": "11:00 AM" },
     { "dayNumber": 14, "channel": "whatsapp", "postTitle": "...", "caption": "...", "suggestedTime": "09:30 AM" }
   ]
-}`,
+}`;
+
+    const ollamaPlan:any = await tryOllamaJson(campaignPrompt);
+    if (Array.isArray(ollamaPlan?.steps)) {
+      return res.json({ success:true, steps:ollamaPlan.steps, source:"ollama", remainingCredits:deduction.remainingCredits });
+    }
+
+    const ai = getGenAI();
+    if (ai) {
+      try {
+        const response = await ai.models.generateContent({
+          model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
+          contents: campaignPrompt,
           config: {
             responseMimeType: "application/json",
           },
@@ -658,28 +916,28 @@ Return JSON matching this schema:
         dayNumber: 1,
         channel: "facebook",
         postTitle: "Campaign Kickoff & Core Value Offer",
-        caption: `Announcement from ${bName}: ${objective}. We are proud to deliver exceptional service and premium experiences to our clients. Discover our latest offerings and message us directly to book or reserve today.`,
+        caption: `${bName}: ${objective}. Contact us for verified details, availability and next steps.`,
         suggestedTime: "10:00 AM",
       },
       {
         dayNumber: 3,
         channel: "instagram",
         postTitle: "Visual Spotlight & Engagement Reel",
-        caption: `Elevate your experience with ${bName}. Experience ${campaignName} with verified quality and authentic care. Link in bio to explore full details and secure your reservation.`,
+        caption: `${campaignName} from ${bName}. Explore the official details and contact us if you would like to know more.`,
         suggestedTime: "04:30 PM",
       },
       {
         dayNumber: 7,
-        channel: "tiktok",
-        postTitle: "Behind-the-Scenes Showcase Clip",
-        caption: `Exclusive behind-the-scenes look at how ${bName} delivers ${campaignName}. Verified local craftsmanship and premium standards.`,
+        channel: "linkedin",
+        postTitle: "Business Value Spotlight",
+        caption: `A closer look at ${campaignName} from ${bName}. Follow our official updates for more information.`,
         suggestedTime: "06:00 PM",
       },
       {
         dayNumber: 14,
         channel: "whatsapp",
         postTitle: "VIP Subscriber Priority Invitation",
-        caption: `Priority update from ${bName}: As a valued client, you receive early access to our ${campaignName}. Reply directly to this message to speak with our reservations desk.`,
+        caption: `Update from ${bName}: ${campaignName}. Reply if you would like the verified details or help choosing the right option.`,
         suggestedTime: "09:30 AM",
       },
     ];
@@ -749,6 +1007,12 @@ app.post("/api/customers", authenticate, (req: AuthenticatedRequest, res) => {
       notes ? notes.trim() : null,
       now
     );
+    queueMarketingEvent({
+      businessId,
+      type: "marketing.lead_created",
+      subjectId: customerId,
+      payload: { channel: channel || "whatsapp", hasEmail: Boolean(email) },
+    });
 
     res.json({
       success: true,
@@ -792,6 +1056,12 @@ app.patch("/api/customers/:id/status", authenticate, (req: AuthenticatedRequest,
       new Date().toISOString(),
       id
     );
+    queueMarketingEvent({
+      businessId: existing.business_id,
+      type: "marketing.customer_status_changed",
+      subjectId: id,
+      payload: { from: existing.status, to: status },
+    });
 
     res.json({ success: true, id, status });
   } catch (err: any) {
@@ -907,7 +1177,7 @@ app.get("/api/admin/metrics", authenticate, requireRole(["PLATFORM_ADMIN"]), (re
     activeSubscriptions: businesses.filter((b: any) => b.plan !== "FREE").length,
     revenueXCD: totalRevenueXCD,
     revenueUSD: totalRevenueUSD,
-    systemHealth: "99.98% Operational",
+    systemHealth: "Application responding",
     auditLogs,
     invoices,
   });
@@ -915,11 +1185,11 @@ app.get("/api/admin/metrics", authenticate, requireRole(["PLATFORM_ADMIN"]), (re
 
 app.get("/api/docs", (req, res) => {
   res.json({
-    title: "V79 Marketing Hub API Documentation",
-    version: "2.5.0",
-    description: "SaaS REST API for digital marketing automation, business profiles, social scheduling & Gemini AI",
+    title: "V79 Marketing API Documentation",
+    version: "3.0.0",
+    description: "V79 Marketing API for Hub-managed business marketing workflows",
     endpoints: [
-      { method: "POST", path: "/api/auth/register", description: "Register new business workspace & owner" },
+      { method: "GET", path: "/api/platform/start", description: "Start Hub-managed access to V79 Marketing" },
       { method: "POST", path: "/api/auth/login", description: "Authenticate user & issue HTTP-Only JWT token" },
       { method: "GET", path: "/api/auth/me", description: "Get currently authenticated user & business session" },
       { method: "GET", path: "/api/health", description: "System health check" },
@@ -951,7 +1221,7 @@ async function startServer() {
   }
 
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`V79 Marketing Hub server running at http://0.0.0.0:${PORT}`);
+    console.log(`V79 Marketing server running at http://0.0.0.0:${PORT}`);
   });
 }
 

@@ -8,85 +8,49 @@ export interface PublishResult {
   error?: string;
 }
 
-export function processScheduledPosts(): PublishResult[] {
-  const now = new Date().toISOString();
-  const duePosts = db.prepare(`
-    SELECT * FROM posts WHERE status = 'SCHEDULED' AND scheduled_for <= ?
-  `).all(now) as any[];
+function simulationEnabled() {
+  return process.env.NODE_ENV !== "production" && process.env.V79_ENABLE_SIMULATED_PUBLISHER === "1";
+}
 
+export function processScheduledPosts(): PublishResult[] {
+  // V79 never reports fake publishing or fake engagement in production.
+  // Real social-provider adapters will consume SCHEDULED rows when configured.
+  if (!simulationEnabled()) return [];
+
+  const now = new Date().toISOString();
+  const duePosts = db.prepare("SELECT * FROM posts WHERE status='SCHEDULED' AND scheduled_for <= ?").all(now) as any[];
   const results: PublishResult[] = [];
 
   for (const post of duePosts) {
     try {
-      const content = JSON.parse(post.content_json);
+      const content = JSON.parse(post.content_json || "{}");
       const platforms = Object.keys(content);
-
-      // Simulate external API publishing for each connected channel
-      const simulatedAnalytics = {
-        reach: Math.floor(Math.random() * 1500) + 500,
-        impressions: Math.floor(Math.random() * 2500) + 800,
-        engagement: Math.floor(Math.random() * 200) + 50,
-        clicks: Math.floor(Math.random() * 60) + 10,
-      };
-
-      db.prepare(`
-        UPDATE posts
-        SET status = 'PUBLISHED', analytics_json = ?
-        WHERE id = ?
-      `).run(JSON.stringify(simulatedAnalytics), post.id);
-
-      // Create audit log for publication
-      const auditId = `al-pub-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-      db.prepare(`
-        INSERT INTO audit_logs (id, business_id, user_id, user_name, action, details, ip_address, timestamp)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        auditId,
-        post.business_id,
-        post.author_id,
-        post.author_name,
-        "POST_PUBLISHED",
-        `Successfully published post "${post.title}" across ${platforms.length} platforms (${platforms.join(", ")})`,
-        "127.0.0.1",
-        now
-      );
-
-      results.push({
-        postId: post.id,
-        platform: platforms.join(", "),
-        status: "PUBLISHED",
-        publishedAt: now,
-      });
-    } catch (err: any) {
-      db.prepare("UPDATE posts SET status = 'FAILED' WHERE id = ?").run(post.id);
-      results.push({
-        postId: post.id,
-        platform: "all",
-        status: "FAILED",
-        error: err.message || "Failed publishing post",
-      });
+      db.prepare("UPDATE posts SET status='PUBLISHED', analytics_json=? WHERE id=?")
+        .run(JSON.stringify({ reach: 0, impressions: 0, engagement: 0, clicks: 0, simulated: true }), post.id);
+      results.push({ postId: post.id, platform: platforms.join(", "), status: "PUBLISHED", publishedAt: now });
+    } catch (error:any) {
+      db.prepare("UPDATE posts SET status='FAILED' WHERE id=?").run(post.id);
+      results.push({ postId: post.id, platform: "all", status: "FAILED", error: error?.message || "Simulation failed" });
     }
   }
-
   return results;
 }
 
 let workerInterval: NodeJS.Timeout | null = null;
 
-export function startPublisherWorker(intervalMs: number = 10000) {
-  if (workerInterval) return;
-  console.log(`[Publisher Queue] Background worker active (polling every ${intervalMs / 1000}s)`);
-  workerInterval = setInterval(() => {
-    const executed = processScheduledPosts();
-    if (executed.length > 0) {
-      console.log(`[Publisher Queue] Processed ${executed.length} scheduled posts.`);
+export function startPublisherWorker(intervalMs = 15000) {
+  if (workerInterval || !simulationEnabled()) {
+    if (process.env.NODE_ENV === "production") {
+      console.log("[Publisher Queue] No social-provider adapter configured; scheduled content will remain queued.");
     }
-  }, intervalMs);
+    return;
+  }
+  console.log(`[Publisher Queue] Development simulation enabled (polling every ${intervalMs / 1000}s)`);
+  workerInterval = setInterval(() => processScheduledPosts(), intervalMs);
+  workerInterval.unref?.();
 }
 
 export function stopPublisherWorker() {
-  if (workerInterval) {
-    clearInterval(workerInterval);
-    workerInterval = null;
-  }
+  if (workerInterval) clearInterval(workerInterval);
+  workerInterval = null;
 }
