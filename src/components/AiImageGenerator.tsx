@@ -22,11 +22,11 @@ export const AiImageGenerator: React.FC<AiImageGeneratorProps> = ({
   business,
   onSaveToLibrary,
 }) => {
-  const [prompt, setPrompt] = useState('Smoked wood-fired jerk ribs with plantain mash and tropical sunset vibes');
+  const [prompt, setPrompt] = useState('');
   const [dimension, setDimension] = useState<'1080x1080' | '1080x1920' | '1200x630' | '1200x627'>('1080x1080');
   const [stylePreset, setStylePreset] = useState('Social Graphic');
   const [isGenerating, setIsGenerating] = useState(false);
-  const [currentImage, setCurrentImage] = useState<string>('https://images.unsplash.com/photo-1544025162-d76694265947?w=800');
+  const [currentImage, setCurrentImage] = useState<string>('');
   const [savedSuccess, setSavedSuccess] = useState(false);
 
   const handleGenerateImage = async (e?: React.FormEvent) => {
@@ -79,17 +79,18 @@ export const AiImageGenerator: React.FC<AiImageGeneratorProps> = ({
         <div>
           <div className="flex items-center gap-2 text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">
             <ImageIcon className="w-4 h-4 text-slate-300" />
-            <span>AI Visual Asset Generator</span>
+            <span>Branded Visual Generator</span>
           </div>
-          <h1 className="text-2xl font-bold text-white tracking-tight">AI Graphic & Flyer Studio</h1>
+          <h1 className="text-2xl font-bold text-white tracking-tight">Graphic & Flyer Studio</h1>
           <p className="text-xs text-slate-400 mt-1">
-            Generate exact-dimension social media creative, story flyers, and banner assets tailored to brand guidelines.
+            Create exact-dimension branded graphics and promotional layouts using your saved business identity.
           </p>
         </div>
 
         <button
+          disabled={!currentImage}
           onClick={handleSaveImage}
-          className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-white font-medium rounded-lg text-xs border border-slate-700 flex items-center justify-center gap-2 cursor-pointer transition-colors whitespace-nowrap"
+          className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-white font-medium rounded-lg text-xs border border-slate-700 flex items-center justify-center gap-2 cursor-pointer transition-colors whitespace-nowrap"
         >
           {savedSuccess ? <Check className="w-4 h-4 text-emerald-400" /> : <Save className="w-4 h-4" />}
           <span>{savedSuccess ? 'Saved to Media Assets' : 'Save to Asset Library'}</span>
@@ -146,18 +147,17 @@ export const AiImageGenerator: React.FC<AiImageGeneratorProps> = ({
             >
               <option value="Social Graphic">Social Media Graphic</option>
               <option value="Promotional Flyer">Event / Promotional Flyer</option>
-              <option value="Product Showcase">Product Showcase Photo</option>
-              <option value="Minimalist Banner">Minimalist Brand Banner</option>
+                            <option value="Minimalist Banner">Minimalist Brand Banner</option>
             </select>
           </div>
 
           <button
             onClick={() => handleGenerateImage()}
-            disabled={isGenerating}
+            disabled={isGenerating || !prompt.trim()}
             className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs rounded-lg shadow-xs transition-colors flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
           >
             {isGenerating ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-            <span>{isGenerating ? 'Synthesizing Visual Asset...' : 'Generate AI Image'}</span>
+            <span>{isGenerating ? 'Creating Visual Asset...' : 'Generate Branded Graphic'}</span>
           </button>
         </div>
 
@@ -170,7 +170,7 @@ export const AiImageGenerator: React.FC<AiImageGeneratorProps> = ({
             </span>
             <a
               href={currentImage}
-              download="v79-marketing-asset.png"
+              download="v79-marketing-asset.svg"
               target="_blank"
               rel="noreferrer"
               className="flex items-center gap-1.5 text-slate-700 hover:text-slate-900 font-medium transition-colors"
@@ -181,12 +181,12 @@ export const AiImageGenerator: React.FC<AiImageGeneratorProps> = ({
           </div>
 
           {/* Rendered Asset Container */}
-          <div className="relative max-w-md w-full overflow-hidden rounded-xl border border-slate-200 shadow-xs bg-slate-50 flex items-center justify-center p-2">
-            <img
-              src={currentImage}
-              alt={prompt}
-              className="w-full h-auto max-h-[500px] object-contain rounded-lg"
-            />
+          <div className="relative max-w-md w-full overflow-hidden rounded-xl border border-slate-200 shadow-xs bg-slate-50 flex items-center justify-center p-2 min-h-80">
+            {currentImage ? (
+              <img src={currentImage} alt={prompt} className="w-full h-auto max-h-[500px] object-contain rounded-lg" />
+            ) : (
+              <div className="px-8 text-center text-sm leading-6 text-slate-400">Describe the message you want on the graphic. V79 will generate a branded layout from your business profile.</div>
+            )}
           </div>
         </div>
       </div>
