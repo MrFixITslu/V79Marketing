@@ -196,7 +196,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         { id: 'profile-builder', label: 'Business Profile', icon: Building2, desc: 'Public info, products & hours' },
         { id: 'ai_brain', label: 'Business Memory', icon: Brain, desc: 'Knowledge, FAQs & USPs' },
         { id: 'brand_kit', label: 'Brand Kit', icon: Palette, desc: 'Colors, logo & voice guidelines' },
-        { id: 'billing', label: 'Plans & Credits', icon: CreditCard, desc: 'AI credit balance & top-ups' },
+        { id: 'billing', label: 'Subscription', icon: CreditCard, desc: 'Managed in V79 Hub' },
       ],
     },
   ];

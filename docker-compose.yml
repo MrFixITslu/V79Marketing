@@ -1,10 +1,21 @@
 services:
+  marketing-data-init:
+    image: node:22-alpine
+    user: "0:0"
+    entrypoint: ["sh", "-ec", "mkdir -p /app/data && chown -R 1000:1000 /app/data"]
+    restart: "no"
+    volumes:
+      - v79_data:/app/data
+
   v79-marketing:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: v79marketing-app
     restart: unless-stopped
+    depends_on:
+      marketing-data-init:
+        condition: service_completed_successfully
     env_file: .env
     environment:
       NODE_ENV: production
@@ -30,7 +41,7 @@ services:
     expose:
       - "3070"
     volumes:
-      - ./data:/app/data
+      - v79_data:/app/data
     networks:
       - proxy_network
     healthcheck:
@@ -43,3 +54,7 @@ services:
 networks:
   proxy_network:
     external: true
+
+volumes:
+  v79_data:
+    name: v79marketing_v79_data
