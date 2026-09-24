@@ -27,8 +27,9 @@ export const SocialAccountsManager: React.FC<SocialAccountsManagerProps> = ({
 }) => {
   const [showConnectModal, setShowConnectModal] = useState(false);
   const [selectedPlatform, setSelectedPlatform] = useState<SocialPlatform>('facebook');
-  const [handleInput, setHandleInput] = useState('@mybusiness');
+  const [handleInput, setHandleInput] = useState('');
   const [isConnecting, setIsConnecting] = useState(false);
+  const [connectionError, setConnectionError] = useState('');
 
   const availablePlatforms: { id: SocialPlatform; name: string; icon: React.ReactNode; color: string }[] = [
     { id: 'facebook', name: 'Facebook Page', icon: <Facebook className="w-5 h-5" />, color: 'text-blue-400' },
@@ -38,14 +39,25 @@ export const SocialAccountsManager: React.FC<SocialAccountsManagerProps> = ({
     { id: 'google_business', name: 'Google Business Profile', icon: <Globe className="w-5 h-5" />, color: 'text-amber-400' },
   ];
 
-  const handleConnectSubmit = (e: React.FormEvent) => {
+  const handleConnectSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsConnecting(true);
-    setTimeout(() => {
+    setConnectionError('');
+    try {
+      const response = await fetch('/api/social-accounts', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({platform:selectedPlatform, accountHandle:handleInput}),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error || 'This provider cannot be connected yet.');
       onConnectChannel(selectedPlatform, handleInput);
-      setIsConnecting(false);
       setShowConnectModal(false);
-    }, 1200);
+    } catch (error:any) {
+      setConnectionError(error?.message || 'Connection failed.');
+    } finally {
+      setIsConnecting(false);
+    }
   };
 
   return (
@@ -59,7 +71,7 @@ export const SocialAccountsManager: React.FC<SocialAccountsManagerProps> = ({
           </div>
           <h1 className="text-2xl font-black text-white">Social Media Connections</h1>
           <p className="text-xs text-slate-400 mt-1">
-            Manage active tokens and API publishing credentials across all 6 social platforms
+            Only officially authenticated provider connections appear as connected.
           </p>
         </div>
 
@@ -121,7 +133,7 @@ export const SocialAccountsManager: React.FC<SocialAccountsManagerProps> = ({
               <span>OAuth 2.0 Account Connection</span>
             </h3>
             <p className="text-xs text-slate-400">
-              Select platform and grant publishing permissions to V79 Marketing Hub.
+              V79 will start the provider's official OAuth flow when that adapter is configured.
             </p>
 
             <form onSubmit={handleConnectSubmit} className="space-y-4">
@@ -149,6 +161,7 @@ export const SocialAccountsManager: React.FC<SocialAccountsManagerProps> = ({
                 />
               </div>
 
+              {connectionError && <p className="text-xs leading-5 text-amber-300">{connectionError}</p>}
               <div className="flex items-center justify-end gap-3 pt-2">
                 <button
                   type="button"
@@ -163,7 +176,7 @@ export const SocialAccountsManager: React.FC<SocialAccountsManagerProps> = ({
                   className="px-6 py-2 bg-gradient-to-r from-orange-500 to-amber-500 text-white font-bold text-xs rounded-xl shadow-md flex items-center gap-2 cursor-pointer"
                 >
                   {isConnecting && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
-                  <span>{isConnecting ? 'Authenticating OAuth...' : 'Authenticate & Connect'}</span>
+                  <span>{isConnecting ? 'Checking provider…' : 'Connect with provider'}</span>
                 </button>
               </div>
             </form>
