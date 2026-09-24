@@ -5,3 +5,11 @@ dist
 *.log
 .env
 .env.local
+.env.*
+!.env.example
+data
+uploads
+backups
+.incoming.*
+.deployed_sha
+*.tar.gz
