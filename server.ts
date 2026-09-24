@@ -204,7 +204,7 @@ app.post("/api/auth/login", authLimiter, (req, res) => {
       businessId: user.business_id,
     });
 
-    res.cookie("v79_marketing_session", token, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", maxAge: 12 * 60 * 60 * 1000, path: "/" });
+    res.cookie("v79_marketing_session", token, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", maxAge: 30 * 60 * 1000, path: "/" });
 
     res.json({
       success: true,
@@ -363,7 +363,7 @@ app.get("/api/platform/launch", authLimiter, async (req, res) => {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
-      maxAge: 12 * 60 * 60 * 1000,
+      maxAge: 30 * 60 * 1000,
       path: "/",
     });
     return res.redirect(302, "/");
