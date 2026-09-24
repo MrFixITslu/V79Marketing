@@ -89,42 +89,10 @@ export type ViewType =
   | 'admin-portal'
   | 'admin';
 
-const isAdminPath = () =>
-  typeof window !== 'undefined' &&
-  (window.location.pathname === '/admin' || window.location.pathname === '/admin/');
-
 export default function App() {
-  const [currentView, setCurrentView] = useState<ViewType>(() => {
-    if (isAdminPath()) return 'admin-portal';
-    return 'landing';
-  });
+  const [currentView, setCurrentView] = useState<ViewType>('dashboard');
   const [currency, setCurrency] = useState<'XCD' | 'USD'>('XCD');
-
-  // Sync URL history state with current view
-  useEffect(() => {
-    if (currentView === 'admin-portal' || currentView === 'admin') {
-      if (!isAdminPath()) {
-        window.history.pushState(null, '', '/admin');
-      }
-    } else {
-      if (isAdminPath()) {
-        window.history.pushState(null, '', '/');
-      }
-    }
-  }, [currentView]);
-
-  // Listen to browser navigation back/forward events
-  useEffect(() => {
-    const handlePopState = () => {
-      if (isAdminPath()) {
-        setCurrentView('admin-portal');
-      } else {
-        setCurrentView((prev) => (prev === 'admin-portal' || prev === 'admin' ? 'dashboard' : prev));
-      }
-    };
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, []);
+  const [sessionState, setSessionState] = useState<'loading' | 'authenticated' | 'unauthenticated'>('loading');
 
   // UTM Parameter Tracking State
   const [utmParams, setUtmParams] = useState<UtmTrackingParams | null>(() => {
@@ -168,14 +136,14 @@ export default function App() {
   };
 
   // Application Data States
-  const [businesses, setBusinesses] = useState<Business[]>(INITIAL_BUSINESSES);
-  const [users, setUsers] = useState<User[]>(INITIAL_USERS);
-  const [posts, setPosts] = useState<Post[]>(INITIAL_POSTS);
-  const [campaigns, setCampaigns] = useState<Campaign[]>(INITIAL_CAMPAIGNS);
-  const [socialAccounts, setSocialAccounts] = useState<SocialAccount[]>(INITIAL_SOCIAL_ACCOUNTS);
+  const [businesses, setBusinesses] = useState<Business[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [socialAccounts, setSocialAccounts] = useState<SocialAccount[]>([]);
   const [generatedImages, setGeneratedImages] = useState<GeneratedImage[]>([]);
-  const [auditLogs, setAuditLogs] = useState<AuditLog[]>(INITIAL_AUDIT_LOGS);
-  const [invoices, setInvoices] = useState<Invoice[]>(INITIAL_INVOICES);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
 
   // New V79 AI Platform States
   const [creditBalance, setCreditBalance] = useState<CreditBalance>(INITIAL_CREDIT_BALANCE);
@@ -188,52 +156,7 @@ export default function App() {
   const [caribbeanEvents, setCaribbeanEvents] = useState<CaribbeanEvent[]>(INITIAL_CARIBBEAN_EVENTS);
 
   // In-App Notification State
-  const [notifications, setNotifications] = useState<InAppNotification[]>([
-    {
-      id: 'notif-1',
-      businessId: 'biz-1',
-      category: 'CAMPAIGN_MILESTONE',
-      title: 'Campaign Milestone Reached!',
-      message: '"Summer Sunset Special" reached 10,000+ impressions with 18.4% engagement rate.',
-      timestamp: new Date(Date.now() - 1000 * 60 * 25).toISOString(),
-      read: false,
-      severity: 'success',
-      actionTab: 'campaigns',
-    },
-    {
-      id: 'notif-2',
-      businessId: 'biz-1',
-      category: 'LOW_CREDIT',
-      title: 'Low Credit Warning',
-      message: 'Your AI Credit balance is below 500 credits. Top up to ensure uninterrupted AI generation.',
-      timestamp: new Date(Date.now() - 1000 * 60 * 120).toISOString(),
-      read: false,
-      severity: 'warning',
-      actionTab: 'billing',
-    },
-    {
-      id: 'notif-3',
-      businessId: 'biz-1',
-      category: 'NEW_REVIEW',
-      title: 'New 5-Star Review Received',
-      message: 'Sarah Jenkins left a 5-star review on Google: "Best dining experience in Rodney Bay!" AI draft response ready.',
-      timestamp: new Date(Date.now() - 1000 * 60 * 360).toISOString(),
-      read: false,
-      severity: 'info',
-      actionTab: 'reviews',
-    },
-    {
-      id: 'notif-4',
-      businessId: 'biz-1',
-      category: 'SYSTEM',
-      title: 'Weekly Marketing Score Updated',
-      message: 'Your business score increased to 88/100 (+4 pts). Recommended action: Publish short-form video.',
-      timestamp: new Date(Date.now() - 1000 * 60 * 1440).toISOString(),
-      read: true,
-      severity: 'info',
-      actionTab: 'dashboard',
-    },
-  ]);
+  const [notifications, setNotifications] = useState<InAppNotification[]>([]);
 
   const handleMarkNotificationRead = (id: string) => {
     setNotifications((prev) =>
@@ -312,41 +235,53 @@ export default function App() {
   const [showCreditStoreModal, setShowCreditStoreModal] = useState(false);
   const [showFixModal, setShowFixModal] = useState(false);
 
+  useEffect(() => {
+    let cancelled = false;
+    async function loadSession() {
+      try {
+        const sessionResponse = await fetch('/api/auth/me', { credentials: 'same-origin' });
+        if (!sessionResponse.ok) {
+          if (!cancelled) setSessionState('unauthenticated');
+          return;
+        }
+        const session = await sessionResponse.json();
+        if (cancelled || !session?.user || !session?.business) {
+          if (!cancelled) setSessionState('unauthenticated');
+          return;
+        }
+        setCurrentUser(session.user);
+        setCurrentBusiness(session.business);
+        setUsers([session.user]);
+        setBusinesses([session.business]);
+        setSessionState('authenticated');
+
+        const [postResponse, customerResponse, creditResponse] = await Promise.all([
+          fetch('/api/posts', { credentials: 'same-origin' }),
+          fetch('/api/customers', { credentials: 'same-origin' }),
+          fetch('/api/credits/balance', { credentials: 'same-origin' }),
+        ]);
+        if (postResponse.ok) {
+          const body = await postResponse.json();
+          if (!cancelled) setPosts(body.posts || []);
+        }
+        if (customerResponse.ok) {
+          const body = await customerResponse.json();
+          if (!cancelled) setCustomers(body.customers || []);
+        }
+        if (creditResponse.ok) {
+          const body = await creditResponse.json();
+          if (!cancelled && body.balance) setCreditBalance(body.balance);
+        }
+      } catch {
+        if (!cancelled) setSessionState('unauthenticated');
+      }
+    }
+    void loadSession();
+    return () => { cancelled = true; };
+  }, []);
+
   // Growth Platform Customers CRM State
-  const [customers, setCustomers] = useState<CustomerInquiry[]>([
-    {
-      id: 'cust-1',
-      businessId: 'bus-1',
-      name: 'Julian Alexander',
-      phone: '+1 (758) 720-1492',
-      email: 'julian.a@gmail.com',
-      channel: 'whatsapp',
-      status: 'NEW_INQUIRY',
-      notes: 'Asked about Friday sunset dinner reservations & waterfront table availability',
-      createdAt: '2026-08-28T14:30:00Z',
-    },
-    {
-      id: 'cust-2',
-      businessId: 'bus-1',
-      name: 'Samantha Charles',
-      phone: '+1 (758) 518-9920',
-      email: 'samantha.c@hotmail.com',
-      channel: 'facebook',
-      status: 'INTERESTED',
-      notes: 'Inquired about hosting 15-person birthday brunch',
-      createdAt: '2026-08-27T10:15:00Z',
-    },
-    {
-      id: 'cust-3',
-      businessId: 'bus-1',
-      name: 'Devon St. Rose',
-      phone: '+1 (758) 484-3311',
-      channel: 'google_business',
-      status: 'FOLLOW_UP',
-      notes: 'Follow up needed regarding Jerk Pork Ribs catering quote',
-      createdAt: '2026-08-26T16:45:00Z',
-    },
-  ]);
+  const [customers, setCustomers] = useState<CustomerInquiry[]>([]);
 
   // Credit Deduction Engine
   const handleDeductCredits = (amount: number, reason: string): boolean => {
@@ -378,11 +313,8 @@ export default function App() {
     return true;
   };
 
-  const handleBuyCredits = (amount: number) => {
-    setCreditBalance((prev) => ({
-      ...prev,
-      purchasedCredits: prev.purchasedCredits + amount,
-    }));
+  const handleBuyCredits = (_amount: number) => {
+    window.location.assign('/api/platform/hub');
   };
 
   // Sync selected business when user changes
@@ -444,21 +376,37 @@ export default function App() {
     setSocialAccounts([...socialAccounts, newAccount]);
   };
 
-  const handleUpgradePlan = (plan: PlanTier) => {
-    const updatedBus = { ...currentBusiness, plan };
-    handleUpdateBusiness(updatedBus);
-    const newInvoice: Invoice = {
-      id: `inv-${Date.now()}`,
-      businessId: currentBusiness.id,
-      businessName: currentBusiness.name,
-      amountXCD: plan === 'STARTER' ? 49 : 149,
-      amountUSD: plan === 'STARTER' ? 18 : 55,
-      status: 'PAID',
-      date: new Date().toISOString().split('T')[0],
-      pdfUrl: '#',
-    };
-    setInvoices([newInvoice, ...invoices]);
+  const handleUpgradePlan = (_plan: PlanTier) => {
+    window.location.assign('/api/platform/hub');
   };
+
+  if (sessionState === 'loading') {
+    return (
+      <div className="grid min-h-screen place-items-center bg-slate-950 text-slate-300">
+        <div className="text-center">
+          <div className="text-lg font-semibold text-white">V79 Marketing</div>
+          <div className="mt-2 text-sm">Checking your V79 Hub access…</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (sessionState === 'unauthenticated') {
+    return (
+      <main className="grid min-h-screen place-items-center bg-slate-950 px-6 text-white">
+        <section className="max-w-lg rounded-3xl border border-white/10 bg-white/[0.05] p-8 text-center">
+          <div className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-cyan-300 font-black text-slate-950">V79</div>
+          <h1 className="mt-6 text-3xl font-semibold">V79 Marketing is part of V79 Hub</h1>
+          <p className="mt-4 text-sm leading-6 text-slate-300">
+            Business workspaces are created and authorised by V79 Hub. Sign in there to open the Marketing workspace included with your subscription.
+          </p>
+          <button onClick={() => window.location.assign('/api/platform/start')} className="mt-7 rounded-xl bg-cyan-300 px-5 py-3 font-semibold text-slate-950">
+            Continue with V79 Hub
+          </button>
+        </section>
+      </main>
+    );
+  }
 
   // Dedicated full screen render for Public Business Storefront
   if (currentView === 'public_storefront') {
@@ -483,9 +431,9 @@ export default function App() {
         setActiveTab={(tab) => setCurrentView(tab as ViewType)}
         currency={currency}
         setCurrency={setCurrency}
-        onOpenAuth={() => setShowAuthModal(true)}
+        onOpenAuth={() => window.location.assign('/api/platform/hub')}
         onViewPublicProfile={() => setCurrentView('public_storefront')}
-        onOpenCreditStore={() => setShowCreditStoreModal(true)}
+        onOpenCreditStore={() => window.location.assign('/api/platform/hub')}
         notifications={notifications}
         onMarkNotificationRead={handleMarkNotificationRead}
         onMarkAllNotificationsRead={handleMarkAllNotificationsRead}
@@ -648,26 +596,25 @@ export default function App() {
         )}
 
         {currentView === 'billing' && (
-          <PricingPage
-            currentBusiness={currentBusiness}
-            currency={currency}
-            onUpgradePlan={handleUpgradePlan}
-          />
+          <section className="rounded-3xl border border-slate-200 bg-white p-8">
+            <h2 className="text-2xl font-semibold">Subscription managed in V79 Hub</h2>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500">
+              Your V79 plan, product access and future AI usage add-ons are controlled centrally so you never pay separately inside each app.
+            </p>
+            <button onClick={() => window.location.assign('/api/platform/hub')} className="mt-6 rounded-xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white">
+              Open V79 Hub
+            </button>
+          </section>
         )}
 
-        {(currentView === 'admin-portal' || currentView === 'admin') && (
+        {(currentView === 'admin-portal' || currentView === 'admin') && currentUser.role === 'PLATFORM_ADMIN' && (
           <AdminPortal
             businesses={businesses}
             users={users}
             auditLogs={auditLogs}
             invoices={invoices}
             currency={currency}
-            onExitAdmin={() => {
-              setCurrentView('dashboard');
-              if (window.location.pathname === '/admin' || window.location.pathname === '/admin/') {
-                window.history.pushState(null, '', '/');
-              }
-            }}
+            onExitAdmin={() => setCurrentView('dashboard')}
           />
         )}
       </main>
@@ -696,31 +643,13 @@ export default function App() {
           <span className="text-slate-500">Credits Remaining: {Math.max(0, creditBalance.monthlyAllowance + creditBalance.purchasedCredits + creditBalance.bonusCredits - creditBalance.usedCredits).toLocaleString()}</span>
         </div>
         <div className="text-slate-400 flex items-center gap-2">
-          <span>V79 Marketing Hub v2.5.0</span>
+          <span>V79 Marketing v3.0</span>
           <span>•</span>
-          <button
-            onClick={() => {
-              setCurrentView('admin-portal');
-              if (window.location.pathname !== '/admin') {
-                window.history.pushState(null, '', '/admin');
-              }
-            }}
-            className="text-slate-500 hover:text-blue-600 underline font-bold transition-colors cursor-pointer"
-          >
-            Admin Portal (/admin)
+          <button onClick={() => window.location.assign('/api/platform/hub')} className="text-slate-500 hover:text-blue-600 underline font-bold transition-colors cursor-pointer">
+            V79 Hub
           </button>
         </div>
       </footer>
-
-      {/* Auth Modal */}
-      {showAuthModal && (
-        <AuthModal
-          users={users}
-          currentUser={currentUser}
-          onSelectUser={handleSelectUser}
-          onClose={() => setShowAuthModal(false)}
-        />
-      )}
 
       {/* Mobile Bottom Touch Navigation */}
       <MobileBottomNav
