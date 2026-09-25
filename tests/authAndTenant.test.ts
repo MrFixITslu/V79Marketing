@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { initDb, db } from "../src/lib/db.js";
 import { generateToken, verifyToken } from "../src/lib/auth.js";
-import { getCreditBalance, deductCredits, addCredits } from "../src/lib/creditService.js";
+import { getCreditBalance, deductCredits, addCredits, allowanceForPlan } from "../src/lib/creditService.js";
 import { processScheduledPosts } from "../src/lib/publisher.js";
 
 describe("V79 Marketing Hub — Production Security & Workflow Test Suite", () => {
@@ -37,6 +37,11 @@ describe("V79 Marketing Hub — Production Security & Workflow Test Suite", () =
 
     const updated = getCreditBalance("bus-1");
     expect(updated.usedCredits).toBe(initial.usedCredits + 50);
+  });
+
+  it("Beta Hub accounts receive a bounded AI allowance for testing", () => {
+    expect(allowanceForPlan("BETA")).toBe(10000);
+    expect(allowanceForPlan("UNKNOWN")).toBe(0);
   });
 
   it("3. Credit Engine: Should block AI operations when credits are insufficient", () => {
