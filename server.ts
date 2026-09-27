@@ -373,8 +373,10 @@ app.get("/api/platform/launch", authLimiter, async (req, res) => {
     return res.redirect(302, "/");
   } catch (error:any) {
     console.warn("[V79 Marketing] Hub launch denied:", error?.message || error);
-    const hubUrl = String(process.env.V79_HUB_PUBLIC_URL || "https://hub.v79sl.com").replace(/\/$/, "");
-    return res.status(403).send(`V79 Marketing access was not granted. Return to <a href="${hubUrl}">V79 Hub</a>.`);
+    const target = new URL(String(process.env.V79_HUB_PUBLIC_URL || "https://hub.v79sl.com").replace(/\/$/, ""));
+    target.searchParams.set("return", "marketing");
+    target.searchParams.set("error", "launch_denied");
+    return res.redirect(302, target.toString());
   }
 });
 
