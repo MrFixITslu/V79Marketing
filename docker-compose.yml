@@ -6,6 +6,8 @@ services:
     restart: "no"
     volumes:
       - v79_data:/app/data
+    networks:
+      - proxy_network
 
   v79-marketing:
     build:
