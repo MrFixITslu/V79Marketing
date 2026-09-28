@@ -422,6 +422,88 @@ app.get("/api/platform/summary/:subject", (req, res) => {
   });
 });
 
+
+function verifyHubPlatformAdmin(req: express.Request) {
+  const timestamp = cleanValue(req.get("x-v79-timestamp"));
+  const signature = cleanValue(req.get("x-v79-signature"));
+  const serviceId = cleanValue(req.get("x-v79-service-id"));
+  return verifyHubSummaryRequest({
+    method: req.method,
+    pathname: req.path,
+    timestamp,
+    signature,
+    serviceId,
+  });
+}
+
+app.get("/api/platform/admin/stats", (req, res) => {
+  if (!verifyHubPlatformAdmin(req)) return res.status(401).json({ error: "Invalid V79 Hub signature." });
+  try {
+    const scalar = (sql: string, ...params: any[]) => Number((db.prepare(sql).get(...params) as any)?.count || 0);
+    const revenue = db.prepare("SELECT COALESCE(SUM(amount_xcd),0) AS xcd, COALESCE(SUM(amount_usd),0) AS usd FROM invoices WHERE status='PAID'").get() as any;
+    const credit = db.prepare("SELECT COALESCE(SUM(monthly_allowance+purchased_credits+bonus_credits),0) AS available, COALESCE(SUM(used_credits),0) AS used FROM credit_balances").get() as any;
+
+    res.json({
+      totalBusinesses: scalar("SELECT COUNT(*) AS count FROM businesses"),
+      totalUsers: scalar("SELECT COUNT(*) AS count FROM users"),
+      totalPosts: scalar("SELECT COUNT(*) AS count FROM posts"),
+      scheduledPosts: scalar("SELECT COUNT(*) AS count FROM posts WHERE status='SCHEDULED'"),
+      publishedPosts: scalar("SELECT COUNT(*) AS count FROM posts WHERE status='PUBLISHED'"),
+      totalCampaigns: scalar("SELECT COUNT(*) AS count FROM campaigns"),
+      activeCampaigns: scalar("SELECT COUNT(*) AS count FROM campaigns WHERE status='ACTIVE'"),
+      activeSubscriptions: scalar("SELECT COUNT(*) AS count FROM businesses WHERE UPPER(plan) <> 'FREE'"),
+      connectedSocialAccounts: scalar("SELECT COUNT(*) AS count FROM social_accounts WHERE connected=1"),
+      platformRevenueXcd: Number(revenue?.xcd || 0),
+      platformRevenueUsd: Number(revenue?.usd || 0),
+      aiCreditsAllocated: Number(credit?.available || 0),
+      aiCreditsUsed: Number(credit?.used || 0),
+      generatedAt: new Date().toISOString(),
+    });
+  } catch (error:any) {
+    console.error("[platform-admin] Marketing stats failed:", error?.message || error);
+    res.status(500).json({ error: "Unable to build Marketing platform statistics." });
+  }
+});
+
+app.get("/api/platform/admin/businesses", (req, res) => {
+  if (!verifyHubPlatformAdmin(req)) return res.status(401).json({ error: "Invalid V79 Hub signature." });
+  try {
+    const businesses = db.prepare(
+      "SELECT id,name,industry,location,plan,hub_organization_id,created_at FROM businesses ORDER BY created_at DESC"
+    ).all() as any[];
+
+    const rows = businesses.map((business:any) => {
+      const userCount = Number((db.prepare("SELECT COUNT(*) AS count FROM users WHERE business_id=?").get(business.id) as any)?.count || 0);
+      const postCount = Number((db.prepare("SELECT COUNT(*) AS count FROM posts WHERE business_id=?").get(business.id) as any)?.count || 0);
+      const campaignCount = Number((db.prepare("SELECT COUNT(*) AS count FROM campaigns WHERE business_id=?").get(business.id) as any)?.count || 0);
+      const socialCount = Number((db.prepare("SELECT COUNT(*) AS count FROM social_accounts WHERE business_id=? AND connected=1").get(business.id) as any)?.count || 0);
+      const credit = db.prepare("SELECT monthly_allowance,purchased_credits,bonus_credits,used_credits FROM credit_balances WHERE business_id=?").get(business.id) as any;
+      const allocated = credit ? Number(credit.monthly_allowance)+Number(credit.purchased_credits)+Number(credit.bonus_credits) : 0;
+      const used = credit ? Number(credit.used_credits) : 0;
+      return {
+        id: business.id,
+        name: business.name,
+        industry: business.industry || "",
+        location: business.location || "",
+        plan: business.plan || "HUB",
+        hubOrganizationId: business.hub_organization_id || null,
+        createdAt: business.created_at,
+        userCount,
+        postCount,
+        campaignCount,
+        connectedSocialAccounts: socialCount,
+        aiCreditsUsed: used,
+        aiCreditsRemaining: Math.max(0, allocated-used),
+      };
+    });
+
+    res.json(rows);
+  } catch (error:any) {
+    console.error("[platform-admin] Marketing businesses failed:", error?.message || error);
+    res.status(500).json({ error: "Unable to list Marketing workspaces." });
+  }
+});
+
 // --- PUBLIC & HEALTH ROUTES ---
 
 app.get("/api/health", (_req, res) => {
