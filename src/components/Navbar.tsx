@@ -217,6 +217,13 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
         <div className="flex items-center gap-4">
           <button
+            onClick={() => window.location.assign('/api/platform/hub')}
+            className="hover:text-white flex items-center gap-1 text-slate-300 text-xs font-medium cursor-pointer transition-colors"
+          >
+            <ExternalLink className="w-3.5 h-3.5" />
+            <span>V79 Hub</span>
+          </button>
+          <button
             onClick={() => setCurrency(currency === 'XCD' ? 'USD' : 'XCD')}
             className="hover:text-white flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700/60 px-2.5 py-0.5 rounded text-xs transition-colors cursor-pointer"
           >
