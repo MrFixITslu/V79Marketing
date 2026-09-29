@@ -96,6 +96,12 @@ jobs:
     needs: [validate, deliver-container]
     if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     environment: production
+    # These are deployment coordinates, not credentials.
+    env:
+      DEPLOY_HOST: 100.73.248.30
+      DEPLOY_USER: firelion
+      DEPLOY_ROOT: /home/firelion/V79Marketing
+      DEPLOY_PROJECT: v79marketing
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
@@ -109,12 +115,11 @@ jobs:
         uses: tailscale/github-action@v4
         with:
           authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
-          ping: ${{ secrets.DEPLOY_HOST }}
+          ping: ${{ env.DEPLOY_HOST }}
       - name: Configure pinned SSH host
         shell: bash
         env:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_SSH_PORT: ${{ vars.DEPLOY_SSH_PORT }}
         run: |
           set -euo pipefail
@@ -135,11 +140,7 @@ jobs:
         shell: bash
         env:
           RELEASE_SHA: ${{ github.sha }}
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_SSH_PORT: ${{ vars.DEPLOY_SSH_PORT }}
-          DEPLOY_ROOT: ${{ vars.DEPLOY_ROOT }}
-          DEPLOY_PROJECT: ${{ vars.DEPLOY_PROJECT }}
         run: |
           set -euo pipefail
           for name in RELEASE_SHA DEPLOY_HOST DEPLOY_USER DEPLOY_ROOT DEPLOY_PROJECT; do
