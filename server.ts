@@ -20,6 +20,7 @@ import {
 import { getCreditBalance, deductCredits, addCredits, CREDIT_COSTS } from "./src/lib/creditService.js";
 import { startPublisherWorker, processScheduledPosts } from "./src/lib/publisher.ts";
 import { consumeHubLaunchTicket, verifyHubSummaryRequest } from "./src/lib/platform.js";
+import { assertHubBusinessLink, selectHubUserForBusiness } from "./src/lib/hubIdentityBoundary.js";
 import { queueMarketingEvent, startPlatformEventPump } from "./src/lib/platformEvents.js";
 
 const app = express();
@@ -294,6 +295,7 @@ function uniqueSlug(base: string, organizationId: string) {
 
 function provisionHubIdentity(session: Awaited<ReturnType<typeof consumeHubLaunchTicket>>) {
   const businessId = session.organization.id;
+  let localBusinessId = businessId;
   const userId = `hub:${session.user.id}`;
   const now = new Date().toISOString();
   const role = session.role === "member" ? "MARKETING_STAFF" : "BUSINESS_OWNER";
@@ -301,7 +303,9 @@ function provisionHubIdentity(session: Awaited<ReturnType<typeof consumeHubLaunc
   const slug = uniqueSlug(session.organization.slug, businessId);
 
   const tx = db.transaction(() => {
-    const business = db.prepare("SELECT id FROM businesses WHERE hub_organization_id=? OR id=?").get(session.organization.id, businessId) as any;
+    const business = db.prepare("SELECT id,hub_organization_id FROM businesses WHERE hub_organization_id=? OR id=?").get(session.organization.id, businessId) as any;
+    assertHubBusinessLink(business, businessId);
+    localBusinessId = business?.id || businessId;
     if (!business) {
       db.prepare(`
         INSERT INTO businesses
@@ -313,16 +317,18 @@ function provisionHubIdentity(session: Awaited<ReturnType<typeof consumeHubLaunc
         .run(session.organization.name, slug, plan, session.organization.id, business.id);
     }
 
-    const existingUser = db.prepare("SELECT id FROM users WHERE hub_user_id=? OR email=?").get(session.user.id, session.user.email.toLowerCase()) as any;
+    const candidates = db.prepare("SELECT id,hub_user_id,business_id FROM users WHERE hub_user_id=? OR LOWER(email)=LOWER(?) LIMIT 2")
+      .all(session.user.id, session.user.email.toLowerCase()) as any[];
+    const existingUser = selectHubUserForBusiness(candidates, session.user.id, localBusinessId);
     if (!existingUser) {
       db.prepare(`
         INSERT INTO users
           (id,email,password_hash,name,role,email_verified,two_factor_enabled,business_id,hub_user_id,created_at)
         VALUES (?,?,?,?,?,1,0,?,?,?)
-      `).run(userId, session.user.email.toLowerCase(), "hub-managed", session.user.name, role, businessId, session.user.id, now);
+      `).run(userId, session.user.email.toLowerCase(), "hub-managed", session.user.name, role, localBusinessId, session.user.id, now);
     } else {
       db.prepare("UPDATE users SET email=?,name=?,role=?,business_id=?,hub_user_id=? WHERE id=?")
-        .run(session.user.email.toLowerCase(), session.user.name, role, businessId, session.user.id, existingUser.id);
+        .run(session.user.email.toLowerCase(), session.user.name, role, localBusinessId, session.user.id, existingUser.id);
     }
 
     db.prepare(`
@@ -330,12 +336,12 @@ function provisionHubIdentity(session: Awaited<ReturnType<typeof consumeHubLaunc
         (business_id,monthly_allowance,purchased_credits,bonus_credits,used_credits,reset_date)
       VALUES (?,10000,0,0,0,?)
       ON CONFLICT(business_id) DO NOTHING
-    `).run(businessId, new Date(Date.now() + 30*24*60*60*1000).toISOString());
+    `).run(localBusinessId, new Date(Date.now() + 30*24*60*60*1000).toISOString());
   });
   tx();
 
   const localUser = db.prepare("SELECT * FROM users WHERE hub_user_id=?").get(session.user.id) as any;
-  return { businessId, userId: localUser.id, role: localUser.role };
+  return { businessId: localBusinessId, userId: localUser.id, role: localUser.role };
 }
 
 app.get("/api/platform/start", (_req, res) => {
