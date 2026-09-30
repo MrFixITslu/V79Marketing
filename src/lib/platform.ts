@@ -45,7 +45,7 @@ export function verifyHubSummaryRequest(args: { method: string; pathname: string
 export type HubLaunchSession = {
   user: { id: string; email: string; name: string };
   organization: { id: string; name: string; slug: string };
-  role: "owner" | "admin" | "member";
+  role: "owner" | "manager" | "staff" | "viewer";
   plan?: string;
   entitlement: { product: "marketing"; enabled: boolean };
 };

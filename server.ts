@@ -15,6 +15,7 @@ import {
   authenticate,
   requireTenantAccess,
   requireRole,
+  requireMarketingPermission,
   AuthenticatedRequest,
 } from "./src/lib/auth.js";
 import { getCreditBalance, deductCredits, addCredits, CREDIT_COSTS } from "./src/lib/creditService.js";
@@ -334,6 +335,61 @@ app.post("/api/platform/provision", (req:any, res) => {
   }
 });
 
+app.post("/api/platform/members/provision", (req:any, res) => {
+  const body = req.body && typeof req.body === "object" && !Array.isArray(req.body) ? req.body : {};
+  const organization = body.organization && typeof body.organization === "object" && !Array.isArray(body.organization) ? body.organization : {};
+  const user = body.user && typeof body.user === "object" && !Array.isArray(body.user) ? body.user : {};
+  const organizationId = cleanValue(organization.id);
+  const organizationName = cleanValue(organization.name);
+  const organizationSlug = cleanValue(organization.slug).toLowerCase();
+  const hubUserId = cleanValue(user.id);
+  const email = cleanValue(user.email).toLowerCase();
+  const name = cleanValue(user.name) || email.split("@")[0] || "";
+  const role = cleanValue(body.role) as "manager" | "staff" | "viewer";
+
+  const rawBody = req.rawBody?.toString("utf8") || JSON.stringify(body);
+  if (!verifyHubPlatformRequest({
+    method: req.method,
+    pathname: req.path,
+    timestamp: cleanValue(req.get("x-v79-timestamp")),
+    signature: cleanValue(req.get("x-v79-signature")),
+    serviceId: cleanValue(req.get("x-v79-service-id")),
+    body: rawBody,
+  })) return res.status(401).json({ error: "Invalid V79 Hub signature." });
+
+  if (
+    !["manager", "staff", "viewer"].includes(role) ||
+    !/^[A-Za-z0-9._:@-]{8,180}$/.test(organizationId) ||
+    organizationName.length < 1 || organizationName.length > 180 ||
+    !/^[a-z0-9][a-z0-9-]{0,99}$/.test(organizationSlug) ||
+    !/^[A-Za-z0-9._:@-]{8,180}$/.test(hubUserId) ||
+    !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) ||
+    name.length < 1 || name.length > 180
+  ) return res.status(400).json({ error: "Invalid Marketing team provisioning request." });
+
+  try {
+    const local = provisionHubIdentity({
+      user: { id: hubUserId, email, name },
+      organization: { id: organizationId, name: organizationName, slug: organizationSlug },
+      role,
+      plan: body.plan || "hub",
+      entitlement: { product: "marketing", enabled: true },
+    });
+    res.setHeader("Cache-Control", "no-store");
+    return res.json({
+      provisioned: true,
+      organizationId,
+      hubUserId,
+      businessId: local.businessId,
+      userId: local.userId,
+      localRole: local.role,
+    });
+  } catch (error:any) {
+    console.warn("[V79 Marketing] team provisioning denied:", error?.message || error);
+    return res.status(409).json({ error: "Marketing team member provisioning could not be completed." });
+  }
+});
+
 app.get("/api/platform/start", (_req, res) => {
   const hubUrl = String(process.env.V79_HUB_PUBLIC_URL || "https://hub.v79sl.com").replace(/\/$/, "");
   res.redirect(302, `${hubUrl}/?return=marketing`);
@@ -536,7 +592,7 @@ app.get("/api/businesses/public/:slug", (req, res) => {
 
 // --- PROTECTED TENANT BUSINESS & DATA ENDPOINTS ---
 
-app.get("/api/businesses", authenticate, (req: AuthenticatedRequest, res) => {
+app.get("/api/businesses", authenticate, requireMarketingPermission("business.read"), (req: AuthenticatedRequest, res) => {
   let rows: any[];
   if (req.user!.role === "PLATFORM_ADMIN") {
     rows = db.prepare("SELECT * FROM businesses").all();
@@ -555,7 +611,7 @@ app.get("/api/businesses", authenticate, (req: AuthenticatedRequest, res) => {
   res.json({ businesses });
 });
 
-app.put("/api/businesses/:id", authenticate, requireTenantAccess, (req: AuthenticatedRequest, res) => {
+app.put("/api/businesses/:id", authenticate, requireMarketingPermission("business.write"), requireTenantAccess, (req: AuthenticatedRequest, res) => {
   const { id } = req.params;
   const updates = req.body;
 
@@ -596,7 +652,7 @@ app.put("/api/businesses/:id", authenticate, requireTenantAccess, (req: Authenti
   });
 });
 
-app.get("/api/credits/balance", authenticate, (req: AuthenticatedRequest, res) => {
+app.get("/api/credits/balance", authenticate, requireMarketingPermission("credits.read"), (req: AuthenticatedRequest, res) => {
   const balance = getCreditBalance(req.user!.businessId);
   res.json({ balance, costs: CREDIT_COSTS });
 });
@@ -608,7 +664,7 @@ app.post("/api/credits/buy", authenticate, (_req, res) => {
   });
 });
 
-app.get("/api/posts", authenticate, (req: AuthenticatedRequest, res) => {
+app.get("/api/posts", authenticate, requireMarketingPermission("content.read"), (req: AuthenticatedRequest, res) => {
   let rows: any[];
   if (req.user!.role === "PLATFORM_ADMIN") {
     rows = db.prepare("SELECT * FROM posts ORDER BY created_at DESC").all();
@@ -634,7 +690,7 @@ app.get("/api/posts", authenticate, (req: AuthenticatedRequest, res) => {
   res.json({ posts });
 });
 
-app.post("/api/posts", authenticate, (req: AuthenticatedRequest, res) => {
+app.post("/api/posts", authenticate, requireMarketingPermission("content.write"), (req: AuthenticatedRequest, res) => {
   try {
     const data = createPostSchema.parse(req.body);
     if (req.user!.role !== "PLATFORM_ADMIN" && data.businessId !== req.user!.businessId) {
@@ -693,7 +749,7 @@ app.post("/api/posts", authenticate, (req: AuthenticatedRequest, res) => {
 
 // --- CAMPAIGNS & CHANNELS ---
 
-app.get("/api/campaigns", authenticate, (req: AuthenticatedRequest, res) => {
+app.get("/api/campaigns", authenticate, requireMarketingPermission("content.read"), (req: AuthenticatedRequest, res) => {
   const rows = db.prepare("SELECT * FROM campaigns WHERE business_id=? ORDER BY created_at DESC").all(req.user!.businessId) as any[];
   res.json({
     campaigns: rows.map(row => ({
@@ -711,7 +767,7 @@ app.get("/api/campaigns", authenticate, (req: AuthenticatedRequest, res) => {
   });
 });
 
-app.post("/api/campaigns", authenticate, (req: AuthenticatedRequest, res) => {
+app.post("/api/campaigns", authenticate, requireMarketingPermission("content.write"), (req: AuthenticatedRequest, res) => {
   try {
     const data = createCampaignSchema.parse(req.body);
     const businessId = req.user!.businessId;
@@ -733,7 +789,7 @@ app.post("/api/campaigns", authenticate, (req: AuthenticatedRequest, res) => {
   }
 });
 
-app.get("/api/social-accounts", authenticate, (req: AuthenticatedRequest, res) => {
+app.get("/api/social-accounts", authenticate, requireMarketingPermission("social.read"), (req: AuthenticatedRequest, res) => {
   const rows = db.prepare("SELECT id,business_id,platform,account_name,account_handle,connected,follower_count,last_synced_at FROM social_accounts WHERE business_id=? ORDER BY platform")
     .all(req.user!.businessId) as any[];
   res.json({
@@ -750,7 +806,7 @@ app.get("/api/social-accounts", authenticate, (req: AuthenticatedRequest, res) =
   });
 });
 
-app.post("/api/social-accounts", authenticate, (_req, res) => {
+app.post("/api/social-accounts", authenticate, requireMarketingPermission("social.write"), (_req, res) => {
   res.status(501).json({
     error:"Direct social account connection requires the official provider OAuth adapter. V79 will not simulate a connected account.",
     code:"PROVIDER_OAUTH_REQUIRED",
@@ -759,7 +815,7 @@ app.post("/api/social-accounts", authenticate, (_req, res) => {
 
 // --- AI GENERATION ENDPOINTS WITH CREDIT DEDUCTION & MODEL ROUTING ---
 
-app.post("/api/ai/generate-text", authenticate, aiGenerationLimiter, async (req: AuthenticatedRequest, res) => {
+app.post("/api/ai/generate-text", authenticate, requireMarketingPermission("ai.use"), aiGenerationLimiter, async (req: AuthenticatedRequest, res) => {
   try {
     const { prompt, businessName, industry, brandVoice, location, targetAudience } = req.body;
     const businessId = req.user!.businessId;
@@ -861,7 +917,7 @@ Return only JSON with this exact shape:
   }
 });
 
-app.post("/api/ai/generate-image", authenticate, aiGenerationLimiter, async (req: AuthenticatedRequest, res) => {
+app.post("/api/ai/generate-image", authenticate, requireMarketingPermission("ai.use"), aiGenerationLimiter, async (req: AuthenticatedRequest, res) => {
   try {
     const { prompt, dimension, businessName, primaryColor } = req.body;
     const businessId = req.user!.businessId;
@@ -924,7 +980,7 @@ app.post("/api/ai/generate-image", authenticate, aiGenerationLimiter, async (req
 });
 
 // --- AI CAMPAIGN PLAN GENERATION ---
-app.post("/api/ai/generate-campaign-plan", authenticate, aiGenerationLimiter, async (req: AuthenticatedRequest, res) => {
+app.post("/api/ai/generate-campaign-plan", authenticate, requireMarketingPermission("ai.use"), aiGenerationLimiter, async (req: AuthenticatedRequest, res) => {
   try {
     const { campaignName, objective, businessName, industry } = req.body;
     const businessId = req.user!.businessId;
@@ -1038,7 +1094,7 @@ Return only JSON:
 });
 
 // --- CUSTOMER PIPELINE CRM ENDPOINTS ---
-app.get("/api/customers", authenticate, (req: AuthenticatedRequest, res) => {
+app.get("/api/customers", authenticate, requireMarketingPermission("customers.read"), (req: AuthenticatedRequest, res) => {
   try {
     let rows: any[];
     if (req.user!.role === "PLATFORM_ADMIN") {
@@ -1066,7 +1122,7 @@ app.get("/api/customers", authenticate, (req: AuthenticatedRequest, res) => {
   }
 });
 
-app.post("/api/customers", authenticate, (req: AuthenticatedRequest, res) => {
+app.post("/api/customers", authenticate, requireMarketingPermission("customers.write"), (req: AuthenticatedRequest, res) => {
   try {
     const { name, phone, email, channel, status, notes } = req.body;
     if (!name || !phone) {
@@ -1117,7 +1173,7 @@ app.post("/api/customers", authenticate, (req: AuthenticatedRequest, res) => {
   }
 });
 
-app.patch("/api/customers/:id/status", authenticate, (req: AuthenticatedRequest, res) => {
+app.patch("/api/customers/:id/status", authenticate, requireMarketingPermission("customers.write"), (req: AuthenticatedRequest, res) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
@@ -1154,7 +1210,7 @@ app.patch("/api/customers/:id/status", authenticate, (req: AuthenticatedRequest,
 });
 
 // --- BUSINESS MEMORY ENDPOINTS ---
-app.get("/api/memory", authenticate, (req: AuthenticatedRequest, res) => {
+app.get("/api/memory", authenticate, requireMarketingPermission("memory.read"), (req: AuthenticatedRequest, res) => {
   try {
     const memory = db.prepare("SELECT * FROM business_memories WHERE business_id = ?").get(req.user!.businessId) as any;
     if (!memory) {
@@ -1189,7 +1245,7 @@ app.get("/api/memory", authenticate, (req: AuthenticatedRequest, res) => {
   }
 });
 
-app.put("/api/memory", authenticate, (req: AuthenticatedRequest, res) => {
+app.put("/api/memory", authenticate, requireMarketingPermission("memory.write"), (req: AuthenticatedRequest, res) => {
   try {
     const { approvedClaims, usps, faqs, preferredCtas, brandVoice } = req.body;
     const businessId = req.user!.businessId;
