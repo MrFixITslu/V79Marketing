@@ -76,3 +76,77 @@ export function requireRole(allowedRoles: string[]) {
     next();
   };
 }
+
+export type MarketingPermission =
+  | "business.read"
+  | "business.write"
+  | "credits.read"
+  | "content.read"
+  | "content.write"
+  | "social.read"
+  | "social.write"
+  | "ai.use"
+  | "customers.read"
+  | "customers.write"
+  | "memory.read"
+  | "memory.write";
+
+const rolePermissions: Record<string, MarketingPermission[] | ["*"]> = {
+  PLATFORM_ADMIN: ["*"],
+  BUSINESS_OWNER: ["*"],
+  MARKETING_MANAGER: [
+    "business.read",
+    "credits.read",
+    "content.read",
+    "content.write",
+    "social.read",
+    "social.write",
+    "ai.use",
+    "customers.read",
+    "customers.write",
+    "memory.read",
+    "memory.write",
+  ],
+  MARKETING_STAFF: [
+    "business.read",
+    "credits.read",
+    "content.read",
+    "content.write",
+    "social.read",
+    "ai.use",
+    "customers.read",
+    "customers.write",
+    "memory.read",
+  ],
+  MARKETING_VIEWER: [
+    "business.read",
+    "credits.read",
+    "content.read",
+    "social.read",
+    "customers.read",
+    "memory.read",
+  ],
+  CONTENT_CREATOR: [
+    "business.read",
+    "credits.read",
+    "content.read",
+    "content.write",
+    "social.read",
+    "ai.use",
+    "memory.read",
+  ],
+};
+
+export function hasMarketingPermission(role: string, permission: MarketingPermission) {
+  const allowed = rolePermissions[role] || [];
+  return allowed.includes("*" as never) || allowed.includes(permission as never);
+}
+
+export function requireMarketingPermission(permission: MarketingPermission) {
+  return (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    if (!req.user || !hasMarketingPermission(req.user.role, permission)) {
+      return res.status(403).json({ error: "Insufficient privileges." });
+    }
+    next();
+  };
+}

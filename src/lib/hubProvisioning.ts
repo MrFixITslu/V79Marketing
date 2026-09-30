@@ -9,12 +9,23 @@ function uniqueSlug(base: string, organizationId: string) {
   return `${seed}-${organizationId.replace(/[^a-z0-9]/gi, "").slice(-8).toLowerCase()}`;
 }
 
+const hubRoleMap: Record<HubLaunchSession["role"], string> = {
+  owner: "BUSINESS_OWNER",
+  manager: "MARKETING_MANAGER",
+  staff: "MARKETING_STAFF",
+  viewer: "MARKETING_VIEWER",
+};
+
+export function marketingRoleForHubRole(role: HubLaunchSession["role"]) {
+  return hubRoleMap[role];
+}
+
 export function provisionHubIdentity(session: HubLaunchSession) {
   const businessId = session.organization.id;
   let localBusinessId = businessId;
   const userId = `hub:${session.user.id}`;
   const now = new Date().toISOString();
-  const role = session.role === "member" ? "MARKETING_STAFF" : "BUSINESS_OWNER";
+  const role = marketingRoleForHubRole(session.role);
   const plan = String(session.plan || "HUB").toUpperCase();
   const slug = uniqueSlug(session.organization.slug, businessId);
 
@@ -23,6 +34,10 @@ export function provisionHubIdentity(session: HubLaunchSession) {
       .get(session.organization.id, businessId) as any;
     assertHubBusinessLink(business, businessId);
     localBusinessId = business?.id || businessId;
+
+    if (!business && session.role !== "owner") {
+      throw new Error("Marketing workspace must be provisioned by the Hub owner first.");
+    }
 
     if (!business) {
       db.prepare(`
