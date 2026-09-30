@@ -17,15 +17,29 @@ export function signPlatformRequest(args: { method: string; pathname: string; ti
   return crypto.createHmac("sha256", args.secret).update(canonical).digest("hex");
 }
 
-export function verifyHubSummaryRequest(args: { method: string; pathname: string; timestamp: string; signature: string; serviceId: string }) {
+export function verifyHubPlatformRequest(args: { method: string; pathname: string; timestamp: string; signature: string; serviceId: string; body?: string }) {
   const secret = clean(process.env.V79_PLATFORM_SHARED_SECRET);
   if (secret.length < 32 || args.serviceId !== SUMMARY_SERVICE_ID) return false;
   const millis = Number(args.timestamp);
   if (!Number.isFinite(millis) || Math.abs(Date.now() - millis) > MAX_SKEW_MS) return false;
-  const expected = signPlatformRequest({ method: args.method, pathname: args.pathname, timestamp: args.timestamp, body: "", secret });
-  const a = Buffer.from(expected, "hex");
-  const b = Buffer.from(args.signature || "", "hex");
-  return a.length === b.length && crypto.timingSafeEqual(a, b);
+  const expected = signPlatformRequest({
+    method: args.method,
+    pathname: args.pathname,
+    timestamp: args.timestamp,
+    body: args.body || "",
+    secret,
+  });
+  try {
+    const a = Buffer.from(expected, "hex");
+    const b = Buffer.from(args.signature || "", "hex");
+    return a.length === b.length && crypto.timingSafeEqual(a, b);
+  } catch {
+    return false;
+  }
+}
+
+export function verifyHubSummaryRequest(args: { method: string; pathname: string; timestamp: string; signature: string; serviceId: string }) {
+  return verifyHubPlatformRequest({ ...args, body: "" });
 }
 
 export type HubLaunchSession = {

@@ -19,8 +19,8 @@ import {
 } from "./src/lib/auth.js";
 import { getCreditBalance, deductCredits, addCredits, CREDIT_COSTS } from "./src/lib/creditService.js";
 import { startPublisherWorker, processScheduledPosts } from "./src/lib/publisher.ts";
-import { consumeHubLaunchTicket, verifyHubSummaryRequest } from "./src/lib/platform.js";
-import { assertHubBusinessLink, selectHubUserForBusiness } from "./src/lib/hubIdentityBoundary.js";
+import { consumeHubLaunchTicket, verifyHubPlatformRequest, verifyHubSummaryRequest } from "./src/lib/platform.js";
+import { provisionHubIdentity } from "./src/lib/hubProvisioning.js";
 import { queueMarketingEvent, startPlatformEventPump } from "./src/lib/platformEvents.js";
 
 const app = express();
@@ -60,7 +60,7 @@ if (allowedOrigins.length) {
   app.use(cors({ origin: allowedOrigins, credentials: true }));
 }
 
-app.use(express.json({ limit: "2mb" }));
+app.use(express.json({ limit: "2mb", verify: (req:any, _res, body) => { req.rawBody = Buffer.from(body); } }));
 app.use(cookieParser());
 
 function canonicalOrigin(req: express.Request) {
@@ -72,7 +72,7 @@ function canonicalOrigin(req: express.Request) {
 }
 
 app.use((req, res, next) => {
-  if (["GET","HEAD","OPTIONS"].includes(req.method) || !req.path.startsWith("/api/")) return next();
+  if (["GET","HEAD","OPTIONS"].includes(req.method) || !req.path.startsWith("/api/") || req.path.startsWith("/api/platform/")) return next();
   const origin = req.headers.origin;
   if (!origin) return res.status(403).json({ error: "Origin header required." });
   try {
@@ -191,12 +191,7 @@ app.post("/api/auth/login", authLimiter, (req, res) => {
   }
   try {
     const data = loginSchema.parse(req.body);
-    const user = db.prepare("SELECT * FROM users WHERE email = ?").get(data.email) as any;
-
-    if (user?.hub_user_id) {
-      const hubUrl = String(process.env.V79_HUB_PUBLIC_URL || "https://hub.v79sl.com").replace(/\/$/, "");
-      return res.status(410).json({ error: "This V79 Marketing account is managed through V79 Hub.", code: "HUB_AUTH_REQUIRED", hubUrl });
-    }
+    const user = db.prepare("SELECT * FROM users WHERE email = ? AND hub_user_id IS NULL").get(data.email) as any;
     if (!user || !bcrypt.compareSync(data.password, user.password_hash)) {
       return res.status(401).json({ error: "Invalid email or password." });
     }
@@ -286,63 +281,58 @@ function cleanValue(value: unknown) {
   return typeof value === "string" ? value.trim().replace(/^['"]|['"]$/g, "") : "";
 }
 
-function uniqueSlug(base: string, organizationId: string) {
-  const seed = (base || "business").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 48) || "business";
-  const existing = db.prepare("SELECT id FROM businesses WHERE slug=? AND id<>?").get(seed, organizationId);
-  if (!existing) return seed;
-  return `${seed}-${organizationId.replace(/[^a-z0-9]/gi, "").slice(-8).toLowerCase()}`;
-}
+app.post("/api/platform/provision", (req:any, res) => {
+  const body = req.body && typeof req.body === "object" && !Array.isArray(req.body) ? req.body : {};
+  const organization = body.organization && typeof body.organization === "object" && !Array.isArray(body.organization) ? body.organization : {};
+  const user = body.user && typeof body.user === "object" && !Array.isArray(body.user) ? body.user : {};
+  const organizationId = cleanValue(organization.id);
+  const organizationName = cleanValue(organization.name);
+  const organizationSlug = cleanValue(organization.slug).toLowerCase();
+  const hubUserId = cleanValue(user.id);
+  const email = cleanValue(user.email).toLowerCase();
+  const name = cleanValue(user.name) || email.split("@")[0] || "";
 
-function provisionHubIdentity(session: Awaited<ReturnType<typeof consumeHubLaunchTicket>>) {
-  const businessId = session.organization.id;
-  let localBusinessId = businessId;
-  const userId = `hub:${session.user.id}`;
-  const now = new Date().toISOString();
-  const role = session.role === "member" ? "MARKETING_STAFF" : "BUSINESS_OWNER";
-  const plan = String(session.plan || "HUB").toUpperCase();
-  const slug = uniqueSlug(session.organization.slug, businessId);
+  const rawBody = req.rawBody?.toString("utf8") || JSON.stringify(body);
+  if (!verifyHubPlatformRequest({
+    method: req.method,
+    pathname: req.path,
+    timestamp: cleanValue(req.get("x-v79-timestamp")),
+    signature: cleanValue(req.get("x-v79-signature")),
+    serviceId: cleanValue(req.get("x-v79-service-id")),
+    body: rawBody,
+  })) return res.status(401).json({ error: "Invalid V79 Hub signature." });
 
-  const tx = db.transaction(() => {
-    const business = db.prepare("SELECT id,hub_organization_id FROM businesses WHERE hub_organization_id=? OR id=?").get(session.organization.id, businessId) as any;
-    assertHubBusinessLink(business, businessId);
-    localBusinessId = business?.id || businessId;
-    if (!business) {
-      db.prepare(`
-        INSERT INTO businesses
-          (id,name,slug,industry,description,location,plan,hub_organization_id,created_at)
-        VALUES (?,?,?,?,?,?,?,?,?)
-      `).run(businessId, session.organization.name, slug, "General", `${session.organization.name} marketing workspace`, "Caribbean", plan, session.organization.id, now);
-    } else {
-      db.prepare("UPDATE businesses SET name=?,slug=?,plan=?,hub_organization_id=? WHERE id=?")
-        .run(session.organization.name, slug, plan, session.organization.id, business.id);
-    }
+  if (
+    body.role !== "owner" ||
+    !/^[A-Za-z0-9._:@-]{8,180}$/.test(organizationId) ||
+    organizationName.length < 1 || organizationName.length > 180 ||
+    !/^[a-z0-9][a-z0-9-]{0,99}$/.test(organizationSlug) ||
+    !/^[A-Za-z0-9._:@-]{8,180}$/.test(hubUserId) ||
+    !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) ||
+    name.length < 1 || name.length > 180
+  ) return res.status(400).json({ error: "Invalid Marketing provisioning request." });
 
-    const candidates = db.prepare("SELECT id,hub_user_id,business_id FROM users WHERE hub_user_id=? OR LOWER(email)=LOWER(?) LIMIT 2")
-      .all(session.user.id, session.user.email.toLowerCase()) as any[];
-    const existingUser = selectHubUserForBusiness(candidates, session.user.id, localBusinessId);
-    if (!existingUser) {
-      db.prepare(`
-        INSERT INTO users
-          (id,email,password_hash,name,role,email_verified,two_factor_enabled,business_id,hub_user_id,created_at)
-        VALUES (?,?,?,?,?,1,0,?,?,?)
-      `).run(userId, session.user.email.toLowerCase(), "hub-managed", session.user.name, role, localBusinessId, session.user.id, now);
-    } else {
-      db.prepare("UPDATE users SET email=?,name=?,role=?,business_id=?,hub_user_id=? WHERE id=?")
-        .run(session.user.email.toLowerCase(), session.user.name, role, localBusinessId, session.user.id, existingUser.id);
-    }
-
-    db.prepare(`
-      INSERT INTO credit_balances
-        (business_id,monthly_allowance,purchased_credits,bonus_credits,used_credits,reset_date)
-      VALUES (?,10000,0,0,0,?)
-      ON CONFLICT(business_id) DO NOTHING
-    `).run(localBusinessId, new Date(Date.now() + 30*24*60*60*1000).toISOString());
-  });
-  tx();
-
-  const localUser = db.prepare("SELECT * FROM users WHERE hub_user_id=?").get(session.user.id) as any;
-  return { businessId: localBusinessId, userId: localUser.id, role: localUser.role };
-}
+  try {
+    const local = provisionHubIdentity({
+      user: { id: hubUserId, email, name },
+      organization: { id: organizationId, name: organizationName, slug: organizationSlug },
+      role: "owner",
+      plan: body.plan || "hub",
+      entitlement: { product: "marketing", enabled: true },
+    });
+    res.setHeader("Cache-Control", "no-store");
+    return res.json({
+      provisioned: true,
+      organizationId,
+      ownerHubUserId: hubUserId,
+      businessId: local.businessId,
+      userId: local.userId,
+    });
+  } catch (error:any) {
+    console.warn("[V79 Marketing] provisioning denied:", error?.message || error);
+    return res.status(409).json({ error: "Marketing workspace provisioning could not be completed." });
+  }
+});
 
 app.get("/api/platform/start", (_req, res) => {
   const hubUrl = String(process.env.V79_HUB_PUBLIC_URL || "https://hub.v79sl.com").replace(/\/$/, "");
@@ -1284,6 +1274,7 @@ app.get("/api/docs", (req, res) => {
     description: "V79 Marketing API for Hub-managed business marketing workflows",
     endpoints: [
       { method: "GET", path: "/api/platform/start", description: "Start Hub-managed access to V79 Marketing" },
+      { method: "POST", path: "/api/platform/provision", description: "Signed V79 Hub workspace provisioning" },
       { method: "POST", path: "/api/auth/login", description: "Authenticate user & issue HTTP-Only JWT token" },
       { method: "GET", path: "/api/auth/me", description: "Get currently authenticated user & business session" },
       { method: "GET", path: "/api/health", description: "System health check" },

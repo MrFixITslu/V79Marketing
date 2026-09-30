@@ -29,7 +29,7 @@ export function initDb() {
   db.exec(`
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
-      email TEXT UNIQUE NOT NULL,
+      email TEXT NOT NULL,
       password_hash TEXT NOT NULL,
       name TEXT NOT NULL,
       role TEXT NOT NULL,
@@ -38,7 +38,7 @@ export function initDb() {
       verification_token TEXT,
       two_factor_enabled INTEGER NOT NULL DEFAULT 0,
       business_id TEXT NOT NULL,
-      hub_user_id TEXT UNIQUE,
+      hub_user_id TEXT,
       created_at TEXT NOT NULL
     );
 
@@ -239,7 +239,9 @@ export function initDb() {
 
   ensureColumn("businesses", "hub_organization_id", "TEXT");
   ensureColumn("users", "hub_user_id", "TEXT");
+  migrateHubManagedUserEmailScope();
   db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_businesses_hub_org ON businesses(hub_organization_id) WHERE hub_organization_id IS NOT NULL;");
+  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_legacy_email ON users(email) WHERE hub_user_id IS NULL;");
   db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_hub_user ON users(hub_user_id) WHERE hub_user_id IS NOT NULL;");
 
   if (process.env.NODE_ENV !== "production" && process.env.V79_MARKETING_SEED_DEMO === "1") {
@@ -252,6 +254,44 @@ function ensureColumn(table: string, column: string, definition: string) {
   if (!columns.some(item => item.name === column)) {
     db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
   }
+}
+
+function migrateHubManagedUserEmailScope() {
+  const indexes = db.prepare("PRAGMA index_list(users)").all() as any[];
+  const hasGlobalEmailUnique = indexes.some(index => {
+    if (!index?.unique || !index?.name) return false;
+    const safeName = String(index.name).replace(/"/g, '""');
+    const columns = db.prepare(`PRAGMA index_info("${safeName}")`).all() as any[];
+    return columns.length === 1 && columns[0]?.name === "email";
+  });
+  if (!hasGlobalEmailUnique) return;
+
+  const migrate = db.transaction(() => {
+    db.exec(`
+      ALTER TABLE users RENAME TO users_global_email_legacy;
+      CREATE TABLE users (
+        id TEXT PRIMARY KEY,
+        email TEXT NOT NULL,
+        password_hash TEXT NOT NULL,
+        name TEXT NOT NULL,
+        role TEXT NOT NULL,
+        avatar_url TEXT,
+        email_verified INTEGER NOT NULL DEFAULT 1,
+        verification_token TEXT,
+        two_factor_enabled INTEGER NOT NULL DEFAULT 0,
+        business_id TEXT NOT NULL,
+        hub_user_id TEXT,
+        created_at TEXT NOT NULL
+      );
+      INSERT INTO users
+        (id,email,password_hash,name,role,avatar_url,email_verified,verification_token,two_factor_enabled,business_id,hub_user_id,created_at)
+      SELECT
+        id,email,password_hash,name,role,avatar_url,email_verified,verification_token,two_factor_enabled,business_id,hub_user_id,created_at
+      FROM users_global_email_legacy;
+      DROP TABLE users_global_email_legacy;
+    `);
+  });
+  migrate();
 }
 
 function seedInitialData() {
