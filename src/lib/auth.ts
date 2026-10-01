@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
+import { db } from "./db.js";
 
 const TOKEN_EXPIRY = "30m";
 const ISSUER = "v79-marketing";
@@ -54,7 +55,23 @@ export function authenticate(req: AuthenticatedRequest, res: Response, next: Nex
   const decoded = verifyToken(token);
   if (!decoded) return res.status(401).json({ error: "Your V79 Marketing session has expired.", code: "SESSION_EXPIRED" });
 
-  req.user = decoded;
+  try {
+    const liveUser = db.prepare(
+      "SELECT id,email,name,role,business_id FROM users WHERE id=? AND business_id=?"
+    ).get(decoded.id, decoded.businessId) as any;
+    if (!liveUser) {
+      return res.status(401).json({ error: "Your V79 Marketing access has been revoked.", code: "ACCESS_REVOKED" });
+    }
+    req.user = {
+      id: liveUser.id,
+      email: liveUser.email,
+      name: liveUser.name,
+      role: liveUser.role,
+      businessId: liveUser.business_id,
+    };
+  } catch {
+    return res.status(503).json({ error: "Marketing authentication service is unavailable." });
+  }
   next();
 }
 

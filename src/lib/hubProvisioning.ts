@@ -108,3 +108,28 @@ export function provisionHubIdentity(session: HubLaunchSession) {
   const localUser = db.prepare("SELECT * FROM users WHERE hub_user_id=?").get(session.user.id) as any;
   return { businessId: localBusinessId, userId: localUser.id, role: localUser.role };
 }
+
+
+export function deprovisionHubTeamIdentity(organizationId: string, hubUserId: string) {
+  const business = db.prepare(
+    "SELECT id FROM businesses WHERE hub_organization_id=? LIMIT 1"
+  ).get(organizationId) as any;
+  if (!business) throw new Error("Marketing workspace is not provisioned.");
+
+  const user = db.prepare(
+    "SELECT id,role,hub_user_id,business_id FROM users WHERE business_id=? AND hub_user_id=? LIMIT 1"
+  ).get(business.id, hubUserId) as any;
+
+  if (!user) {
+    return { businessId: business.id, hubUserId, alreadyAbsent: true };
+  }
+  if (["BUSINESS_OWNER", "PLATFORM_ADMIN"].includes(user.role)) {
+    throw new Error("Marketing owner/admin identity cannot be deprovisioned through the Hub team endpoint.");
+  }
+
+  db.prepare(
+    "DELETE FROM users WHERE id=? AND business_id=? AND hub_user_id=? AND role NOT IN ('BUSINESS_OWNER','PLATFORM_ADMIN')"
+  ).run(user.id, business.id, hubUserId);
+
+  return { businessId: business.id, hubUserId, userId: user.id, alreadyAbsent: false };
+}
