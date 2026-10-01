@@ -383,7 +383,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans flex flex-col">
+    <div className="v79-marketing-app min-h-screen bg-[#07111f] text-slate-100 font-sans flex flex-col">
       {/* Primary Top Navigation */}
       <Navbar
         currentUser={currentUser}
@@ -405,7 +405,7 @@ export default function App() {
       />
 
       {/* Main App Canvas Body */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-6">
+      <main className="flex-1 max-w-[1540px] w-full mx-auto px-4 sm:px-5 xl:px-7 pt-5">
         {currentView === 'landing' && (
           <LandingPage
             onStartDemo={handleGetStartedFromLanding}
@@ -568,12 +568,12 @@ export default function App() {
         )}
 
         {currentView === 'billing' && (
-          <section className="rounded-3xl border border-slate-200 bg-white p-8">
-            <h2 className="text-2xl font-semibold">Subscription managed in V79 Hub</h2>
+          <section className="rounded-[22px] border border-[#1a3854] bg-[#091728] p-8">
+            <h2 className="text-2xl font-semibold text-white">Subscription managed in V79 Hub</h2>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500">
               Your V79 plan, product access and future AI usage add-ons are controlled centrally so you never pay separately inside each app.
             </p>
-            <button onClick={() => window.location.assign('/api/platform/hub')} className="mt-6 rounded-xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white">
+            <button onClick={() => window.location.assign('/api/platform/hub')} className="mt-6 rounded-xl border border-[#0A86FF]/30 bg-[#0A86FF]/10 px-5 py-3 text-sm font-semibold text-[#74d0ff] hover:bg-[#0A86FF]/18">
               Open V79 Hub
             </button>
           </section>
@@ -592,9 +592,9 @@ export default function App() {
       </main>
 
       {/* Status Bar / Footer */}
-      <footer className="mt-auto border-t border-slate-200 bg-white px-8 py-3 text-[11px] font-bold text-slate-400 flex items-center justify-between">
+      <footer className="mt-auto border-t border-[#17324d] bg-[#06101d] px-5 sm:px-8 py-3 text-[10px] font-bold text-slate-600 flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <span className="flex items-center gap-1.5 text-slate-600">
+          <span className="flex items-center gap-1.5 text-slate-500">
             <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
             V79 AI Engine Online
           </span>
@@ -602,10 +602,10 @@ export default function App() {
           <span className="text-slate-500">Credits Remaining: {Math.max(0, creditBalance.monthlyAllowance + creditBalance.purchasedCredits + creditBalance.bonusCredits - creditBalance.usedCredits).toLocaleString()}</span>
         </div>
         <div className="text-slate-400 flex items-center gap-2">
-          <span>V79 Marketing v3.0</span>
+          <span>V79 Digital Marketing v3.0</span>
           <span>•</span>
           <button onClick={() => window.location.assign('/api/platform/hub')} className="text-slate-500 hover:text-blue-600 underline font-bold transition-colors cursor-pointer">
-            V79 Hub
+            Back to Hub
           </button>
         </div>
       </footer>
