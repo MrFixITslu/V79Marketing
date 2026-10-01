@@ -21,7 +21,7 @@ import {
 import { getCreditBalance, deductCredits, addCredits, CREDIT_COSTS } from "./src/lib/creditService.js";
 import { startPublisherWorker, processScheduledPosts } from "./src/lib/publisher.ts";
 import { consumeHubLaunchTicket, verifyHubPlatformRequest, verifyHubSummaryRequest } from "./src/lib/platform.js";
-import { provisionHubIdentity } from "./src/lib/hubProvisioning.js";
+import { deprovisionHubTeamIdentity, provisionHubIdentity } from "./src/lib/hubProvisioning.js";
 import { queueMarketingEvent, startPlatformEventPump } from "./src/lib/platformEvents.js";
 
 const app = express();
@@ -387,6 +387,44 @@ app.post("/api/platform/members/provision", (req:any, res) => {
   } catch (error:any) {
     console.warn("[V79 Marketing] team provisioning denied:", error?.message || error);
     return res.status(409).json({ error: "Marketing team member provisioning could not be completed." });
+  }
+});
+
+app.post("/api/platform/members/deprovision", (req:any, res) => {
+  const body = req.body && typeof req.body === "object" && !Array.isArray(req.body) ? req.body : {};
+  const organizationId = cleanValue(body.organizationId);
+  const user = body.user && typeof body.user === "object" && !Array.isArray(body.user) ? body.user : {};
+  const hubUserId = cleanValue(user.id);
+  const rawBody = req.rawBody?.toString("utf8") || JSON.stringify(body);
+
+  if (!verifyHubPlatformRequest({
+    method: req.method,
+    pathname: req.path,
+    timestamp: cleanValue(req.get("x-v79-timestamp")),
+    signature: cleanValue(req.get("x-v79-signature")),
+    serviceId: cleanValue(req.get("x-v79-service-id")),
+    body: rawBody,
+  })) return res.status(401).json({ error: "Invalid V79 Hub signature." });
+
+  if (
+    !/^[A-Za-z0-9._:@-]{8,180}$/.test(organizationId) ||
+    !/^[A-Za-z0-9._:@-]{8,180}$/.test(hubUserId)
+  ) return res.status(400).json({ error: "Invalid Marketing team deprovisioning request." });
+
+  try {
+    const removed = deprovisionHubTeamIdentity(organizationId, hubUserId);
+    res.setHeader("Cache-Control", "no-store");
+    return res.json({
+      deprovisioned: true,
+      organizationId,
+      hubUserId,
+      businessId: removed.businessId,
+      userId: removed.userId || null,
+      alreadyAbsent: removed.alreadyAbsent,
+    });
+  } catch (error:any) {
+    console.warn("[V79 Marketing] team deprovisioning denied:", error?.message || error);
+    return res.status(409).json({ error: error?.message || "Marketing team member could not be deprovisioned." });
   }
 });
 
