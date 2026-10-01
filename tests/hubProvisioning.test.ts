@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { db, initDb } from "../src/lib/db.js";
-import { provisionHubIdentity } from "../src/lib/hubProvisioning.js";
+import { deprovisionHubTeamIdentity, provisionHubIdentity } from "../src/lib/hubProvisioning.js";
+import { authenticate, generateToken } from "../src/lib/auth.js";
 
 const orgA = "hub-marketing-org-a-1234";
 const orgB = "hub-marketing-org-b-1234";
@@ -116,5 +117,104 @@ describe("Hub-managed Marketing team provisioning", () => {
       plan: "hub",
       entitlement: { product: "marketing", enabled: true },
     })).toThrow(/owner first/i);
+  });
+});
+
+
+describe("Hub-managed Marketing team revocation", () => {
+  const org = "hub-marketing-revoke-org-1234";
+  const ownerHubId = "hub-marketing-revoke-owner-1234";
+  const memberHubId = "hub-marketing-revoke-member-1234";
+
+  beforeAll(() => {
+    initDb();
+    db.prepare("DELETE FROM credit_balances WHERE business_id=?").run(org);
+    db.prepare("DELETE FROM users WHERE business_id=?").run(org);
+    db.prepare("DELETE FROM businesses WHERE id=?").run(org);
+
+    provisionHubIdentity({
+      organization: { id: org, name: "Marketing Revoke Business", slug: "marketing-revoke-business" },
+      user: { id: ownerHubId, email: "revoke.owner@example.test", name: "Owner" },
+      role: "owner",
+      plan: "hub",
+      entitlement: { product: "marketing", enabled: true },
+    });
+  });
+
+  afterAll(() => {
+    db.prepare("DELETE FROM credit_balances WHERE business_id=?").run(org);
+    db.prepare("DELETE FROM users WHERE business_id=?").run(org);
+    db.prepare("DELETE FROM businesses WHERE id=?").run(org);
+  });
+
+  it("refreshes the live role and invalidates an old token immediately after removal", () => {
+    const member = provisionHubIdentity({
+      organization: { id: org, name: "Marketing Revoke Business", slug: "marketing-revoke-business" },
+      user: { id: memberHubId, email: "revoke.member@example.test", name: "Member" },
+      role: "manager",
+      plan: "hub",
+      entitlement: { product: "marketing", enabled: true },
+    });
+
+    const token = generateToken({
+      id: member.userId,
+      email: "revoke.member@example.test",
+      name: "Member",
+      role: "MARKETING_MANAGER",
+      businessId: org,
+    });
+
+    db.prepare("UPDATE users SET role='MARKETING_VIEWER' WHERE id=? AND business_id=?").run(member.userId, org);
+
+    const firstReq:any = { headers: { authorization: `Bearer ${token}` } };
+    let firstStatus = 0;
+    let firstPayload:any;
+    let firstNext = false;
+    const firstRes:any = {
+      status(code:number) { firstStatus = code; return this; },
+      json(payload:any) { firstPayload = payload; return this; },
+    };
+    authenticate(firstReq, firstRes, () => { firstNext = true; });
+    expect(firstNext).toBe(true);
+    expect(firstStatus).toBe(0);
+    expect(firstReq.user.role).toBe("MARKETING_VIEWER");
+
+    const removed = deprovisionHubTeamIdentity(org, memberHubId);
+    expect(removed.alreadyAbsent).toBe(false);
+
+    const revokedReq:any = { headers: { authorization: `Bearer ${token}` } };
+    let revokedStatus = 0;
+    let revokedPayload:any;
+    const revokedRes:any = {
+      status(code:number) { revokedStatus = code; return this; },
+      json(payload:any) { revokedPayload = payload; return this; },
+    };
+    authenticate(revokedReq, revokedRes, () => { throw new Error("revoked token must not authenticate"); });
+    expect(revokedStatus).toBe(401);
+    expect(revokedPayload.code).toBe("ACCESS_REVOKED");
+
+    const repeated = deprovisionHubTeamIdentity(org, memberHubId);
+    expect(repeated.alreadyAbsent).toBe(true);
+  });
+
+  it("protects the owner and isolates wrong-workspace revocation", () => {
+    expect(() => deprovisionHubTeamIdentity(org, ownerHubId)).toThrow(/owner\/admin/i);
+
+    const otherOrg = "hub-marketing-revoke-other-1234";
+    db.prepare("DELETE FROM credit_balances WHERE business_id=?").run(otherOrg);
+    db.prepare("DELETE FROM users WHERE business_id=?").run(otherOrg);
+    db.prepare("DELETE FROM businesses WHERE id=?").run(otherOrg);
+    provisionHubIdentity({
+      organization: { id: otherOrg, name: "Other Marketing Business", slug: "other-marketing-business" },
+      user: { id: "hub-marketing-other-owner-1234", email: "other.owner@example.test", name: "Other Owner" },
+      role: "owner",
+      plan: "hub",
+      entitlement: { product: "marketing", enabled: true },
+    });
+    const wrong = deprovisionHubTeamIdentity(otherOrg, memberHubId);
+    expect(wrong.alreadyAbsent).toBe(true);
+    db.prepare("DELETE FROM credit_balances WHERE business_id=?").run(otherOrg);
+    db.prepare("DELETE FROM users WHERE business_id=?").run(otherOrg);
+    db.prepare("DELETE FROM businesses WHERE id=?").run(otherOrg);
   });
 });
