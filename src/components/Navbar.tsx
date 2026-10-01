@@ -212,12 +212,12 @@ export const Navbar: React.FC<NavbarProps> = ({
   });
 
   return (
-    <header className="bg-white border-b border-slate-200 text-slate-900 sticky top-0 z-50 shadow-xs">
+    <header className="bg-[#07111f]/95 backdrop-blur-xl border-b border-[#17324d]/80 text-slate-100 sticky top-0 z-50">
       {/* Top Utility Bar */}
-      <div className="bg-slate-900 px-4 py-1.5 text-xs text-slate-300 flex items-center justify-between font-medium border-b border-slate-800">
+      <div className="bg-[#06101d] px-4 py-1.5 text-xs text-slate-400 flex items-center justify-between font-medium border-b border-[#17324d]">
         <div className="flex items-center gap-2.5">
-          <span className="bg-slate-800 border border-slate-700 text-slate-200 px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase">V79 DIGITAL</span>
-          <span className="hidden sm:inline text-slate-400">Enterprise AI Marketing & Growth OS for SMBs</span>
+          <span className="bg-[#0A86FF]/10 border border-[#0A86FF]/25 text-[#74d0ff] px-2 py-0.5 rounded text-[9px] font-black tracking-[0.18em] uppercase">V79 DIGITAL</span>
+          <span className="hidden sm:inline text-slate-500">Marketing & Growth Workspace</span>
         </div>
         <div className="flex items-center gap-4">
           <button
@@ -225,7 +225,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             className="hover:text-white flex items-center gap-1 text-slate-300 text-xs font-medium cursor-pointer transition-colors"
           >
             <ExternalLink className="w-3.5 h-3.5" />
-            <span>V79 Hub</span>
+            <span>Back to Hub</span>
           </button>
           <button
             onClick={() => setCurrency(currency === 'XCD' ? 'USD' : 'XCD')}
@@ -245,7 +245,7 @@ export const Navbar: React.FC<NavbarProps> = ({
       </div>
 
       {/* Main Navbar Header */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="max-w-[1540px] mx-auto px-4 sm:px-5 xl:px-7">
         <div className="flex items-center justify-between h-16">
           {/* Brand Logo & Tenant Selector */}
           <div className="flex items-center gap-3 sm:gap-5">
@@ -253,28 +253,28 @@ export const Navbar: React.FC<NavbarProps> = ({
               onClick={() => setActiveTab('landing')}
               className="flex items-center gap-3 cursor-pointer group"
             >
-              <div className="w-9 h-9 rounded-lg bg-slate-900 flex items-center justify-center font-bold text-sm tracking-tight text-white border border-slate-800 shadow-xs group-hover:bg-slate-800 transition-colors">
+              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#0A86FF] via-[#7C3AED] to-[#FF7A00] flex items-center justify-center font-black text-sm tracking-tight text-white border border-white/10 shadow-lg group-hover:brightness-110 transition">
                 V79
               </div>
               <div className="hidden sm:block">
                 <span className="font-bold text-base tracking-tight text-slate-900 block leading-tight">
-                  Marketing Hub
+                  V79 Digital Marketing
                 </span>
-                <p className="text-[10px] text-slate-500 font-medium tracking-wider uppercase">
-                  Growth Platform
+                <p className="text-[9px] text-slate-600 font-black tracking-[0.16em] uppercase">
+                  Growth Workspace
                 </p>
               </div>
             </div>
 
             {/* Tenant / Business Identifier */}
-            <div className="hidden md:flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-700">
+            <div className="hidden md:flex items-center gap-2 bg-[#091728] border border-[#1a3854] rounded-xl px-3 py-1.5 text-xs text-slate-400">
               <img
                 src={currentBusiness.logoUrl}
                 alt={currentBusiness.name}
-                className="w-5 h-5 rounded object-cover border border-slate-200"
+                className="w-5 h-5 rounded object-cover border border-[#284964]"
               />
-              <span className="font-semibold truncate max-w-[130px] text-slate-800">{currentBusiness.name}</span>
-              <span className="bg-slate-200 text-slate-700 text-[10px] px-1.5 py-0.5 rounded font-mono font-medium">
+              <span className="font-semibold truncate max-w-[130px] text-slate-200">{currentBusiness.name}</span>
+              <span className="bg-[#FF7A00]/10 text-[#ffad65] border border-[#FF7A00]/20 text-[9px] px-1.5 py-0.5 rounded font-mono font-bold">
                 {currentBusiness.plan}
               </span>
             </div>
@@ -285,24 +285,24 @@ export const Navbar: React.FC<NavbarProps> = ({
             {/* V79 AI Credits Badge */}
             <div
               onClick={onOpenCreditStore}
-              className="flex items-center gap-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-800 cursor-pointer transition-colors group"
+              className="flex items-center gap-2.5 bg-[#091728] hover:bg-[#0d1e32] border border-[#1a3854] rounded-xl px-3 py-1.5 text-xs text-slate-400 cursor-pointer transition-colors group"
             >
-              <Coins className="w-4 h-4 text-slate-700" />
+              <Coins className="w-4 h-4 text-[#b39aff]" />
               <div className="text-left hidden sm:block">
                 <div className="flex items-center gap-1">
-                  <span className="font-semibold text-slate-900 font-mono">
+                  <span className="font-semibold text-white font-mono">
                     {remainingCredits.toLocaleString()}
                   </span>
                   <span className="text-[10px] text-slate-500">Credits</span>
                 </div>
-                <div className="w-20 bg-slate-200 rounded-full h-1 mt-0.5 overflow-hidden">
+                <div className="w-20 bg-[#07121f] rounded-full h-1 mt-0.5 overflow-hidden">
                   <div
-                    className="bg-slate-800 h-1 rounded-full"
+                    className="bg-gradient-to-r from-[#7C3AED] to-[#FF7A00] h-1 rounded-full"
                     style={{ width: `${creditPercent}%` }}
                   />
                 </div>
               </div>
-              <span className="ml-1 px-2 py-0.5 rounded bg-slate-900 hover:bg-slate-800 text-white font-medium text-[10px] flex items-center gap-0.5 transition-colors">
+              <span className="ml-1 px-2 py-0.5 rounded bg-[#7C3AED]/15 hover:bg-[#7C3AED]/25 border border-[#7C3AED]/25 text-[#c1adff] font-bold text-[9px] flex items-center gap-0.5 transition-colors">
                 <Plus className="w-3 h-3" />
                 <span>Top Up</span>
               </span>
@@ -312,7 +312,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <div className="relative">
               <button
                 onClick={() => setShowUserDropdown(!showUserDropdown)}
-                className="flex items-center gap-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 transition-colors cursor-pointer"
+                className="flex items-center gap-2 bg-[#091728] hover:bg-[#0d1e32] border border-[#1a3854] rounded-xl px-2.5 py-1.5 text-xs text-slate-400 transition-colors cursor-pointer"
               >
                 <img
                   src={currentUser.avatarUrl}
@@ -376,7 +376,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <div className="relative" ref={notifRef}>
               <button
                 onClick={() => setShowNotifications(!showNotifications)}
-                className="p-2 text-slate-600 hover:text-slate-900 bg-slate-50 rounded-lg border border-slate-200 relative hover:bg-slate-100 transition-colors cursor-pointer"
+                className="p-2 text-slate-500 hover:text-white bg-[#091728] rounded-xl border border-[#1a3854] relative hover:bg-[#0d1e32] transition-colors cursor-pointer"
                 aria-label="View notifications"
               >
                 <Bell className="w-4 h-4" />
