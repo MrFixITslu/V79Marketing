@@ -19,7 +19,11 @@ export function allowanceForPlan(plan: string | null | undefined) {
     case "BUSINESS":
     case "GROWTH":
     case "BETA":
+    case "HUB":
       return 10000;
+    case "START":
+    case "STARTER":
+      return 5000;
     default:
       return 0;
   }
