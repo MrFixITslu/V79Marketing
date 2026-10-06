@@ -41,7 +41,9 @@ function verifySignedHubRequest(
 }
 
 export function verifyHubProvisionRequest(args: { method: string; pathname: string; timestamp: string; signature: string; serviceId: string; body?: string }) {
-  return verifySignedHubRequest(args, clean(process.env.V79_HUB_PROVISION_SECRET));
+  const dedicated = clean(process.env.V79_HUB_PROVISION_SECRET);
+  const developmentFallback = process.env.NODE_ENV === "production" ? "" : clean(process.env.V79_PLATFORM_SHARED_SECRET);
+  return verifySignedHubRequest(args, dedicated || developmentFallback);
 }
 
 export function verifyHubPlatformRequest(args: { method: string; pathname: string; timestamp: string; signature: string; serviceId: string; body?: string }) {
