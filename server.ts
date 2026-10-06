@@ -1448,6 +1448,7 @@ app.post("/api/customers", authenticate, requireMarketingPermission("customers.w
       },
     });
   } catch (err: any) {
+    if (err instanceof z.ZodError) return res.status(400).json({ error:"Invalid customer inquiry.", details:err.flatten() });
     res.status(500).json({ error: "Failed to create customer inquiry" });
   }
 });
@@ -1684,18 +1685,12 @@ description, productsAndServices, brandVoiceAndTone, targetAudience, customerDem
     if (!candidate) throw new Error("No configured AI provider returned a result.");
 
     const optimized = businessBrainSchema.parse(candidate);
-    const now = new Date().toISOString();
-    db.prepare(`
-      INSERT INTO business_brains (business_id,brain_json,updated_at)
-      VALUES (?,?,?)
-      ON CONFLICT(business_id) DO UPDATE SET brain_json=excluded.brain_json, updated_at=excluded.updated_at
-    `).run(businessId, JSON.stringify(optimized), now);
-
     res.json({
       success:true,
       brain:{ businessId, ...optimized },
       remainingCredits:deduction.remainingCredits,
-      updatedAt:now,
+      persisted:false,
+      notice:"AI suggestions are ready for review. Save the Business Brain to make them authoritative.",
     });
   } catch (error:any) {
     if (charged) {
@@ -1753,7 +1748,22 @@ app.get("/api/docs", (req, res) => {
   });
 });
 
+function assertProductionConfiguration() {
+  if (process.env.NODE_ENV !== "production") return;
+  const required = [
+    ["JWT_SECRET", process.env.JWT_SECRET],
+    ["V79_MARKETING_LAUNCH_SECRET", process.env.V79_MARKETING_LAUNCH_SECRET],
+    ["V79_HUB_PROVISION_SECRET", process.env.V79_HUB_PROVISION_SECRET],
+    ["V79_PLATFORM_SHARED_SECRET", process.env.V79_PLATFORM_SHARED_SECRET],
+  ] as const;
+  const missing = required
+    .filter(([,value]) => String(value || "").trim().length < 32)
+    .map(([name]) => name);
+  if (missing.length) throw new Error(`Production configuration missing strong secrets: ${missing.join(", ")}`);
+}
+
 async function startServer() {
+  assertProductionConfiguration();
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
