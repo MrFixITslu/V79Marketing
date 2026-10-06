@@ -242,7 +242,8 @@ export function initDb() {
   migrateHubManagedUserEmailScope();
   db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_businesses_hub_org ON businesses(hub_organization_id) WHERE hub_organization_id IS NOT NULL;");
   db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_legacy_email ON users(email) WHERE hub_user_id IS NULL;");
-  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_hub_user ON users(hub_user_id) WHERE hub_user_id IS NOT NULL;");
+  db.exec("DROP INDEX IF EXISTS idx_users_hub_user;");
+  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_hub_user_business ON users(hub_user_id,business_id) WHERE hub_user_id IS NOT NULL;");
 
   if (process.env.NODE_ENV !== "production" && process.env.V79_MARKETING_SEED_DEMO === "1") {
     seedInitialData();
