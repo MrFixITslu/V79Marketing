@@ -37,6 +37,7 @@ export const OneIdeaCampaignView: React.FC<OneIdeaCampaignViewProps> = ({ busine
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok || !Array.isArray(body.steps)) throw new Error(body.error || 'Campaign generation failed.');
+      if (Number(body.creditsCharged || 0) > 0) window.dispatchEvent(new Event('v79:credits-updated'));
       const steps: CampaignStep[] = body.steps.map((step:any) => ({
         dayNumber:Number(step.dayNumber || 1),
         channel:step.channel || 'facebook',
