@@ -298,25 +298,24 @@ export default function App() {
       if (body.post) setPosts((items) => [body.post, ...items.filter((item) => item.id !== body.post.id)]);
   };
 
-  const handleCreateCampaign = (newCamp: Campaign) => {
-    void (async () => {
-      const response = await fetch('/api/campaigns', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name:newCamp.name,
-          objective:newCamp.objective,
-          startDate:newCamp.startDate,
-          endDate:newCamp.endDate,
-          status:newCamp.status,
-          steps:newCamp.steps,
-          aiPlanGenerated:newCamp.aiPlanGenerated,
-        }),
-      });
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(body.error || 'Could not create campaign.');
-      if (body.campaign) setCampaigns((items) => [body.campaign, ...items.filter((item) => item.id !== body.campaign.id)]);
-    })().catch((error) => console.error('Campaign save failed:', error));
+  const handleCreateCampaign = async (newCamp: Campaign): Promise<Campaign> => {
+    const response = await fetch('/api/campaigns', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name:newCamp.name,
+        objective:newCamp.objective,
+        startDate:newCamp.startDate,
+        endDate:newCamp.endDate,
+        status:newCamp.status,
+        steps:newCamp.steps,
+        aiPlanGenerated:newCamp.aiPlanGenerated,
+      }),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok || !body.campaign) throw new Error(body.error || 'Could not create campaign.');
+    setCampaigns((items) => [body.campaign, ...items.filter((item) => item.id !== body.campaign.id)]);
+    return body.campaign as Campaign;
   };
 
   const handleSaveImageToLibrary = (img: GeneratedImage) => {
@@ -438,12 +437,16 @@ export default function App() {
               }).catch(error => console.error('Customer save failed:', error));
             }}
             onUpdateCustomerStatus={(id, status) => {
-              setCustomers(items => items.map(c => c.id===id ? {...c,status} : c));
-              void fetch(`/api/customers/${encodeURIComponent(id)}/status`, {
-                method:'PATCH',
-                headers:{'Content-Type':'application/json'},
-                body:JSON.stringify({status}),
-              }).catch(error => console.error('Customer status update failed:', error));
+              void (async () => {
+                const response = await fetch(`/api/customers/${encodeURIComponent(id)}/status`, {
+                  method:'PATCH',
+                  headers:{'Content-Type':'application/json'},
+                  body:JSON.stringify({status}),
+                });
+                const body = await response.json().catch(() => ({}));
+                if (!response.ok) throw new Error(body.error || 'Customer status update failed.');
+                setCustomers(items => items.map(c => c.id===id ? {...c,status} : c));
+              })().catch(error => console.error('Customer status update failed:', error));
             }}
           />
         )}
@@ -451,7 +454,7 @@ export default function App() {
         {currentView === 'one-idea-campaign' && (
           <OneIdeaCampaignView
             business={currentBusiness}
-            onCreateCampaign={(newCamp) => setCampaigns([newCamp, ...campaigns])}
+            onCreateCampaign={handleCreateCampaign}
           />
         )}
 
