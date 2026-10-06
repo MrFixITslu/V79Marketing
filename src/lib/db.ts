@@ -75,9 +75,41 @@ export function initDb() {
       access_token_enc TEXT,
       refresh_token_enc TEXT,
       expires_at TEXT,
+      provider_account_id TEXT,
+      provider_metadata_json TEXT NOT NULL DEFAULT '{}',
+      token_scopes TEXT,
       last_synced_at TEXT NOT NULL,
       FOREIGN KEY (business_id) REFERENCES businesses(id) ON DELETE CASCADE
     );
+
+    CREATE TABLE IF NOT EXISTS social_oauth_states (
+      state_hash TEXT PRIMARY KEY,
+      business_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      platform TEXT NOT NULL,
+      account_hint TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (business_id) REFERENCES businesses(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS post_deliveries (
+      post_id TEXT NOT NULL,
+      business_id TEXT NOT NULL,
+      platform TEXT NOT NULL,
+      social_account_id TEXT,
+      status TEXT NOT NULL DEFAULT 'QUEUED',
+      provider_post_id TEXT,
+      last_error TEXT,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      published_at TEXT,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (post_id, platform),
+      FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE,
+      FOREIGN KEY (business_id) REFERENCES businesses(id) ON DELETE CASCADE,
+      FOREIGN KEY (social_account_id) REFERENCES social_accounts(id) ON DELETE SET NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_post_deliveries_due ON post_deliveries(status, updated_at);
 
     CREATE TABLE IF NOT EXISTS posts (
       id TEXT PRIMARY KEY,
@@ -257,11 +289,15 @@ export function initDb() {
 
   ensureColumn("businesses", "hub_organization_id", "TEXT");
   ensureColumn("users", "hub_user_id", "TEXT");
+  ensureColumn("social_accounts", "provider_account_id", "TEXT");
+  ensureColumn("social_accounts", "provider_metadata_json", "TEXT NOT NULL DEFAULT '{}'");
+  ensureColumn("social_accounts", "token_scopes", "TEXT");
   migrateHubManagedUserEmailScope();
   db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_businesses_hub_org ON businesses(hub_organization_id) WHERE hub_organization_id IS NOT NULL;");
   db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_legacy_email ON users(email) WHERE hub_user_id IS NULL;");
   db.exec("DROP INDEX IF EXISTS idx_users_hub_user;");
   db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_hub_user_business ON users(hub_user_id,business_id) WHERE hub_user_id IS NOT NULL;");
+  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_social_provider_account ON social_accounts(business_id,platform,provider_account_id) WHERE provider_account_id IS NOT NULL;");
 
   if (process.env.NODE_ENV !== "production" && process.env.V79_MARKETING_SEED_DEMO === "1") {
     seedInitialData();
