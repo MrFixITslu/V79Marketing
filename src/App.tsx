@@ -193,7 +193,7 @@ export default function App() {
         setBusinesses([session.business]);
         setSessionState('authenticated');
 
-        const [postResponse, customerResponse, creditResponse, campaignResponse, socialResponse, brainResponse, assetResponse] = await Promise.all([
+        const [postResponse, customerResponse, creditResponse, campaignResponse, socialResponse, brainResponse, assetResponse, competitorResponse] = await Promise.all([
           fetch('/api/posts', { credentials: 'same-origin' }),
           fetch('/api/customers', { credentials: 'same-origin' }),
           fetch('/api/credits/balance', { credentials: 'same-origin' }),
@@ -201,6 +201,7 @@ export default function App() {
           fetch('/api/social-accounts', { credentials: 'same-origin' }),
           fetch('/api/brain', { credentials: 'same-origin' }),
           fetch('/api/assets', { credentials: 'same-origin' }),
+          fetch('/api/competitors', { credentials: 'same-origin' }),
         ]);
         if (postResponse.ok) {
           const body = await postResponse.json();
@@ -229,6 +230,10 @@ export default function App() {
         if (assetResponse.ok) {
           const body = await assetResponse.json();
           if (!cancelled) setGeneratedImages(body.assets || []);
+        }
+        if (competitorResponse.ok) {
+          const body = await competitorResponse.json();
+          if (!cancelled) setCompetitors(body.competitors || []);
         }
       } catch {
         if (!cancelled) setSessionState('unauthenticated');
