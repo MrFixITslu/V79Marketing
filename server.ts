@@ -174,6 +174,12 @@ const createCampaignSchema = z.object({
   aiPlanGenerated: z.boolean().default(false),
 });
 
+const competitorSchema = z.object({
+  name: z.string().trim().min(1).max(180),
+  handle: z.string().trim().min(1).max(180),
+  platform: z.enum(["facebook","instagram","linkedin","twitter","tiktok","google_business","whatsapp"]).default("instagram"),
+});
+
 const generatedAssetSchema = z.object({
   prompt: z.string().min(1).max(800),
   dimension: z.enum(["1080x1080", "1080x1920", "1200x630", "1200x627"]),
@@ -890,6 +896,66 @@ app.post("/api/social-accounts", authenticate, requireMarketingPermission("socia
     error:"Direct social account connection requires the official provider OAuth adapter. V79 will not simulate a connected account.",
     code:"PROVIDER_OAUTH_REQUIRED",
   });
+});
+
+// --- TENANT COMPETITOR TRACKING ---
+
+app.get("/api/competitors", authenticate, requireMarketingPermission("social.read"), (req: AuthenticatedRequest, res) => {
+  const rows = db.prepare("SELECT * FROM competitors WHERE business_id=? ORDER BY last_analyzed DESC")
+    .all(req.user!.businessId) as any[];
+  res.json({
+    competitors: rows.map(row => ({
+      id:row.id,
+      businessId:row.business_id,
+      name:row.name,
+      handle:row.handle,
+      platform:row.platform,
+      postingFrequency:row.posting_frequency,
+      estimatedReach:row.estimated_reach,
+      topTopics:JSON.parse(row.top_topics_json || "[]"),
+      opportunityGap:row.opportunity_gap,
+      lastAnalyzed:row.last_analyzed,
+    })),
+  });
+});
+
+app.post("/api/competitors", authenticate, requireMarketingPermission("content.write"), (req: AuthenticatedRequest, res) => {
+  try {
+    const data = competitorSchema.parse(req.body);
+    const id = `comp-${crypto.randomUUID()}`;
+    const lastAnalyzed = new Date().toISOString();
+    const record = {
+      id,
+      businessId:req.user!.businessId,
+      name:data.name,
+      handle:data.handle,
+      platform:data.platform,
+      postingFrequency:"Not measured",
+      estimatedReach:"Not measured",
+      topTopics:[],
+      opportunityGap:"Connect an approved data source before V79 calculates competitor benchmarks.",
+      lastAnalyzed,
+    };
+    db.prepare(`
+      INSERT INTO competitors
+        (id,business_id,name,handle,platform,posting_frequency,estimated_reach,top_topics_json,opportunity_gap,last_analyzed)
+      VALUES (?,?,?,?,?,?,?,?,?,?)
+    `).run(
+      record.id,record.businessId,record.name,record.handle,record.platform,
+      record.postingFrequency,record.estimatedReach,JSON.stringify(record.topTopics),
+      record.opportunityGap,record.lastAnalyzed
+    );
+    res.status(201).json({ competitor:record });
+  } catch (error:any) {
+    res.status(400).json({ error:error?.message || "Invalid competitor record" });
+  }
+});
+
+app.delete("/api/competitors/:id", authenticate, requireMarketingPermission("content.write"), (req: AuthenticatedRequest, res) => {
+  const result = db.prepare("DELETE FROM competitors WHERE id=? AND business_id=?")
+    .run(req.params.id, req.user!.businessId);
+  if (!result.changes) return res.status(404).json({ error:"Competitor record not found" });
+  res.json({ success:true, id:req.params.id });
 });
 
 // --- TENANT MEDIA ASSETS ---
