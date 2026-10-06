@@ -191,8 +191,6 @@ export default function App() {
         setCurrentBusiness(session.business);
         setUsers([session.user]);
         setBusinesses([session.business]);
-        setSessionState('authenticated');
-
         const [postResponse, customerResponse, creditResponse, campaignResponse, socialResponse, brainResponse, assetResponse, competitorResponse] = await Promise.all([
           fetch('/api/posts', { credentials: 'same-origin' }),
           fetch('/api/customers', { credentials: 'same-origin' }),
@@ -235,12 +233,27 @@ export default function App() {
           const body = await competitorResponse.json();
           if (!cancelled) setCompetitors(body.competitors || []);
         }
+        if (!cancelled) setSessionState('authenticated');
       } catch {
         if (!cancelled) setSessionState('unauthenticated');
       }
     }
     void loadSession();
     return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    const refreshCredits = () => {
+      void fetch('/api/credits/balance', { credentials:'same-origin' })
+        .then(async response => {
+          if (!response.ok) return;
+          const body = await response.json().catch(() => ({}));
+          if (body.balance) setCreditBalance(body.balance);
+        })
+        .catch(() => undefined);
+    };
+    window.addEventListener('v79:credits-updated', refreshCredits);
+    return () => window.removeEventListener('v79:credits-updated', refreshCredits);
   }, []);
 
   // Growth Platform Customers CRM State
