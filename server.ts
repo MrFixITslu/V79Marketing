@@ -24,8 +24,8 @@ import { startPublisherWorker, processScheduledPosts } from "./src/lib/publisher
 import { consumeHubLaunchTicket, verifyHubProvisionRequest, verifyHubSummaryRequest } from "./src/lib/platform.js";
 import { deprovisionHubTeamIdentity, provisionHubIdentity } from "./src/lib/hubProvisioning.js";
 import { queueMarketingEvent, startPlatformEventPump } from "./src/lib/platformEvents.js";
-import { encryptToken } from "./src/lib/tokenVault.js";
-import { buildAuthorizationUrl, exchangeOAuthCode, providerStatus, type ProviderPlatform } from "./src/lib/socialProviders.js";
+import { decryptToken, encryptToken } from "./src/lib/tokenVault.js";
+import { buildAuthorizationUrl, exchangeOAuthCode, providerStatus, queryTikTokCreatorInfo, refreshProviderAccess, type ProviderAccountRecord, type ProviderPlatform } from "./src/lib/socialProviders.js";
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
@@ -251,6 +251,7 @@ const generatedSocialCopySchema = z.object({
   instagram: z.object({ caption:z.string().max(10000), hashtags:z.array(z.string().max(120)).max(50) }),
   linkedin: z.object({ caption:z.string().max(10000), hashtags:z.array(z.string().max(120)).max(50) }),
   tiktok: z.object({ caption:z.string().max(10000), hashtags:z.array(z.string().max(120)).max(50) }),
+  google_business: z.object({ caption:z.string().max(1500), hashtags:z.array(z.string().max(120)).max(20) }),
   whatsapp: z.object({ caption:z.string().max(10000), hashtags:z.array(z.string().max(120)).max(50) }),
 });
 
@@ -947,6 +948,16 @@ app.post("/api/posts", authenticate, requireMarketingPermission("content.write")
       data.campaignId || null,
       now
     );
+    const publishablePlatforms = ["facebook","instagram","linkedin","tiktok","google_business"]
+      .filter(platform => Object.prototype.hasOwnProperty.call(data.content || {}, platform));
+    const insertDelivery = db.prepare(`
+      INSERT OR IGNORE INTO post_deliveries
+        (post_id,business_id,platform,status,attempts,updated_at)
+      VALUES (?,?,?,'QUEUED',0,?)
+    `);
+    for (const platform of publishablePlatforms) {
+      insertDelivery.run(postId, data.businessId, platform, now);
+    }
     queueMarketingEvent({
       businessId: data.businessId,
       type: "marketing.post_scheduled",
@@ -977,6 +988,52 @@ app.post("/api/posts", authenticate, requireMarketingPermission("content.write")
   } catch (err: any) {
     res.status(400).json({ error: err.message || "Invalid post data" });
   }
+});
+
+app.get("/api/post-deliveries", authenticate, requireMarketingPermission("content.read"), (req: AuthenticatedRequest, res) => {
+  const rows = db.prepare(`
+    SELECT d.post_id,d.platform,d.status,d.provider_post_id,d.last_error,d.attempts,d.published_at,d.updated_at,
+           p.title,p.scheduled_for,p.status AS post_status
+    FROM post_deliveries d
+    JOIN posts p ON p.id=d.post_id AND p.business_id=d.business_id
+    WHERE d.business_id=?
+    ORDER BY d.updated_at DESC
+    LIMIT 250
+  `).all(req.user!.businessId) as any[];
+  res.json({
+    deliveries:rows.map(row => ({
+      postId:row.post_id,
+      postTitle:row.title,
+      platform:row.platform,
+      status:row.status,
+      providerPostId:row.provider_post_id || undefined,
+      lastError:row.last_error || undefined,
+      attempts:Number(row.attempts || 0),
+      publishedAt:row.published_at || undefined,
+      updatedAt:row.updated_at,
+      scheduledFor:row.scheduled_for,
+      postStatus:row.post_status,
+    })),
+  });
+});
+
+app.post("/api/post-deliveries/:postId/:platform/retry", authenticate, requireMarketingPermission("content.write"), (req: AuthenticatedRequest, res) => {
+  const platform = socialPlatformSchema.safeParse(req.params.platform);
+  if (!platform.success) return res.status(400).json({ error:"Unsupported publishing platform." });
+  const row = db.prepare(`
+    SELECT d.post_id FROM post_deliveries d
+    JOIN posts p ON p.id=d.post_id AND p.business_id=d.business_id
+    WHERE d.post_id=? AND d.platform=? AND d.business_id=?
+  `).get(req.params.postId, platform.data, req.user!.businessId);
+  if (!row) return res.status(404).json({ error:"Delivery record not found." });
+  const now = new Date().toISOString();
+  db.prepare(`
+    UPDATE post_deliveries
+    SET status='QUEUED', attempts=0, last_error=NULL, provider_post_id=NULL, published_at=NULL, updated_at=?
+    WHERE post_id=? AND platform=? AND business_id=?
+  `).run(now, req.params.postId, platform.data, req.user!.businessId);
+  db.prepare("UPDATE posts SET status='SCHEDULED' WHERE id=? AND business_id=?").run(req.params.postId, req.user!.businessId);
+  res.json({ success:true, postId:req.params.postId, platform:platform.data, status:"QUEUED", updatedAt:now });
 });
 
 // --- CAMPAIGNS & CHANNELS ---
@@ -1169,6 +1226,46 @@ app.get("/api/social-accounts/oauth/:platform/callback", async (req, res) => {
   }
 });
 
+app.get("/api/social-accounts/tiktok/creator-info", authenticate, requireMarketingPermission("social.read"), async (req: AuthenticatedRequest, res) => {
+  const row = db.prepare(`
+    SELECT * FROM social_accounts
+    WHERE business_id=? AND platform='tiktok' AND connected=1
+    ORDER BY last_synced_at DESC LIMIT 1
+  `).get(req.user!.businessId) as any;
+  if (!row) return res.status(404).json({ error:"Connect TikTok before loading creator publishing options." });
+
+  try {
+    let account:ProviderAccountRecord = {
+      platform:"tiktok",
+      providerAccountId:String(row.provider_account_id || ""),
+      accessToken:decryptToken(row.access_token_enc),
+      refreshToken:row.refresh_token_enc ? decryptToken(row.refresh_token_enc) : undefined,
+      expiresAt:row.expires_at || null,
+      metadata:JSON.parse(row.provider_metadata_json || "{}"),
+    };
+    const refreshed = await refreshProviderAccess(account);
+    if (refreshed.accessToken !== account.accessToken || refreshed.refreshToken !== account.refreshToken || refreshed.expiresAt !== account.expiresAt) {
+      db.prepare(`
+        UPDATE social_accounts
+        SET access_token_enc=?, refresh_token_enc=?, expires_at=?, last_synced_at=?
+        WHERE id=? AND business_id=?
+      `).run(
+        encryptToken(refreshed.accessToken),
+        encryptToken(refreshed.refreshToken || null),
+        refreshed.expiresAt || null,
+        new Date().toISOString(),
+        row.id,
+        req.user!.businessId
+      );
+      account = refreshed;
+    }
+    const creator = await queryTikTokCreatorInfo(account);
+    res.json({ creator });
+  } catch (error:any) {
+    res.status(502).json({ error:error?.message || "TikTok creator publishing options could not be loaded." });
+  }
+});
+
 app.delete("/api/social-accounts/:id", authenticate, requireMarketingPermission("social.write"), (req: AuthenticatedRequest, res) => {
   const existing = db.prepare("SELECT id FROM social_accounts WHERE id=? AND business_id=?").get(req.params.id, req.user!.businessId);
   if (!existing) return res.status(404).json({ error:"Social connection not found." });
@@ -1326,6 +1423,7 @@ Return only JSON with this exact shape:
   "instagram": { "caption": "...", "hashtags": ["#tag1", "#tag2"] },
   "linkedin": { "caption": "...", "hashtags": ["#tag1", "#tag2"] },
   "tiktok": { "caption": "...", "hashtags": ["#tag1", "#tag2"] },
+  "google_business": { "caption": "...", "hashtags": ["#tag1"] },
   "whatsapp": { "caption": "...", "hashtags": [] }
 }`;
 
@@ -1388,6 +1486,7 @@ Return only JSON with this exact shape:
       instagram: { caption:`${prompt} — from ${bName}. Contact us through our official profile for details.`, hashtags:["#SupportLocal","#CaribbeanBusiness"] },
       linkedin: { caption:`${bName} is sharing an update: "${prompt}". Contact us for verified details.`, hashtags:["#BusinessGrowth","#CaribbeanEnterprise"] },
       tiktok: { caption:`${bName}: ${prompt}. Check our official profile for details.`, hashtags:["#CaribbeanBusiness","#LocalBusiness"] },
+      google_business: { caption:`${bName}: ${prompt}. Contact us through our official business channels for verified details.`, hashtags:["#CaribbeanBusiness"] },
       whatsapp: { caption:`Update from ${bName}: ${prompt}. Reply if you would like more information.`, hashtags:[] },
     };
     return res.json({
@@ -1503,6 +1602,7 @@ Return JSON only:
     { "dayNumber": 1, "channel": "facebook", "postTitle": "...", "caption": "...", "suggestedTime": "10:00 AM" },
     { "dayNumber": 3, "channel": "instagram", "postTitle": "...", "caption": "...", "suggestedTime": "04:30 PM" },
     { "dayNumber": 7, "channel": "linkedin", "postTitle": "...", "caption": "...", "suggestedTime": "11:00 AM" },
+    { "dayNumber": 10, "channel": "google_business", "postTitle": "...", "caption": "...", "suggestedTime": "09:00 AM" },
     { "dayNumber": 14, "channel": "whatsapp", "postTitle": "...", "caption": "...", "suggestedTime": "09:30 AM" }
   ]
 }`;
@@ -1561,6 +1661,7 @@ Return JSON only:
       { dayNumber:1, channel:"facebook", postTitle:"Campaign kickoff", caption:`${bName}: ${objective}. Contact us for verified details and next steps.`, suggestedTime:"10:00 AM" },
       { dayNumber:3, channel:"instagram", postTitle:"Visual spotlight", caption:`${campaignName} from ${bName}. Follow our official profile for details.`, suggestedTime:"04:30 PM" },
       { dayNumber:7, channel:"linkedin", postTitle:"Business value spotlight", caption:`A closer look at ${campaignName} from ${bName}. Contact us for verified information.`, suggestedTime:"11:00 AM" },
+      { dayNumber:10, channel:"google_business", postTitle:"Google Business update", caption:`${bName}: ${campaignName}. Contact us for verified information.`, suggestedTime:"09:00 AM" },
       { dayNumber:14, channel:"whatsapp", postTitle:"Customer follow-up", caption:`Update from ${bName}: ${campaignName}. Reply if you would like more information.`, suggestedTime:"09:30 AM" },
     ];
     return res.json({
