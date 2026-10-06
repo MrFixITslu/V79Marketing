@@ -31,8 +31,6 @@ const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 
 initDb();
-startPublisherWorker(15000);
-startPlatformEventPump(30000);
 
 app.disable("x-powered-by");
 if (process.env.TRUST_PROXY === "1") app.set("trust proxy", 1);
@@ -1970,6 +1968,8 @@ function assertProductionConfiguration() {
 
 async function startServer() {
   assertProductionConfiguration();
+  startPublisherWorker(15000);
+  startPlatformEventPump(30000);
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
