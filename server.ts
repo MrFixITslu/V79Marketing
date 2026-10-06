@@ -174,6 +174,18 @@ const createCampaignSchema = z.object({
   aiPlanGenerated: z.boolean().default(false),
 });
 
+const generatedAssetSchema = z.object({
+  prompt: z.string().min(1).max(800),
+  dimension: z.enum(["1080x1080", "1080x1920", "1200x630", "1200x627"]),
+  platformTarget: z.string().min(1).max(120),
+  imageUrl: z.string().min(1).max(1500000).refine(value => value.startsWith("data:image/svg+xml;base64,"), "Only V79-generated SVG assets can be stored."),
+});
+
+const visualTemplateSchema = z.object({
+  prompt: z.string().min(1).max(800),
+  dimension: z.enum(["1080x1080", "1080x1920", "1200x630", "1200x627"]).default("1080x1080"),
+});
+
 const businessBrainSchema = z.object({
   description: z.string().max(4000).default(""),
   productsAndServices: z.array(z.string().max(500)).max(100).default([]),
@@ -880,6 +892,41 @@ app.post("/api/social-accounts", authenticate, requireMarketingPermission("socia
   });
 });
 
+// --- TENANT MEDIA ASSETS ---
+
+app.get("/api/assets", authenticate, requireMarketingPermission("content.read"), (req: AuthenticatedRequest, res) => {
+  const rows = db.prepare("SELECT * FROM media_assets WHERE business_id=? ORDER BY created_at DESC LIMIT 200")
+    .all(req.user!.businessId) as any[];
+  res.json({
+    assets: rows.map(row => ({
+      id:row.id,
+      businessId:row.business_id,
+      prompt:row.prompt,
+      dimension:row.dimension,
+      platformTarget:row.platform_target,
+      imageUrl:row.image_url,
+      createdAt:row.created_at,
+    })),
+  });
+});
+
+app.post("/api/assets", authenticate, requireMarketingPermission("content.write"), (req: AuthenticatedRequest, res) => {
+  try {
+    const data = generatedAssetSchema.parse(req.body);
+    const id = `asset-${crypto.randomUUID()}`;
+    const createdAt = new Date().toISOString();
+    db.prepare(`
+      INSERT INTO media_assets (id,business_id,prompt,dimension,platform_target,image_url,created_at)
+      VALUES (?,?,?,?,?,?,?)
+    `).run(id,req.user!.businessId,data.prompt,data.dimension,data.platformTarget,data.imageUrl,createdAt);
+    res.status(201).json({
+      asset:{ id,businessId:req.user!.businessId,...data,createdAt },
+    });
+  } catch (error:any) {
+    res.status(400).json({ error:error?.message || "Invalid media asset" });
+  }
+});
+
 // --- AI GENERATION ENDPOINTS WITH CREDIT DEDUCTION & MODEL ROUTING ---
 
 app.post("/api/ai/generate-text", authenticate, requireMarketingPermission("ai.use"), aiGenerationLimiter, async (req: AuthenticatedRequest, res) => {
@@ -986,30 +1033,30 @@ Return only JSON with this exact shape:
 
 app.post("/api/ai/generate-image", authenticate, requireMarketingPermission("ai.use"), aiGenerationLimiter, async (req: AuthenticatedRequest, res) => {
   try {
-    const { prompt, dimension, businessName, primaryColor } = req.body;
+    const data = visualTemplateSchema.parse(req.body);
     const businessId = req.user!.businessId;
-
-    const deduction = deductCredits(
-      businessId,
-      req.user!.id,
-      req.user!.name,
-      CREDIT_COSTS.aiImage,
-      `Branded graphic generation: "${prompt}"`,
-      req.ip || "127.0.0.1"
-    );
-
-    if (!deduction.success) {
-      return res.status(402).json({ error: deduction.error });
-    }
+    const business = db.prepare("SELECT name,brand_profile_json FROM businesses WHERE id=?").get(businessId) as any;
+    if (!business) return res.status(404).json({ error:"Business workspace not found" });
 
     let width = 1080;
     let height = 1080;
-    if (dimension === "1080x1920") { width = 1080; height = 1920; }
-    else if (dimension === "1200x630") { width = 1200; height = 630; }
+    if (data.dimension === "1080x1920") { width = 1080; height = 1920; }
+    else if (data.dimension === "1200x630" || data.dimension === "1200x627") {
+      width = 1200;
+      height = data.dimension === "1200x627" ? 627 : 630;
+    }
 
-    const brandCol = primaryColor || "#EA580C";
-    const titleText = prompt || "Special Promotional Visual";
-    const subText = businessName || "V79 Marketing";
+    const brandProfile = JSON.parse(business.brand_profile_json || "{}");
+    const requestedColor = String(brandProfile?.primaryColor || "");
+    const brandCol = /^#[0-9A-Fa-f]{6}$/.test(requestedColor) ? requestedColor : "#EA580C";
+    const escapeXml = (value:unknown) => String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&apos;");
+    const titleText = escapeXml(data.prompt);
+    const subText = escapeXml(String(business.name || "V79 Marketing").toUpperCase());
 
     const svgString = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
       <defs>
@@ -1021,28 +1068,25 @@ app.post("/api/ai/generate-image", authenticate, requireMarketingPermission("ai.
       <rect width="${width}" height="${height}" fill="url(#bgGrad)"/>
       <circle cx="${width * 0.85}" cy="${height * 0.15}" r="${width * 0.3}" fill="#FFFFFF" opacity="0.08"/>
       <rect x="${width * 0.08}" y="${height * 0.08}" width="${width * 0.84}" height="${height * 0.84}" rx="24" fill="#0F172A" opacity="0.4" stroke="#FFFFFF" stroke-opacity="0.2" stroke-width="2"/>
-      <text x="${width * 0.12}" y="${height * 0.2}" font-family="sans-serif" font-size="20" font-weight="bold" fill="#FFFFFF" letter-spacing="2">
-        ${subText.toUpperCase()}
-      </text>
+      <text x="${width * 0.12}" y="${height * 0.2}" font-family="sans-serif" font-size="20" font-weight="bold" fill="#FFFFFF" letter-spacing="2">${subText}</text>
       <text x="${width * 0.12}" y="${height * 0.42}" font-family="sans-serif" font-size="${width > 1000 ? 52 : 40}" font-weight="800" fill="#FFFFFF">
         <tspan x="${width * 0.12}" dy="0">${titleText.slice(0, 28)}</tspan>
         <tspan x="${width * 0.12}" dy="64">${titleText.slice(28, 60) || "Official Promotion"}</tspan>
       </text>
       <rect x="${width * 0.12}" y="${height * 0.72}" width="${width * 0.4}" height="64" rx="32" fill="${brandCol}"/>
-      <text x="${width * 0.2}" y="${height * 0.72 + 40}" font-family="sans-serif" font-size="22" font-weight="bold" fill="#FFFFFF">
-        EXPLORE NOW →
-      </text>
+      <text x="${width * 0.2}" y="${height * 0.72 + 40}" font-family="sans-serif" font-size="22" font-weight="bold" fill="#FFFFFF">EXPLORE NOW →</text>
     </svg>`;
 
     const base64Svg = Buffer.from(svgString).toString("base64");
     return res.json({
-      success: true,
-      imageUrl: `data:image/svg+xml;base64,${base64Svg}`,
-      source: "brand-template",
-      remainingCredits: deduction.remainingCredits,
+      success:true,
+      imageUrl:`data:image/svg+xml;base64,${base64Svg}`,
+      source:"brand-template",
+      creditsCharged:0,
+      remainingCredits:getCreditBalance(businessId).remainingCredits,
     });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message || "Image generation failed" });
+  } catch (error:any) {
+    res.status(400).json({ error:error?.message || "Visual generation failed" });
   }
 });
 
