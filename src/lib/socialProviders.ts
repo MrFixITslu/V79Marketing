@@ -30,9 +30,11 @@ export interface ProviderPublishPayload {
     privacyLevel?: string;
     disableComment?: boolean;
     autoAddMusic?: boolean;
+    commercialDisclosure?: boolean;
     brandOrganicToggle?: boolean;
     brandContentToggle?: boolean;
     isAigc?: boolean;
+    musicUsageConfirmed?: boolean;
   };
 }
 
@@ -302,14 +304,14 @@ async function connectTikTok(code: string, redirectUri: string): Promise<Provide
   })).body;
   if (!token.access_token) throw new Error("TikTok did not return an access token.");
   const user = (await jsonFetch(
-    "https://open.tiktokapis.com/v2/user/info/?fields=open_id,union_id,avatar_url,display_name,username",
+    "https://open.tiktokapis.com/v2/user/info/?fields=open_id,avatar_url,display_name",
     { headers: { Authorization: `Bearer ${token.access_token}` } }
   )).body?.data?.user || {};
   return {
     platform: "tiktok",
     providerAccountId: String(user.open_id || token.open_id || ""),
-    accountName: String(user.display_name || user.username || "TikTok account"),
-    accountHandle: String(user.username ? `@${user.username}` : user.open_id || token.open_id || "TikTok"),
+    accountName: String(user.display_name || "TikTok account"),
+    accountHandle: String(user.display_name || user.open_id || token.open_id || "TikTok"),
     accessToken: String(token.access_token),
     refreshToken: token.refresh_token ? String(token.refresh_token) : undefined,
     expiresAt: token.expires_in ? new Date(Date.now() + Number(token.expires_in) * 1000).toISOString() : undefined,
@@ -447,22 +449,55 @@ async function publishLinkedIn(account: ProviderAccountRecord, payload: Provider
   return String(result.response.headers.get("x-restli-id") || result.body?.id || "");
 }
 
-async function publishTikTok(account: ProviderAccountRecord, payload: ProviderPublishPayload) {
-  const media = (payload.mediaUrls || []).filter(url => /^https:\/\//i.test(url)).slice(0, 35);
-  if (!media.length) throw new Error("TikTok Direct Post requires a publicly reachable HTTPS photo from a verified domain.");
-  const creator = (await jsonFetch("https://open.tiktokapis.com/v2/post/publish/creator_info/query/", {
+export async function queryTikTokCreatorInfo(account: ProviderAccountRecord) {
+  if (account.platform !== "tiktok") throw new Error("TikTok creator info requires a TikTok connection.");
+  const result = (await jsonFetch("https://open.tiktokapis.com/v2/post/publish/creator_info/query/", {
     method:"POST",
     headers:{ Authorization:`Bearer ${account.accessToken}`, "Content-Type":"application/json; charset=UTF-8" },
     body:JSON.stringify({}),
   })).body;
-  const options = creator?.data?.privacy_level_options || [];
+  if (result?.error?.code && result.error.code !== "ok") {
+    throw new Error(result.error.message || result.error.code);
+  }
+  const data = result?.data || {};
+  return {
+    creatorUsername:String(data.creator_username || ""),
+    creatorNickname:String(data.creator_nickname || ""),
+    creatorAvatarUrl:String(data.creator_avatar_url || ""),
+    privacyLevelOptions:Array.isArray(data.privacy_level_options) ? data.privacy_level_options.map(String) : [],
+    commentDisabled:Boolean(data.comment_disabled),
+    duetDisabled:Boolean(data.duet_disabled),
+    stitchDisabled:Boolean(data.stitch_disabled),
+    maxVideoPostDurationSec:Number(data.max_video_post_duration_sec || 0),
+  };
+}
+
+async function publishTikTok(account: ProviderAccountRecord, payload: ProviderPublishPayload) {
+  const media = (payload.mediaUrls || []).filter(url => /^https:\/\//i.test(url)).slice(0, 35);
+  if (!media.length) throw new Error("TikTok Direct Post requires a publicly reachable HTTPS photo from a verified domain or URL prefix.");
+
+  const creator = await queryTikTokCreatorInfo(account);
   const privacy = payload.tiktok?.privacyLevel;
-  if (!privacy || !options.includes(privacy)) {
+  if (!privacy || !creator.privacyLevelOptions.includes(privacy)) {
     throw new Error("TikTok requires the user to explicitly select one of the current privacy options before Direct Post.");
   }
-  if (payload.tiktok?.brandOrganicToggle !== true && payload.tiktok?.brandContentToggle !== true) {
-    throw new Error("TikTok requires the user to declare whether business content is organic or branded before Direct Post.");
+  if (payload.tiktok?.musicUsageConfirmed !== true) {
+    throw new Error("TikTok requires explicit Music Usage Confirmation before Direct Post.");
   }
+
+  const disclosure = Boolean(payload.tiktok?.commercialDisclosure);
+  const ownBrand = Boolean(payload.tiktok?.brandOrganicToggle);
+  const branded = Boolean(payload.tiktok?.brandContentToggle);
+  if (disclosure && !ownBrand && !branded) {
+    throw new Error("TikTok commercial content disclosure is enabled; select Your brand, Branded content, or both.");
+  }
+  if (!disclosure && (ownBrand || branded)) {
+    throw new Error("TikTok commercial-content selections require the disclosure setting to be enabled.");
+  }
+  if (branded && privacy === "SELF_ONLY") {
+    throw new Error("TikTok branded content cannot use private/Only me visibility.");
+  }
+
   const result = (await jsonFetch("https://open.tiktokapis.com/v2/post/publish/content/init/", {
     method:"POST",
     headers:{ Authorization:`Bearer ${account.accessToken}`, "Content-Type":"application/json; charset=UTF-8" },
@@ -471,10 +506,10 @@ async function publishTikTok(account: ProviderAccountRecord, payload: ProviderPu
         title:payload.caption.slice(0,90),
         description:captionWithHashtags(payload).slice(0,4000),
         privacy_level:privacy,
-        disable_comment:Boolean(payload.tiktok?.disableComment),
+        disable_comment:creator.commentDisabled ? true : Boolean(payload.tiktok?.disableComment),
         auto_add_music:Boolean(payload.tiktok?.autoAddMusic),
-        brand_organic_toggle:Boolean(payload.tiktok?.brandOrganicToggle),
-        brand_content_toggle:Boolean(payload.tiktok?.brandContentToggle),
+        brand_organic_toggle:ownBrand,
+        brand_content_toggle:branded,
       },
       source_info:{ source:"PULL_FROM_URL", photo_images:media, photo_cover_index:0 },
       post_mode:"DIRECT_POST",
