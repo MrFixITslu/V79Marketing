@@ -21,7 +21,7 @@ import {
 
 interface BusinessProfileBuilderProps {
   business: Business;
-  onUpdateBusiness: (updated: Business) => void;
+  onUpdateBusiness: (updated: Business) => Promise<void>;
   onViewPublicProfile: () => void;
 }
 
@@ -32,6 +32,7 @@ export const BusinessProfileBuilder: React.FC<BusinessProfileBuilderProps> = ({
 }) => {
   const [formData, setFormData] = useState<Business>({ ...business });
   const [isSaved, setIsSaved] = useState(false);
+  const [saveError, setSaveError] = useState('');
   const [activeSubTab, setActiveSubTab] = useState<'info' | 'branding' | 'hours' | 'products'>('info');
 
   const [newProductName, setNewProductName] = useState('');
@@ -41,22 +42,14 @@ export const BusinessProfileBuilder: React.FC<BusinessProfileBuilderProps> = ({
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSaveError('');
     try {
-      const response = await fetch(`/api/businesses/${formData.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
-      });
-      const data = await response.json();
-      if (data.success) {
-        onUpdateBusiness(formData);
-        setIsSaved(true);
-        setTimeout(() => setIsSaved(false), 3000);
-      }
-    } catch (err) {
-      onUpdateBusiness(formData);
+      await onUpdateBusiness(formData);
       setIsSaved(true);
       setTimeout(() => setIsSaved(false), 3000);
+    } catch (err) {
+      setIsSaved(false);
+      setSaveError(err instanceof Error ? err.message : 'Could not save the business profile.');
     }
   };
 
@@ -118,6 +111,11 @@ export const BusinessProfileBuilder: React.FC<BusinessProfileBuilderProps> = ({
           </button>
         </div>
       </div>
+      {saveError && (
+        <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-xs font-medium text-red-300">
+          {saveError}
+        </div>
+      )}
 
       {/* Profile Builder Navigation */}
       <div className="flex items-center gap-2 border-b border-slate-800 pb-2 text-xs">
