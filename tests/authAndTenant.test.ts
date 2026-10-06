@@ -60,7 +60,7 @@ describe("V79 Marketing Hub — Production Security & Workflow Test Suite", () =
     expect(isAllowed).toBe(false);
   });
 
-  it("5. Publisher Queue: Scheduled posts due for publishing should be processed", () => {
+  it("5. Publisher Queue: Scheduled posts due for publishing should be processed", async () => {
     const postId = `test-post-${Date.now()}`;
     const nowPast = new Date(Date.now() - 10000).toISOString();
 
@@ -69,11 +69,15 @@ describe("V79 Marketing Hub — Production Security & Workflow Test Suite", () =
       VALUES (?, 'bus-1', 'user-owner-1', 'Janelle Auguste', 'Scheduled Test Post', '{"facebook":{"caption":"Hello"}}', '[]', ?, 'SCHEDULED', ?)
     `).run(postId, nowPast, new Date().toISOString());
 
-    const results = processScheduledPosts();
+    const results = await processScheduledPosts();
     expect(results.length).toBeGreaterThan(0);
+    expect(results.some(result => result.postId === postId && result.platform === "facebook" && result.status === "PUBLISHED")).toBe(true);
 
     const updatedPost = db.prepare("SELECT * FROM posts WHERE id = ?").get(postId) as any;
     expect(updatedPost.status).toBe("PUBLISHED");
-    expect(updatedPost.analytics_json).toBeDefined();
+
+    const delivery = db.prepare("SELECT * FROM post_deliveries WHERE post_id=? AND platform='facebook'").get(postId) as any;
+    expect(delivery.status).toBe("PUBLISHED");
+    expect(delivery.provider_post_id).toContain("simulated-");
   });
 });
