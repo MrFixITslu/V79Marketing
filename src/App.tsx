@@ -193,13 +193,14 @@ export default function App() {
         setBusinesses([session.business]);
         setSessionState('authenticated');
 
-        const [postResponse, customerResponse, creditResponse, campaignResponse, socialResponse, brainResponse] = await Promise.all([
+        const [postResponse, customerResponse, creditResponse, campaignResponse, socialResponse, brainResponse, assetResponse] = await Promise.all([
           fetch('/api/posts', { credentials: 'same-origin' }),
           fetch('/api/customers', { credentials: 'same-origin' }),
           fetch('/api/credits/balance', { credentials: 'same-origin' }),
           fetch('/api/campaigns', { credentials: 'same-origin' }),
           fetch('/api/social-accounts', { credentials: 'same-origin' }),
           fetch('/api/brain', { credentials: 'same-origin' }),
+          fetch('/api/assets', { credentials: 'same-origin' }),
         ]);
         if (postResponse.ok) {
           const body = await postResponse.json();
@@ -224,6 +225,10 @@ export default function App() {
         if (brainResponse.ok) {
           const body = await brainResponse.json();
           if (!cancelled && body.brain) setAiBrain(body.brain);
+        }
+        if (assetResponse.ok) {
+          const body = await assetResponse.json();
+          if (!cancelled) setGeneratedImages(body.assets || []);
         }
       } catch {
         if (!cancelled) setSessionState('unauthenticated');
@@ -318,8 +323,21 @@ export default function App() {
     return body.campaign as Campaign;
   };
 
-  const handleSaveImageToLibrary = (img: GeneratedImage) => {
-    setGeneratedImages([img, ...generatedImages]);
+  const handleSaveImageToLibrary = async (img: GeneratedImage): Promise<GeneratedImage> => {
+    const response = await fetch('/api/assets', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        prompt:img.prompt,
+        dimension:img.dimension,
+        platformTarget:img.platformTarget,
+        imageUrl:img.imageUrl,
+      }),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok || !body.asset) throw new Error(body.error || 'Could not save media asset.');
+    setGeneratedImages((items) => [body.asset, ...items.filter((item) => item.id !== body.asset.id)]);
+    return body.asset as GeneratedImage;
   };
 
   const handleConnectChannel = (_platform: SocialPlatform, _handle: string) => {
