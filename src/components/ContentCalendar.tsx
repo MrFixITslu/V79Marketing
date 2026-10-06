@@ -25,6 +25,12 @@ function isoDateLocal(year:number, month:number, day:number) {
   return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
 
+function scheduledLocalDateKey(value:string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return isoDateLocal(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
 function statusClasses(status:PostDelivery['status']) {
   switch (status) {
     case 'PUBLISHED': return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300';
@@ -236,7 +242,7 @@ export const ContentCalendar: React.FC<ContentCalendarProps> = ({
               return <div key={`empty-${index}`} className="min-h-[108px]" aria-hidden="true" />;
             }
             const dateStr = isoDateLocal(year, month, dayNum);
-            const postsForDay = filteredPosts.filter((p) => p.scheduledFor.startsWith(dateStr));
+            const postsForDay = filteredPosts.filter((p) => scheduledLocalDateKey(p.scheduledFor) === dateStr);
             const isToday =
               dayNum === now.getDate() &&
               month === now.getMonth() &&
