@@ -204,6 +204,13 @@ export function initDb() {
       FOREIGN KEY (business_id) REFERENCES businesses(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS business_brains (
+      business_id TEXT PRIMARY KEY,
+      brain_json TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (business_id) REFERENCES businesses(id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS marketing_audits (
       id TEXT PRIMARY KEY,
       business_id TEXT NOT NULL,
