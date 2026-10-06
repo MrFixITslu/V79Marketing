@@ -45,16 +45,8 @@ export const AiReviewAssistantView: React.FC<AiReviewAssistantViewProps> = ({
     window.alert('Connect a supported review provider before generating or sending review responses.');
   };
 
-  const handleSendResponse = (reviewId: string) => {
-    setReviewList((prev) =>
-      prev.map((r) => {
-        if (r.id === reviewId) {
-          return { ...r, responded: true };
-        }
-        return r;
-      })
-    );
-    onUpdateReviews(reviewList);
+  const handleSendResponse = (_reviewId: string) => {
+    window.alert('Connect the verified review provider before V79 can publish a response. No response has been marked as published.');
   };
 
   return (
@@ -249,7 +241,7 @@ export const AiReviewAssistantView: React.FC<AiReviewAssistantViewProps> = ({
 
                   <div className="flex items-center justify-between">
                     <span className="text-[11px] text-blue-700 font-medium">
-                      {rev.responded ? '✓ Response Published to Google/Facebook' : 'Ready to publish to platform'}
+                      {rev.responded ? '✓ Verified provider response recorded' : 'Provider connection required before publishing'}
                     </span>
 
                     <button
@@ -269,7 +261,7 @@ export const AiReviewAssistantView: React.FC<AiReviewAssistantViewProps> = ({
                       ) : (
                         <>
                           <Send className="w-3.5 h-3.5" />
-                          <span>Post Official Response</span>
+                          <span>Publish via Connected Provider</span>
                         </>
                       )}
                     </button>
