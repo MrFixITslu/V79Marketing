@@ -204,6 +204,17 @@ export function initDb() {
       FOREIGN KEY (business_id) REFERENCES businesses(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS media_assets (
+      id TEXT PRIMARY KEY,
+      business_id TEXT NOT NULL,
+      prompt TEXT NOT NULL,
+      dimension TEXT NOT NULL,
+      platform_target TEXT NOT NULL,
+      image_url TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (business_id) REFERENCES businesses(id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS business_brains (
       business_id TEXT PRIMARY KEY,
       brain_json TEXT NOT NULL,
