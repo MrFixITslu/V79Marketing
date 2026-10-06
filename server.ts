@@ -20,7 +20,7 @@ import {
 } from "./src/lib/auth.js";
 import { getCreditBalance, deductCredits, addCredits, refundCredits, CREDIT_COSTS } from "./src/lib/creditService.js";
 import { startPublisherWorker, processScheduledPosts } from "./src/lib/publisher.ts";
-import { consumeHubLaunchTicket, verifyHubPlatformRequest, verifyHubSummaryRequest } from "./src/lib/platform.js";
+import { consumeHubLaunchTicket, verifyHubProvisionRequest, verifyHubSummaryRequest } from "./src/lib/platform.js";
 import { deprovisionHubTeamIdentity, provisionHubIdentity } from "./src/lib/hubProvisioning.js";
 import { queueMarketingEvent, startPlatformEventPump } from "./src/lib/platformEvents.js";
 
@@ -329,7 +329,7 @@ app.post("/api/platform/provision", (req:any, res) => {
   const name = cleanValue(user.name) || email.split("@")[0] || "";
 
   const rawBody = req.rawBody?.toString("utf8") || JSON.stringify(body);
-  if (!verifyHubPlatformRequest({
+  if (!verifyHubProvisionRequest({
     method: req.method,
     pathname: req.path,
     timestamp: cleanValue(req.get("x-v79-timestamp")),
@@ -383,7 +383,7 @@ app.post("/api/platform/members/provision", (req:any, res) => {
   const role = cleanValue(body.role) as "manager" | "staff" | "viewer";
 
   const rawBody = req.rawBody?.toString("utf8") || JSON.stringify(body);
-  if (!verifyHubPlatformRequest({
+  if (!verifyHubProvisionRequest({
     method: req.method,
     pathname: req.path,
     timestamp: cleanValue(req.get("x-v79-timestamp")),
@@ -432,7 +432,7 @@ app.post("/api/platform/members/deprovision", (req:any, res) => {
   const hubUserId = cleanValue(user.id);
   const rawBody = req.rawBody?.toString("utf8") || JSON.stringify(body);
 
-  if (!verifyHubPlatformRequest({
+  if (!verifyHubProvisionRequest({
     method: req.method,
     pathname: req.path,
     timestamp: cleanValue(req.get("x-v79-timestamp")),
