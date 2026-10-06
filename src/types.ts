@@ -217,10 +217,49 @@ export interface SocialAccount {
   scopes?: string[];
 }
 
+export interface TikTokPublishSettings {
+  privacyLevel: string;
+  disableComment: boolean;
+  autoAddMusic: boolean;
+  commercialDisclosure: boolean;
+  brandOrganicToggle: boolean;
+  brandContentToggle: boolean;
+  isAigc: boolean;
+  musicUsageConfirmed: boolean;
+}
+
 export interface PostPlatformContent {
   caption: string;
   hashtags: string[];
   imageUrl?: string;
+  tiktok?: TikTokPublishSettings;
+}
+
+export interface TikTokCreatorInfo {
+  creatorUsername: string;
+  creatorNickname: string;
+  creatorAvatarUrl: string;
+  privacyLevelOptions: string[];
+  commentDisabled: boolean;
+  duetDisabled: boolean;
+  stitchDisabled: boolean;
+  maxVideoPostDurationSec: number;
+}
+
+export type DeliveryStatus = 'QUEUED' | 'AWAITING_CONNECTION' | 'NEEDS_ACTION' | 'FAILED' | 'PUBLISHED';
+
+export interface PostDelivery {
+  postId: string;
+  postTitle: string;
+  platform: SocialPlatform;
+  status: DeliveryStatus;
+  providerPostId?: string;
+  lastError?: string;
+  attempts: number;
+  publishedAt?: string;
+  updatedAt: string;
+  scheduledFor: string;
+  postStatus: PostStatus;
 }
 
 export interface Post {
