@@ -1,6 +1,7 @@
 import { db } from "./db.js";
 import { assertHubBusinessLink, selectHubUserForBusiness } from "./hubIdentityBoundary.js";
 import type { HubLaunchSession } from "./platform.js";
+import { allowanceForPlan } from "./creditService.js";
 
 function uniqueSlug(base: string, organizationId: string) {
   const seed = (base || "business").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 48) || "business";
@@ -28,6 +29,7 @@ export function provisionHubIdentity(session: HubLaunchSession) {
   const role = marketingRoleForHubRole(session.role);
   const plan = String(session.plan || "HUB").toUpperCase();
   const slug = uniqueSlug(session.organization.slug, businessId);
+  const monthlyAllowance = allowanceForPlan(plan);
 
   const tx = db.transaction(() => {
     const business = db.prepare("SELECT id,hub_organization_id FROM businesses WHERE hub_organization_id=? OR id=?")
@@ -99,9 +101,9 @@ export function provisionHubIdentity(session: HubLaunchSession) {
     db.prepare(`
       INSERT INTO credit_balances
         (business_id,monthly_allowance,purchased_credits,bonus_credits,used_credits,reset_date)
-      VALUES (?,10000,0,0,0,?)
+      VALUES (?,?,0,0,0,?)
       ON CONFLICT(business_id) DO NOTHING
-    `).run(localBusinessId, new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString());
+    `).run(localBusinessId, monthlyAllowance, new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString());
   });
 
   tx();
