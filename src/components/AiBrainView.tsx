@@ -33,6 +33,7 @@ export const AiBrainView: React.FC<AiBrainViewProps> = ({
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [optimizing, setOptimizing] = useState(false);
   const [error, setError] = useState('');
+  const [proposalReady, setProposalReady] = useState(false);
 
   const [newFaqQ, setNewFaqQ] = useState('');
   const [newFaqA, setNewFaqA] = useState('');
@@ -52,6 +53,7 @@ export const AiBrainView: React.FC<AiBrainViewProps> = ({
       if (!response.ok || !body.brain) throw new Error(body.error || 'Could not save the Business Brain.');
       setFormData(body.brain);
       onUpdateBrain(body.brain);
+      setProposalReady(false);
       setSavedSuccess(true);
       setTimeout(() => setSavedSuccess(false), 3000);
     } catch (err) {
@@ -71,10 +73,8 @@ export const AiBrainView: React.FC<AiBrainViewProps> = ({
       const body = await response.json().catch(() => ({}));
       if (!response.ok || !body.brain) throw new Error(body.error || 'Business Brain optimisation failed.');
       setFormData(body.brain);
-      onUpdateBrain(body.brain);
+      setProposalReady(true);
       window.dispatchEvent(new Event('v79:credits-updated'));
-      setSavedSuccess(true);
-      setTimeout(() => setSavedSuccess(false), 3000);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Business Brain optimisation failed.');
     } finally {
@@ -200,6 +200,17 @@ export const AiBrainView: React.FC<AiBrainViewProps> = ({
           </div>
         )}
       </div>
+
+      {error && (
+        <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-xs font-medium text-red-300">
+          {error}
+        </div>
+      )}
+      {proposalReady && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs font-medium text-amber-200">
+          AI suggestions are ready. Review the fields below, then choose Save Brain to make them authoritative.
+        </div>
+      )}
 
       {/* Navigation Sub-Tabs */}
       <div className="flex items-center gap-2 border-b border-slate-200 pb-2 overflow-x-auto text-xs font-bold">
