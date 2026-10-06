@@ -72,6 +72,7 @@ export const AiBrainView: React.FC<AiBrainViewProps> = ({
       if (!response.ok || !body.brain) throw new Error(body.error || 'Business Brain optimisation failed.');
       setFormData(body.brain);
       onUpdateBrain(body.brain);
+      window.dispatchEvent(new Event('v79:credits-updated'));
       setSavedSuccess(true);
       setTimeout(() => setSavedSuccess(false), 3000);
     } catch (err) {
