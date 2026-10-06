@@ -18,7 +18,7 @@ import {
   requireMarketingPermission,
   AuthenticatedRequest,
 } from "./src/lib/auth.js";
-import { getCreditBalance, deductCredits, addCredits, CREDIT_COSTS } from "./src/lib/creditService.js";
+import { getCreditBalance, deductCredits, addCredits, refundCredits, CREDIT_COSTS } from "./src/lib/creditService.js";
 import { startPublisherWorker, processScheduledPosts } from "./src/lib/publisher.ts";
 import { consumeHubLaunchTicket, verifyHubPlatformRequest, verifyHubSummaryRequest } from "./src/lib/platform.js";
 import { deprovisionHubTeamIdentity, provisionHubIdentity } from "./src/lib/hubProvisioning.js";
@@ -172,6 +172,23 @@ const createCampaignSchema = z.object({
   status: z.enum(["ACTIVE","PLANNED","COMPLETED"]).default("ACTIVE"),
   steps: z.array(z.record(z.string(), z.any())).max(100).default([]),
   aiPlanGenerated: z.boolean().default(false),
+});
+
+const businessBrainSchema = z.object({
+  description: z.string().max(4000).default(""),
+  productsAndServices: z.array(z.string().max(500)).max(100).default([]),
+  brandVoiceAndTone: z.string().max(1500).default("Professional and trustworthy"),
+  targetAudience: z.string().max(2000).default(""),
+  customerDemographics: z.string().max(2000).default(""),
+  primaryGoals: z.array(z.string().max(500)).max(50).default([]),
+  frequentlyAskedQuestions: z.array(z.object({
+    q: z.string().max(1000),
+    a: z.string().max(2000),
+  })).max(100).default([]),
+  seasonalPromotions: z.array(z.string().max(500)).max(50).default([]),
+  preferredPostingTimes: z.string().max(1000).default(""),
+  preferredHashtags: z.array(z.string().max(120)).max(100).default([]),
+  previousCampaignNotes: z.string().max(4000).default(""),
 });
 
 // --- AUTHENTICATION ROUTES ---
@@ -1346,6 +1363,133 @@ app.put("/api/memory", authenticate, requireMarketingPermission("memory.write"),
     });
   } catch (err: any) {
     res.status(500).json({ error: "Failed to update business memory" });
+  }
+});
+
+// --- PERSISTED AI BUSINESS BRAIN ---
+
+function defaultBusinessBrain(businessId: string) {
+  const business = db.prepare("SELECT * FROM businesses WHERE id=?").get(businessId) as any;
+  const brandProfile = business ? JSON.parse(business.brand_profile_json || "{}") : {};
+  const products = business ? JSON.parse(business.products_json || "[]") : [];
+  const services = business ? JSON.parse(business.services_json || "[]") : [];
+  return {
+    businessId,
+    description: business?.description || "",
+    productsAndServices: [...products, ...services]
+      .map((item:any) => [item?.name, item?.description].filter(Boolean).join(": "))
+      .filter(Boolean)
+      .slice(0, 100),
+    brandVoiceAndTone: brandProfile?.brandVoice || "Professional and trustworthy",
+    targetAudience: brandProfile?.targetAudience || "",
+    customerDemographics: "",
+    primaryGoals: [],
+    frequentlyAskedQuestions: [],
+    seasonalPromotions: [],
+    preferredPostingTimes: "",
+    preferredHashtags: Array.isArray(brandProfile?.keywords) ? brandProfile.keywords : [],
+    previousCampaignNotes: "",
+  };
+}
+
+app.get("/api/brain", authenticate, requireMarketingPermission("memory.read"), (req: AuthenticatedRequest, res) => {
+  try {
+    const row = db.prepare("SELECT brain_json,updated_at FROM business_brains WHERE business_id=?").get(req.user!.businessId) as any;
+    const brain = row ? { businessId:req.user!.businessId, ...businessBrainSchema.parse(JSON.parse(row.brain_json || "{}")) } : defaultBusinessBrain(req.user!.businessId);
+    res.json({ success:true, brain, updatedAt:row?.updated_at || null });
+  } catch (error:any) {
+    res.status(500).json({ error:error?.message || "Failed to load business brain" });
+  }
+});
+
+app.put("/api/brain", authenticate, requireMarketingPermission("memory.write"), (req: AuthenticatedRequest, res) => {
+  try {
+    const parsed = businessBrainSchema.parse(req.body?.brain || req.body || {});
+    const now = new Date().toISOString();
+    db.prepare(`
+      INSERT INTO business_brains (business_id,brain_json,updated_at)
+      VALUES (?,?,?)
+      ON CONFLICT(business_id) DO UPDATE SET brain_json=excluded.brain_json, updated_at=excluded.updated_at
+    `).run(req.user!.businessId, JSON.stringify(parsed), now);
+    res.json({ success:true, brain:{ businessId:req.user!.businessId, ...parsed }, updatedAt:now });
+  } catch (error:any) {
+    res.status(400).json({ error:error?.message || "Invalid business brain" });
+  }
+});
+
+app.post("/api/ai/optimize-brain", authenticate, requireMarketingPermission("ai.use"), aiGenerationLimiter, async (req: AuthenticatedRequest, res) => {
+  const businessId = req.user!.businessId;
+  const ip = req.ip || "unknown";
+  let charged = false;
+  try {
+    const current = businessBrainSchema.parse(req.body?.brain || {});
+    const business = db.prepare("SELECT name,industry,description,location,products_json,services_json,brand_profile_json FROM businesses WHERE id=?").get(businessId) as any;
+    if (!business) return res.status(404).json({ error:"Business workspace not found" });
+
+    const deduction = deductCredits(
+      businessId,
+      req.user!.id,
+      req.user!.name,
+      CREDIT_COSTS.brainOptimize,
+      "AI Business Brain optimisation",
+      ip
+    );
+    if (!deduction.success) return res.status(402).json({ error:deduction.error });
+    charged = true;
+
+    const verifiedContext = {
+      businessName:business.name,
+      industry:business.industry,
+      description:business.description || "",
+      location:business.location || "",
+      products:JSON.parse(business.products_json || "[]"),
+      services:JSON.parse(business.services_json || "[]"),
+      brandProfile:JSON.parse(business.brand_profile_json || "{}"),
+      currentBrain:current,
+    };
+    const prompt = `You are improving a business marketing knowledge profile.
+Use ONLY facts in VERIFIED_CONTEXT. Do not invent customers, demographics, awards, prices, opening hours, locations, promotions, guarantees, results, products, services or FAQs.
+You may improve wording, organise supplied facts, and leave fields empty when the verified context does not support them.
+
+VERIFIED_CONTEXT:
+${JSON.stringify(verifiedContext)}
+
+Return JSON only with exactly these fields:
+description, productsAndServices, brandVoiceAndTone, targetAudience, customerDemographics, primaryGoals, frequentlyAskedQuestions, seasonalPromotions, preferredPostingTimes, preferredHashtags, previousCampaignNotes.`;
+
+    let candidate:any = await tryOllamaJson(prompt);
+    if (!candidate) {
+      const ai = getGenAI();
+      if (ai) {
+        const response = await ai.models.generateContent({
+          model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
+          contents: prompt,
+          config: { responseMimeType:"application/json" },
+        });
+        if (response.text) candidate = JSON.parse(response.text);
+      }
+    }
+    if (!candidate) throw new Error("No configured AI provider returned a result.");
+
+    const optimized = businessBrainSchema.parse(candidate);
+    const now = new Date().toISOString();
+    db.prepare(`
+      INSERT INTO business_brains (business_id,brain_json,updated_at)
+      VALUES (?,?,?)
+      ON CONFLICT(business_id) DO UPDATE SET brain_json=excluded.brain_json, updated_at=excluded.updated_at
+    `).run(businessId, JSON.stringify(optimized), now);
+
+    res.json({
+      success:true,
+      brain:{ businessId, ...optimized },
+      remainingCredits:deduction.remainingCredits,
+      updatedAt:now,
+    });
+  } catch (error:any) {
+    if (charged) {
+      refundCredits(businessId, req.user!.id, req.user!.name, CREDIT_COSTS.brainOptimize, "AI Business Brain optimisation failed", ip);
+    }
+    res.status(503).json({ error:error?.message || "Business Brain optimisation failed" });
   }
 });
 
