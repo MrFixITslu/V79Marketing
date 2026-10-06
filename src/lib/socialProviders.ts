@@ -513,6 +513,67 @@ async function publishGoogleBusiness(account: ProviderAccountRecord, payload: Pr
   return String(result.name || "");
 }
 
+export async function refreshProviderAccess(account: ProviderAccountRecord): Promise<ProviderAccountRecord> {
+  const expiresAt = account.expiresAt ? Date.parse(account.expiresAt) : 0;
+  if (!expiresAt || expiresAt - Date.now() > 10 * 60 * 1000) return account;
+
+  if (account.platform === "facebook" || account.platform === "instagram") {
+    throw new Error("Meta access has expired. Reconnect the Facebook/Instagram account.");
+  }
+  if (!account.refreshToken) {
+    throw new Error("Provider access has expired and no refresh token is available. Reconnect the account.");
+  }
+
+  let token:any;
+  if (account.platform === "google_business") {
+    const body = new URLSearchParams({
+      client_id:env("GOOGLE_CLIENT_ID"),
+      client_secret:env("GOOGLE_CLIENT_SECRET"),
+      refresh_token:account.refreshToken,
+      grant_type:"refresh_token",
+    });
+    token = (await jsonFetch("https://oauth2.googleapis.com/token", {
+      method:"POST",
+      headers:{"content-type":"application/x-www-form-urlencoded"},
+      body,
+    })).body;
+  } else if (account.platform === "linkedin") {
+    const body = new URLSearchParams({
+      grant_type:"refresh_token",
+      refresh_token:account.refreshToken,
+      client_id:env("LINKEDIN_CLIENT_ID"),
+      client_secret:env("LINKEDIN_CLIENT_SECRET"),
+    });
+    token = (await jsonFetch("https://www.linkedin.com/oauth/v2/accessToken", {
+      method:"POST",
+      headers:{"content-type":"application/x-www-form-urlencoded"},
+      body,
+    })).body;
+  } else if (account.platform === "tiktok") {
+    const body = new URLSearchParams({
+      client_key:env("TIKTOK_CLIENT_KEY"),
+      client_secret:env("TIKTOK_CLIENT_SECRET"),
+      grant_type:"refresh_token",
+      refresh_token:account.refreshToken,
+    });
+    token = (await jsonFetch("https://open.tiktokapis.com/v2/oauth/token/", {
+      method:"POST",
+      headers:{"content-type":"application/x-www-form-urlencoded"},
+      body,
+    })).body;
+  } else {
+    return account;
+  }
+
+  if (!token?.access_token) throw new Error("Provider token refresh failed. Reconnect the account.");
+  return {
+    ...account,
+    accessToken:String(token.access_token),
+    refreshToken:token.refresh_token ? String(token.refresh_token) : account.refreshToken,
+    expiresAt:token.expires_in ? new Date(Date.now() + Number(token.expires_in) * 1000).toISOString() : account.expiresAt,
+  };
+}
+
 export async function publishWithProvider(account: ProviderAccountRecord, payload: ProviderPublishPayload): Promise<ProviderPublishResult> {
   let providerPostId = "";
   if (account.platform === "facebook") providerPostId = await publishFacebook(account, payload);
