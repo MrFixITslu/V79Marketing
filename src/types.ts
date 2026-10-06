@@ -212,6 +212,9 @@ export interface SocialAccount {
   connected: boolean;
   followerCount: number;
   lastSyncedAt: string;
+  providerAccountId?: string;
+  expiresAt?: string;
+  scopes?: string[];
 }
 
 export interface PostPlatformContent {
