@@ -23,7 +23,7 @@ export function marketingRoleForHubRole(role: HubLaunchSession["role"]) {
 export function provisionHubIdentity(session: HubLaunchSession) {
   const businessId = session.organization.id;
   let localBusinessId = businessId;
-  const userId = `hub:${session.user.id}`;
+  const userId = `hub:${businessId}:${session.user.id}`;
   const now = new Date().toISOString();
   const role = marketingRoleForHubRole(session.role);
   const plan = String(session.plan || "HUB").toUpperCase();
@@ -60,8 +60,8 @@ export function provisionHubIdentity(session: HubLaunchSession) {
         .run(session.organization.name, slug, plan, session.organization.id, business.id);
     }
 
-    let candidates = db.prepare("SELECT id,hub_user_id,business_id FROM users WHERE hub_user_id=? LIMIT 2")
-      .all(session.user.id) as any[];
+    let candidates = db.prepare("SELECT id,hub_user_id,business_id FROM users WHERE hub_user_id=? AND business_id=? LIMIT 2")
+      .all(session.user.id, localBusinessId) as any[];
     if (candidates.length === 0) {
       candidates = db.prepare(
         "SELECT id,hub_user_id,business_id FROM users WHERE LOWER(email)=LOWER(?) AND business_id=? AND hub_user_id IS NULL LIMIT 2"
@@ -105,7 +105,7 @@ export function provisionHubIdentity(session: HubLaunchSession) {
   });
 
   tx();
-  const localUser = db.prepare("SELECT * FROM users WHERE hub_user_id=?").get(session.user.id) as any;
+  const localUser = db.prepare("SELECT * FROM users WHERE hub_user_id=? AND business_id=?").get(session.user.id, localBusinessId) as any;
   return { businessId: localBusinessId, userId: localUser.id, role: localUser.role };
 }
 
