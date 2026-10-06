@@ -156,22 +156,77 @@ const loginSchema = z.object({
 });
 
 const createPostSchema = z.object({
-  businessId: z.string(),
-  title: z.string().min(1),
-  content: z.record(z.string(), z.any()),
-  mediaUrls: z.array(z.string()).optional(),
-  scheduledFor: z.string(),
-  campaignId: z.string().optional(),
+  businessId: z.string().min(1).max(180),
+  title: z.string().trim().min(1).max(300),
+  content: z.record(z.string(), z.any()).refine(value => Object.keys(value).length <= 10, "Too many platform payloads."),
+  mediaUrls: z.array(z.string().max(5000)).max(10).optional(),
+  scheduledFor: z.string().datetime(),
+  campaignId: z.string().max(180).optional(),
 });
 
 const createCampaignSchema = z.object({
-  name: z.string().min(1).max(160),
-  objective: z.string().min(1).max(2000),
-  startDate: z.string().min(8).max(40),
-  endDate: z.string().min(8).max(40),
+  name: z.string().trim().min(1).max(160),
+  objective: z.string().trim().min(1).max(2000),
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   status: z.enum(["ACTIVE","PLANNED","COMPLETED"]).default("ACTIVE"),
   steps: z.array(z.record(z.string(), z.any())).max(100).default([]),
   aiPlanGenerated: z.boolean().default(false),
+}).refine(data => data.endDate >= data.startDate, {
+  message:"Campaign end date must be on or after the start date.",
+  path:["endDate"],
+});
+
+const businessUpdateSchema = z.object({
+  name: z.string().trim().min(1).max(180).optional(),
+  industry: z.string().trim().max(180).optional(),
+  description: z.string().max(8000).optional(),
+  location: z.string().max(500).optional(),
+  phone: z.string().max(100).optional(),
+  email: z.union([z.string().email().max(320), z.literal("")]).optional(),
+  website: z.string().max(1000).optional(),
+  whatsapp: z.string().max(100).optional(),
+  openingHours: z.array(z.object({
+    day:z.string().max(30),
+    open:z.string().max(30),
+    close:z.string().max(30),
+    closed:z.boolean(),
+  })).max(14).optional(),
+  products: z.array(z.object({
+    id:z.string().max(180),
+    name:z.string().max(300),
+    description:z.string().max(4000),
+    price:z.string().max(100),
+    category:z.string().max(180),
+    imageUrl:z.string().max(5000).optional(),
+  })).max(250).optional(),
+  services: z.array(z.object({
+    id:z.string().max(180),
+    name:z.string().max(300),
+    description:z.string().max(4000),
+    price:z.string().max(100),
+    category:z.string().max(180),
+    imageUrl:z.string().max(5000).optional(),
+  })).max(250).optional(),
+  brandProfile: z.object({
+    primaryColor:z.string().max(50),
+    secondaryColor:z.string().max(50),
+    accentColor:z.string().max(50),
+    brandVoice:z.string().max(3000),
+    targetAudience:z.string().max(3000),
+    keywords:z.array(z.string().max(180)).max(100),
+    tagline:z.string().max(500),
+    fonts:z.object({ heading:z.string().max(180), body:z.string().max(180) }).optional(),
+  }).optional(),
+});
+
+const customerCreateSchema = z.object({
+  name:z.string().trim().min(1).max(180),
+  phone:z.string().trim().min(1).max(100),
+  email:z.union([z.string().trim().email().max(320), z.literal("")]).optional(),
+  channel:z.enum(["whatsapp","facebook","google_business","website"]).default("whatsapp"),
+  status:z.enum(["NEW_INQUIRY","INTERESTED","FOLLOW_UP","CUSTOMER","REPEAT_CUSTOMER"]).default("NEW_INQUIRY"),
+  notes:z.string().max(5000).optional(),
 });
 
 const generateTextSchema = z.object({
@@ -724,7 +779,9 @@ app.get("/api/businesses", authenticate, requireMarketingPermission("business.re
 
 app.put("/api/businesses/:id", authenticate, requireMarketingPermission("business.write"), requireTenantAccess, (req: AuthenticatedRequest, res) => {
   const { id } = req.params;
-  const updates = req.body;
+  const parsed = businessUpdateSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error:"Invalid business profile update.", details:parsed.error.flatten() });
+  const updates = parsed.data;
 
   const existing = db.prepare("SELECT * FROM businesses WHERE id = ?").get(id) as any;
   if (!existing) return res.status(404).json({ error: "Business not found" });
@@ -734,14 +791,14 @@ app.put("/api/businesses/:id", authenticate, requireMarketingPermission("busines
     SET name = ?, industry = ?, description = ?, location = ?, phone = ?, email = ?, website = ?, whatsapp = ?, opening_hours_json = ?, products_json = ?, services_json = ?, brand_profile_json = ?, plan = ?
     WHERE id = ?
   `).run(
-    updates.name || existing.name,
-    updates.industry || existing.industry,
-    updates.description || existing.description,
-    updates.location || existing.location,
-    updates.phone || existing.phone,
-    updates.email || existing.email,
-    updates.website || existing.website,
-    updates.whatsapp || existing.whatsapp,
+    updates.name ?? existing.name,
+    updates.industry ?? existing.industry,
+    updates.description ?? existing.description,
+    updates.location ?? existing.location,
+    updates.phone ?? existing.phone,
+    updates.email ?? existing.email,
+    updates.website ?? existing.website,
+    updates.whatsapp ?? existing.whatsapp,
     updates.openingHours ? JSON.stringify(updates.openingHours) : existing.opening_hours_json,
     updates.products ? JSON.stringify(updates.products) : existing.products_json,
     updates.services ? JSON.stringify(updates.services) : existing.services_json,
@@ -808,7 +865,12 @@ app.post("/api/posts", authenticate, requireMarketingPermission("content.write")
       return res.status(403).json({ error: "Forbidden: Cannot create post for another business" });
     }
 
-    const postId = `post-${Date.now()}`;
+    if (data.campaignId) {
+      const campaign = db.prepare("SELECT id FROM campaigns WHERE id=? AND business_id=?").get(data.campaignId, data.businessId);
+      if (!campaign) return res.status(400).json({ error:"Campaign does not belong to this Marketing workspace." });
+    }
+
+    const postId = `post-${crypto.randomUUID()}`;
     const now = new Date().toISOString();
 
     db.prepare(`
@@ -1344,12 +1406,9 @@ app.get("/api/customers", authenticate, requireMarketingPermission("customers.re
 
 app.post("/api/customers", authenticate, requireMarketingPermission("customers.write"), (req: AuthenticatedRequest, res) => {
   try {
-    const { name, phone, email, channel, status, notes } = req.body;
-    if (!name || !phone) {
-      return res.status(400).json({ error: "Name and phone are required" });
-    }
+    const { name, phone, email, channel, status, notes } = customerCreateSchema.parse(req.body);
 
-    const customerId = `cust-${Date.now()}`;
+    const customerId = `cust-${crypto.randomUUID()}`;
     const businessId = req.user!.businessId;
     const now = new Date().toISOString();
 
