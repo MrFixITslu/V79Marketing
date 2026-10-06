@@ -31,26 +31,31 @@ export const CompetitorIntelligenceView: React.FC<CompetitorIntelligenceViewProp
   const [newCompHandle, setNewCompHandle] = useState('');
   const [auditing, setAuditing] = useState(false);
   const [auditSuccess, setAuditSuccess] = useState(false);
+  const [error, setError] = useState('');
 
-  const handleAddCompetitor = () => {
+  const handleAddCompetitor = async () => {
     if (!newCompName.trim() || !newCompHandle.trim()) return;
-    const newComp: Competitor = {
-      id: `comp-${Date.now()}`,
-      businessId: business.id,
-      name: newCompName.trim(),
-      handle: newCompHandle.trim(),
-      platform: 'instagram',
-      postingFrequency: 'Not measured',
-      estimatedReach: 'Not measured',
-      topTopics: [],
-      opportunityGap: 'Connect an approved data source before V79 calculates competitor benchmarks.',
-      lastAnalyzed: new Date().toISOString()
-    };
-    const updated = [newComp, ...list];
-    setList(updated);
-    onUpdateCompetitors(updated);
-    setNewCompName('');
-    setNewCompHandle('');
+    setError('');
+    try {
+      const response = await fetch('/api/competitors', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          name:newCompName.trim(),
+          handle:newCompHandle.trim(),
+          platform:'instagram',
+        }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || !body.competitor) throw new Error(body.error || 'Could not save competitor.');
+      const updated = [body.competitor as Competitor, ...list];
+      setList(updated);
+      onUpdateCompetitors(updated);
+      setNewCompName('');
+      setNewCompHandle('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save competitor.');
+    }
   };
 
   const handleRunAudit = () => {
@@ -59,10 +64,18 @@ export const CompetitorIntelligenceView: React.FC<CompetitorIntelligenceViewProp
     window.alert('Competitor analysis needs an approved external data source. V79 will not estimate reach or market-share changes without verified data.');
   };
 
-  const handleDelete = (id: string) => {
-    const updated = list.filter((c) => c.id !== id);
-    setList(updated);
-    onUpdateCompetitors(updated);
+  const handleDelete = async (id: string) => {
+    setError('');
+    try {
+      const response = await fetch(`/api/competitors/${encodeURIComponent(id)}`, { method:'DELETE' });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error || 'Could not remove competitor.');
+      const updated = list.filter((c) => c.id !== id);
+      setList(updated);
+      onUpdateCompetitors(updated);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not remove competitor.');
+    }
   };
 
   return (
@@ -130,7 +143,7 @@ export const CompetitorIntelligenceView: React.FC<CompetitorIntelligenceViewProp
             className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs text-slate-900 focus:ring-2 focus:ring-blue-500"
           />
           <button
-            onClick={handleAddCompetitor}
+            onClick={() => void handleAddCompetitor()}
             className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl px-4 py-2.5 transition-all flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
           >
             <Plus className="w-4 h-4" />
@@ -138,6 +151,12 @@ export const CompetitorIntelligenceView: React.FC<CompetitorIntelligenceViewProp
           </button>
         </div>
       </div>
+
+      {error && (
+        <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-xs font-medium text-red-300">
+          {error}
+        </div>
+      )}
 
       {/* Competitors List */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -153,7 +172,7 @@ export const CompetitorIntelligenceView: React.FC<CompetitorIntelligenceViewProp
                   <p className="text-xs text-blue-600 font-mono font-semibold">{comp.handle}</p>
                 </div>
                 <button
-                  onClick={() => handleDelete(comp.id)}
+                  onClick={() => void handleDelete(comp.id)}
                   className="text-slate-400 hover:text-red-500 p-1 transition-colors cursor-pointer"
                 >
                   <Trash2 className="w-4 h-4" />
