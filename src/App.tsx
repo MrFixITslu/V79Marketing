@@ -82,7 +82,16 @@ export type ViewType =
   | 'admin';
 
 export default function App() {
-  const [currentView, setCurrentView] = useState<ViewType>('dashboard');
+  const [currentView, setCurrentView] = useState<ViewType>(() => {
+    if (typeof window === 'undefined') return 'dashboard';
+    const requested = new URLSearchParams(window.location.search).get('view') as ViewType | null;
+    const allowed: ViewType[] = [
+      'dashboard','customers','one-idea-campaign','ai_brain','ai-assistant','ai-image','reviews',
+      'competitors','brand_kit','profile-builder','public_storefront','calendar','campaigns',
+      'social-channels','analytics','billing','admin-portal','admin','landing'
+    ];
+    return requested && allowed.includes(requested) ? requested : 'dashboard';
+  });
   const [currency, setCurrency] = useState<'XCD' | 'USD'>('XCD');
   const [sessionState, setSessionState] = useState<'loading' | 'authenticated' | 'unauthenticated'>('loading');
 
@@ -272,10 +281,27 @@ export default function App() {
   };
 
   const handleUpdateBusiness = async (updated: Business): Promise<void> => {
+    const editableProfile = {
+      name: updated.name,
+      slug: updated.slug,
+      logoUrl: updated.logoUrl,
+      coverImageUrl: updated.coverImageUrl,
+      industry: updated.industry,
+      description: updated.description,
+      location: updated.location,
+      phone: updated.phone,
+      email: updated.email,
+      website: updated.website,
+      whatsapp: updated.whatsapp,
+      openingHours: updated.openingHours,
+      products: updated.products,
+      services: updated.services,
+      brandProfile: updated.brandProfile,
+    };
     const response = await fetch(`/api/businesses/${encodeURIComponent(updated.id)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updated),
+      body: JSON.stringify(editableProfile),
     });
     const body = await response.json().catch(() => ({}));
     if (!response.ok || !body.business) {
@@ -283,16 +309,9 @@ export default function App() {
     }
     const saved: Business = {
       ...updated,
-      name: body.business.name ?? updated.name,
-      logoUrl: body.business.logoUrl ?? body.business.logo_url ?? updated.logoUrl,
-      coverImageUrl: body.business.coverImageUrl ?? body.business.cover_image_url ?? updated.coverImageUrl,
-      industry: body.business.industry ?? updated.industry,
-      description: body.business.description ?? updated.description,
-      location: body.business.location ?? updated.location,
-      phone: body.business.phone ?? updated.phone,
-      email: body.business.email ?? updated.email,
-      website: body.business.website ?? updated.website,
-      whatsapp: body.business.whatsapp ?? updated.whatsapp,
+      ...body.business,
+      logoUrl: body.business.logoUrl ?? updated.logoUrl,
+      coverImageUrl: body.business.coverImageUrl ?? updated.coverImageUrl,
       openingHours: body.business.openingHours ?? updated.openingHours,
       products: body.business.products ?? updated.products,
       services: body.business.services ?? updated.services,
@@ -358,8 +377,14 @@ export default function App() {
     return body.asset as GeneratedImage;
   };
 
-  const handleConnectChannel = (_platform: SocialPlatform, _handle: string) => {
-    window.alert('This channel needs the official provider OAuth connection before V79 can publish to it. No connection will be simulated.');
+  const handleDisconnectChannel = async (id: string): Promise<void> => {
+    const response = await fetch(`/api/social-accounts/${encodeURIComponent(id)}`, {
+      method:'DELETE',
+      credentials:'same-origin',
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.error || 'Could not disconnect this provider.');
+    setSocialAccounts(items => items.map(item => item.id === id ? { ...item, connected:false } : item));
   };
 
   if (sessionState === 'loading') {
@@ -575,7 +600,7 @@ export default function App() {
         {currentView === 'social-channels' && (
           <SocialAccountsManager
             socialAccounts={socialAccounts}
-            onConnectChannel={handleConnectChannel}
+            onDisconnectChannel={handleDisconnectChannel}
           />
         )}
 

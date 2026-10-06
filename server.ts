@@ -1,4 +1,5 @@
 import express from "express";
+import crypto from "crypto";
 import path from "path";
 import cors from "cors";
 import helmet from "helmet";
@@ -23,13 +24,13 @@ import { startPublisherWorker, processScheduledPosts } from "./src/lib/publisher
 import { consumeHubLaunchTicket, verifyHubProvisionRequest, verifyHubSummaryRequest } from "./src/lib/platform.js";
 import { deprovisionHubTeamIdentity, provisionHubIdentity } from "./src/lib/hubProvisioning.js";
 import { queueMarketingEvent, startPlatformEventPump } from "./src/lib/platformEvents.js";
+import { encryptToken } from "./src/lib/tokenVault.js";
+import { buildAuthorizationUrl, exchangeOAuthCode, providerStatus, type ProviderPlatform } from "./src/lib/socialProviders.js";
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 
 initDb();
-startPublisherWorker(15000);
-startPlatformEventPump(30000);
 
 app.disable("x-powered-by");
 if (process.env.TRUST_PROXY === "1") app.set("trust proxy", 1);
@@ -179,6 +180,9 @@ const createCampaignSchema = z.object({
 
 const businessUpdateSchema = z.object({
   name: z.string().trim().min(1).max(180).optional(),
+  slug: z.string().trim().toLowerCase().regex(/^[a-z0-9][a-z0-9-]{0,99}$/).optional(),
+  logoUrl: z.string().max(5000).optional(),
+  coverImageUrl: z.string().max(5000).optional(),
   industry: z.string().trim().max(180).optional(),
   description: z.string().max(8000).optional(),
   location: z.string().max(500).optional(),
@@ -209,15 +213,24 @@ const businessUpdateSchema = z.object({
     imageUrl:z.string().max(5000).optional(),
   })).max(250).optional(),
   brandProfile: z.object({
-    primaryColor:z.string().max(50),
-    secondaryColor:z.string().max(50),
-    accentColor:z.string().max(50),
-    brandVoice:z.string().max(3000),
-    targetAudience:z.string().max(3000),
-    keywords:z.array(z.string().max(180)).max(100),
-    tagline:z.string().max(500),
-    fonts:z.object({ heading:z.string().max(180), body:z.string().max(180) }).optional(),
+    primaryColor:z.string().max(50).optional(),
+    secondaryColor:z.string().max(50).optional(),
+    accentColor:z.string().max(50).optional(),
+    brandVoice:z.string().max(3000).optional(),
+    targetAudience:z.string().max(3000).optional(),
+    keywords:z.array(z.string().max(180)).max(100).optional(),
+    tagline:z.string().max(500).optional(),
+    fonts:z.object({
+      heading:z.string().max(180).optional(),
+      body:z.string().max(180).optional(),
+    }).optional(),
   }).optional(),
+});
+
+const socialPlatformSchema = z.enum(["facebook","instagram","linkedin","tiktok","google_business"]);
+const socialConnectSchema = z.object({
+  platform:socialPlatformSchema,
+  accountHandle:z.string().trim().max(180).default(""),
 });
 
 const customerCreateSchema = z.object({
@@ -780,42 +793,88 @@ app.get("/api/businesses", authenticate, requireMarketingPermission("business.re
 app.put("/api/businesses/:id", authenticate, requireMarketingPermission("business.write"), requireTenantAccess, (req: AuthenticatedRequest, res) => {
   const { id } = req.params;
   const parsed = businessUpdateSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error:"Invalid business profile update.", details:parsed.error.flatten() });
+  if (!parsed.success) {
+    const firstIssue = parsed.error.issues[0]?.message || "Profile data failed validation.";
+    return res.status(400).json({
+      error:`Invalid business profile update: ${firstIssue}`,
+      details:parsed.error.flatten(),
+    });
+  }
   const updates = parsed.data;
 
   const existing = db.prepare("SELECT * FROM businesses WHERE id = ?").get(id) as any;
   if (!existing) return res.status(404).json({ error: "Business not found" });
 
-  db.prepare(`
-    UPDATE businesses
-    SET name = ?, industry = ?, description = ?, location = ?, phone = ?, email = ?, website = ?, whatsapp = ?, opening_hours_json = ?, products_json = ?, services_json = ?, brand_profile_json = ?, plan = ?
-    WHERE id = ?
-  `).run(
-    updates.name ?? existing.name,
-    updates.industry ?? existing.industry,
-    updates.description ?? existing.description,
-    updates.location ?? existing.location,
-    updates.phone ?? existing.phone,
-    updates.email ?? existing.email,
-    updates.website ?? existing.website,
-    updates.whatsapp ?? existing.whatsapp,
-    updates.openingHours ? JSON.stringify(updates.openingHours) : existing.opening_hours_json,
-    updates.products ? JSON.stringify(updates.products) : existing.products_json,
-    updates.services ? JSON.stringify(updates.services) : existing.services_json,
-    updates.brandProfile ? JSON.stringify(updates.brandProfile) : existing.brand_profile_json,
-    existing.plan,
-    id
-  );
+  const nextSlug = updates.slug ?? existing.slug;
+  if (nextSlug !== existing.slug) {
+    const collision = db.prepare("SELECT id FROM businesses WHERE slug=? AND id<>?").get(nextSlug, id);
+    if (collision) return res.status(409).json({ error:"That public profile URL is already in use." });
+  }
+
+  let existingBrand:any = {};
+  try { existingBrand = JSON.parse(existing.brand_profile_json || "{}"); } catch {}
+  const incomingBrand = updates.brandProfile || undefined;
+  const nextBrand = incomingBrand ? {
+    ...existingBrand,
+    ...incomingBrand,
+    fonts:incomingBrand.fonts ? { ...(existingBrand.fonts || {}), ...incomingBrand.fonts } : existingBrand.fonts,
+  } : existingBrand;
+
+  try {
+    db.prepare(`
+      UPDATE businesses
+      SET name = ?, slug = ?, logo_url = ?, cover_image_url = ?, industry = ?, description = ?, location = ?,
+          phone = ?, email = ?, website = ?, whatsapp = ?, opening_hours_json = ?, products_json = ?,
+          services_json = ?, brand_profile_json = ?, plan = ?
+      WHERE id = ?
+    `).run(
+      updates.name ?? existing.name,
+      nextSlug,
+      updates.logoUrl ?? existing.logo_url,
+      updates.coverImageUrl ?? existing.cover_image_url,
+      updates.industry ?? existing.industry,
+      updates.description ?? existing.description,
+      updates.location ?? existing.location,
+      updates.phone ?? existing.phone,
+      updates.email ?? existing.email,
+      updates.website ?? existing.website,
+      updates.whatsapp ?? existing.whatsapp,
+      updates.openingHours !== undefined ? JSON.stringify(updates.openingHours) : existing.opening_hours_json,
+      updates.products !== undefined ? JSON.stringify(updates.products) : existing.products_json,
+      updates.services !== undefined ? JSON.stringify(updates.services) : existing.services_json,
+      JSON.stringify(nextBrand),
+      existing.plan,
+      id
+    );
+  } catch (error:any) {
+    if (String(error?.message || "").toLowerCase().includes("unique")) {
+      return res.status(409).json({ error:"That public profile URL is already in use." });
+    }
+    throw error;
+  }
 
   const updated = db.prepare("SELECT * FROM businesses WHERE id = ?").get(id) as any;
   res.json({
     success: true,
     business: {
-      ...updated,
-      openingHours: JSON.parse(updated.opening_hours_json || "[]"),
-      products: JSON.parse(updated.products_json || "[]"),
-      services: JSON.parse(updated.services_json || "[]"),
-      brandProfile: JSON.parse(updated.brand_profile_json || "{}"),
+      id:updated.id,
+      name:updated.name,
+      slug:updated.slug,
+      logoUrl:updated.logo_url || "",
+      coverImageUrl:updated.cover_image_url || "",
+      industry:updated.industry || "",
+      description:updated.description || "",
+      location:updated.location || "",
+      phone:updated.phone || "",
+      email:updated.email || "",
+      website:updated.website || "",
+      whatsapp:updated.whatsapp || "",
+      openingHours:JSON.parse(updated.opening_hours_json || "[]"),
+      products:JSON.parse(updated.products_json || "[]"),
+      services:JSON.parse(updated.services_json || "[]"),
+      brandProfile:JSON.parse(updated.brand_profile_json || "{}"),
+      plan:updated.plan,
+      createdAt:updated.created_at,
     },
   });
 });
@@ -962,9 +1021,16 @@ app.post("/api/campaigns", authenticate, requireMarketingPermission("content.wri
   }
 });
 
+app.get("/api/social-providers", authenticate, requireMarketingPermission("social.read"), (_req, res) => {
+  res.json({ providers:providerStatus() });
+});
+
 app.get("/api/social-accounts", authenticate, requireMarketingPermission("social.read"), (req: AuthenticatedRequest, res) => {
-  const rows = db.prepare("SELECT id,business_id,platform,account_name,account_handle,connected,follower_count,last_synced_at FROM social_accounts WHERE business_id=? ORDER BY platform")
-    .all(req.user!.businessId) as any[];
+  const rows = db.prepare(`
+    SELECT id,business_id,platform,account_name,account_handle,connected,follower_count,last_synced_at,
+           provider_account_id,expires_at,token_scopes
+    FROM social_accounts WHERE business_id=? ORDER BY platform
+  `).all(req.user!.businessId) as any[];
   res.json({
     socialAccounts: rows.map(row => ({
       id:row.id,
@@ -975,14 +1041,149 @@ app.get("/api/social-accounts", authenticate, requireMarketingPermission("social
       connected:Boolean(row.connected),
       followerCount:Number(row.follower_count || 0),
       lastSyncedAt:row.last_synced_at,
+      providerAccountId:row.provider_account_id || undefined,
+      expiresAt:row.expires_at || undefined,
+      scopes:String(row.token_scopes || "").split(" ").filter(Boolean),
     })),
   });
 });
 
+function socialOAuthRedirectUri(platform:string) {
+  const configured = String(process.env.APP_URL || "").trim();
+  if (!configured) throw new Error("APP_URL must be configured before social OAuth can be used.");
+  return new URL(`/api/social-accounts/oauth/${platform}/callback`, configured).toString();
+}
+
+function socialReturnUrl(status:"connected"|"error", platform:string, message?:string) {
+  const configured = String(process.env.APP_URL || "").trim();
+  const base = configured || "https://marketing.v79sl.com";
+  const url = new URL("/", base);
+  url.searchParams.set("view", "social-channels");
+  url.searchParams.set("social", status);
+  url.searchParams.set("platform", platform);
+  if (message) url.searchParams.set("message", message.slice(0,300));
+  return url.toString();
+}
+
+app.post("/api/social-accounts/connect", authenticate, requireMarketingPermission("social.write"), (req: AuthenticatedRequest, res) => {
+  try {
+    const data = socialConnectSchema.parse(req.body || {});
+    const provider = providerStatus().find(item => item.platform === data.platform);
+    if (!provider?.configured) {
+      return res.status(503).json({
+        error:`${data.platform.replace("_"," ")} OAuth credentials are not configured on this V79 Marketing server.`,
+        code:"PROVIDER_NOT_CONFIGURED",
+      });
+    }
+
+    const state = crypto.randomBytes(32).toString("base64url");
+    const stateHash = crypto.createHash("sha256").update(state).digest("hex");
+    const now = new Date();
+    const expires = new Date(now.getTime() + 10 * 60 * 1000);
+    db.prepare("DELETE FROM social_oauth_states WHERE expires_at < ?").run(now.toISOString());
+    db.prepare(`
+      INSERT INTO social_oauth_states(state_hash,business_id,user_id,platform,account_hint,expires_at,created_at)
+      VALUES(?,?,?,?,?,?,?)
+    `).run(
+      stateHash,
+      req.user!.businessId,
+      req.user!.id,
+      data.platform,
+      data.accountHandle,
+      expires.toISOString(),
+      now.toISOString()
+    );
+
+    const redirectUri = socialOAuthRedirectUri(data.platform);
+    const authorizationUrl = buildAuthorizationUrl(data.platform as ProviderPlatform, state, redirectUri);
+    res.json({ authorizationUrl, expiresAt:expires.toISOString() });
+  } catch (error:any) {
+    if (error instanceof z.ZodError) return res.status(400).json({ error:"Invalid social provider connection request.", details:error.flatten() });
+    res.status(400).json({ error:error?.message || "Could not start provider OAuth." });
+  }
+});
+
+app.get("/api/social-accounts/oauth/:platform/callback", async (req, res) => {
+  const platformParsed = socialPlatformSchema.safeParse(req.params.platform);
+  const platform = platformParsed.success ? platformParsed.data : null;
+  if (!platform) return res.status(400).send("Unsupported social provider.");
+
+  const state = cleanValue(req.query.state);
+  const code = cleanValue(req.query.code);
+  const providerError = cleanValue(req.query.error_description) || cleanValue(req.query.error);
+  if (providerError) return res.redirect(302, socialReturnUrl("error", platform, providerError));
+  if (!state || !code) return res.redirect(302, socialReturnUrl("error", platform, "Provider callback was missing the OAuth code or state."));
+
+  const stateHash = crypto.createHash("sha256").update(state).digest("hex");
+  const saved = db.prepare("SELECT * FROM social_oauth_states WHERE state_hash=?").get(stateHash) as any;
+  if (!saved) return res.redirect(302, socialReturnUrl("error", platform, "This provider connection request is invalid or has already been used."));
+  db.prepare("DELETE FROM social_oauth_states WHERE state_hash=?").run(stateHash);
+
+  if (saved.platform !== platform || Date.parse(saved.expires_at) < Date.now()) {
+    return res.redirect(302, socialReturnUrl("error", platform, "This provider connection request has expired. Start the connection again."));
+  }
+  const liveUser = db.prepare("SELECT id FROM users WHERE id=? AND business_id=?").get(saved.user_id, saved.business_id);
+  if (!liveUser) return res.redirect(302, socialReturnUrl("error", platform, "V79 Hub access for this workspace is no longer active."));
+
+  try {
+    const redirectUri = socialOAuthRedirectUri(platform);
+    const connection = await exchangeOAuthCode(platform as ProviderPlatform, code, redirectUri, String(saved.account_hint || ""));
+    if (!connection.providerAccountId) throw new Error("Provider account identity was not returned.");
+
+    const now = new Date().toISOString();
+    const existing = db.prepare(`
+      SELECT id FROM social_accounts WHERE business_id=? AND platform=? AND provider_account_id=?
+    `).get(saved.business_id, platform, connection.providerAccountId) as any;
+    const id = existing?.id || `social-${crypto.randomUUID()}`;
+    const accessTokenEnc = encryptToken(connection.accessToken);
+    const refreshTokenEnc = encryptToken(connection.refreshToken || null);
+    const metadata = JSON.stringify(connection.metadata || {});
+    const scopes = (connection.scopes || []).join(" ");
+
+    if (existing) {
+      db.prepare(`
+        UPDATE social_accounts SET account_name=?, account_handle=?, connected=1, access_token_enc=?,
+          refresh_token_enc=?, expires_at=?, provider_metadata_json=?, token_scopes=?, last_synced_at=?
+        WHERE id=? AND business_id=?
+      `).run(
+        connection.accountName, connection.accountHandle, accessTokenEnc, refreshTokenEnc,
+        connection.expiresAt || null, metadata, scopes, now, id, saved.business_id
+      );
+    } else {
+      db.prepare(`
+        INSERT INTO social_accounts
+          (id,business_id,platform,account_name,account_handle,connected,follower_count,access_token_enc,
+           refresh_token_enc,expires_at,provider_account_id,provider_metadata_json,token_scopes,last_synced_at)
+        VALUES(?,?,?,?,?,1,0,?,?,?,?,?,?,?)
+      `).run(
+        id, saved.business_id, platform, connection.accountName, connection.accountHandle,
+        accessTokenEnc, refreshTokenEnc, connection.expiresAt || null, connection.providerAccountId,
+        metadata, scopes, now
+      );
+    }
+
+    return res.redirect(302, socialReturnUrl("connected", platform));
+  } catch (error:any) {
+    console.warn(`[Social OAuth] ${platform} connection failed:`, error?.message || error);
+    return res.redirect(302, socialReturnUrl("error", platform, error?.message || "Provider connection failed."));
+  }
+});
+
+app.delete("/api/social-accounts/:id", authenticate, requireMarketingPermission("social.write"), (req: AuthenticatedRequest, res) => {
+  const existing = db.prepare("SELECT id FROM social_accounts WHERE id=? AND business_id=?").get(req.params.id, req.user!.businessId);
+  if (!existing) return res.status(404).json({ error:"Social connection not found." });
+  db.prepare(`
+    UPDATE social_accounts
+    SET connected=0, access_token_enc=NULL, refresh_token_enc=NULL, expires_at=NULL, last_synced_at=?
+    WHERE id=? AND business_id=?
+  `).run(new Date().toISOString(), req.params.id, req.user!.businessId);
+  res.json({ success:true, id:req.params.id });
+});
+
 app.post("/api/social-accounts", authenticate, requireMarketingPermission("social.write"), (_req, res) => {
-  res.status(501).json({
-    error:"Direct social account connection requires the official provider OAuth adapter. V79 will not simulate a connected account.",
-    code:"PROVIDER_OAUTH_REQUIRED",
+  res.status(410).json({
+    error:"Use the official provider OAuth connection flow.",
+    code:"USE_PROVIDER_OAUTH",
   });
 });
 
@@ -1760,10 +1961,15 @@ function assertProductionConfiguration() {
     .filter(([,value]) => String(value || "").trim().length < 32)
     .map(([name]) => name);
   if (missing.length) throw new Error(`Production configuration missing strong secrets: ${missing.join(", ")}`);
+  if (providerStatus().some(provider => provider.configured) && String(process.env.SOCIAL_TOKEN_ENCRYPTION_KEY || "").trim().length < 32) {
+    throw new Error("SOCIAL_TOKEN_ENCRYPTION_KEY must be configured with at least 32 characters when a social provider is enabled.");
+  }
 }
 
 async function startServer() {
   assertProductionConfiguration();
+  startPublisherWorker(15000);
+  startPlatformEventPump(30000);
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },

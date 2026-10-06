@@ -92,9 +92,27 @@ docker build -t v79-marketing:test .
 
 CI uses Node.js 22 because the current native SQLite dependency requires Node 22 or newer.
 
-## Current provider boundary
+## Social provider integration
 
-V79 Marketing currently prepares and queues content. Official social-network publishing requires provider OAuth applications and credentials. The application refuses to report an unverified channel as connected or a queued item as published.
+V79 Marketing uses official OAuth flows and stores provider access/refresh tokens encrypted at rest. Set a unique `SOCIAL_TOKEN_ENCRYPTION_KEY` (32+ characters) before enabling any provider.
+
+Supported integrations:
+- **Facebook Pages** — Meta OAuth and Page publishing.
+- **Instagram Business** — Meta OAuth and image publishing through the Instagram Graph API. Publishing requires a publicly reachable HTTPS image URL.
+- **LinkedIn Company Pages** — LinkedIn 3-legged OAuth and the Posts API. The developer app must be approved for the organisation permissions used by the integration.
+- **TikTok** — Login Kit plus the Content Posting API. Direct Post requires approved `video.publish` access, explicit per-post privacy/commercial-content choices and media hosted on a verified URL/domain. Unaudited TikTok clients are subject to TikTok's visibility restrictions.
+- **Google Business Profile** — Google OAuth with the `business.manage` scope and Local Posts API access.
+
+WhatsApp is intentionally not treated as a public social-feed publisher because the WhatsApp Business Platform does not provide a normal public feed/status publishing API. Customer messaging should be implemented as a separate messaging workflow.
+
+Register these production callback URLs in the matching provider developer consoles:
+- `https://marketing.v79sl.com/api/social-accounts/oauth/facebook/callback`
+- `https://marketing.v79sl.com/api/social-accounts/oauth/instagram/callback`
+- `https://marketing.v79sl.com/api/social-accounts/oauth/linkedin/callback`
+- `https://marketing.v79sl.com/api/social-accounts/oauth/tiktok/callback`
+- `https://marketing.v79sl.com/api/social-accounts/oauth/google_business/callback`
+
+Provider credentials are supplied through the variables documented in `.env.example`. A provider remains visibly unavailable until its credentials are configured; the application never simulates a successful connection or publication.
 
 ## Automatic server deployment
 

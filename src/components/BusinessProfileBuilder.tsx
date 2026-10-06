@@ -89,7 +89,7 @@ export const BusinessProfileBuilder: React.FC<BusinessProfileBuilderProps> = ({
           </div>
           <h1 className="text-2xl font-black text-white">Business Profile Management</h1>
           <p className="text-xs text-slate-400 mt-1">
-            Configure your public profile page hosted at <code className="text-amber-300 font-mono">v79marketing.com/business/{formData.slug}</code>
+            Configure your public profile page hosted at <code className="text-amber-300 font-mono">marketing.v79sl.com/business/{formData.slug}</code>
           </p>
         </div>
 
