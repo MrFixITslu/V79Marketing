@@ -18,7 +18,8 @@ import {
   CaribbeanEvent,
   UtmTrackingParams,
   InAppNotification,
-  NotificationCategory
+  NotificationCategory,
+  PostDelivery
 } from './types';
 import {
   INITIAL_BUSINESSES,
@@ -143,6 +144,7 @@ export default function App() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [socialAccounts, setSocialAccounts] = useState<SocialAccount[]>([]);
   const [generatedImages, setGeneratedImages] = useState<GeneratedImage[]>([]);
+  const [postDeliveries, setPostDeliveries] = useState<PostDelivery[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
 
@@ -200,7 +202,7 @@ export default function App() {
         setCurrentBusiness(session.business);
         setUsers([session.user]);
         setBusinesses([session.business]);
-        const [postResponse, customerResponse, creditResponse, campaignResponse, socialResponse, brainResponse, assetResponse, competitorResponse] = await Promise.all([
+        const [postResponse, customerResponse, creditResponse, campaignResponse, socialResponse, brainResponse, assetResponse, competitorResponse, deliveryResponse] = await Promise.all([
           fetch('/api/posts', { credentials: 'same-origin' }),
           fetch('/api/customers', { credentials: 'same-origin' }),
           fetch('/api/credits/balance', { credentials: 'same-origin' }),
@@ -209,6 +211,7 @@ export default function App() {
           fetch('/api/brain', { credentials: 'same-origin' }),
           fetch('/api/assets', { credentials: 'same-origin' }),
           fetch('/api/competitors', { credentials: 'same-origin' }),
+          fetch('/api/post-deliveries', { credentials: 'same-origin' }),
         ]);
         if (postResponse.ok) {
           const body = await postResponse.json();
@@ -242,6 +245,10 @@ export default function App() {
           const body = await competitorResponse.json();
           if (!cancelled) setCompetitors(body.competitors || []);
         }
+        if (deliveryResponse.ok) {
+          const body = await deliveryResponse.json();
+          if (!cancelled) setPostDeliveries(body.deliveries || []);
+        }
         if (!cancelled) setSessionState('authenticated');
       } catch {
         if (!cancelled) setSessionState('unauthenticated');
@@ -264,6 +271,28 @@ export default function App() {
     window.addEventListener('v79:credits-updated', refreshCredits);
     return () => window.removeEventListener('v79:credits-updated', refreshCredits);
   }, []);
+
+  useEffect(() => {
+    if (sessionState !== 'authenticated') return;
+    let cancelled = false;
+    const refreshDeliveries = () => {
+      void fetch('/api/post-deliveries', { credentials:'same-origin' })
+        .then(async response => {
+          if (!response.ok) return;
+          const body = await response.json().catch(() => ({}));
+          if (!cancelled) setPostDeliveries(body.deliveries || []);
+        })
+        .catch(() => undefined);
+    };
+    const handler = () => refreshDeliveries();
+    window.addEventListener('v79:deliveries-updated', handler);
+    const interval = window.setInterval(refreshDeliveries, 20_000);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('v79:deliveries-updated', handler);
+      window.clearInterval(interval);
+    };
+  }, [sessionState]);
 
   // Growth Platform Customers CRM State
   const [customers, setCustomers] = useState<CustomerInquiry[]>([]);
@@ -385,6 +414,20 @@ export default function App() {
     const body = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(body.error || 'Could not disconnect this provider.');
     setSocialAccounts(items => items.map(item => item.id === id ? { ...item, connected:false } : item));
+  };
+
+  const handleRetryDelivery = async (delivery: PostDelivery): Promise<void> => {
+    const response = await fetch(
+      `/api/post-deliveries/${encodeURIComponent(delivery.postId)}/${encodeURIComponent(delivery.platform)}/retry`,
+      { method:'POST', credentials:'same-origin' }
+    );
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.error || 'Could not retry this provider delivery.');
+    setPostDeliveries(items => items.map(item =>
+      item.postId === delivery.postId && item.platform === delivery.platform
+        ? { ...item, status:'QUEUED', attempts:0, lastError:undefined, providerPostId:undefined, publishedAt:undefined, updatedAt:body.updatedAt || new Date().toISOString() }
+        : item
+    ));
   };
 
   if (sessionState === 'loading') {
@@ -538,6 +581,7 @@ export default function App() {
         {currentView === 'ai-assistant' && (
           <AiContentGenerator
             business={currentBusiness}
+            socialAccounts={socialAccounts}
             onSchedulePost={handleSchedulePost}
           />
         )}
@@ -584,6 +628,8 @@ export default function App() {
         {currentView === 'calendar' && (
           <ContentCalendar
             posts={posts}
+            deliveries={postDeliveries}
+            onRetryDelivery={handleRetryDelivery}
             onSelectPost={() => {}}
             onCreateNewPost={() => setCurrentView('ai-assistant')}
           />
