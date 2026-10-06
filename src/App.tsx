@@ -193,12 +193,13 @@ export default function App() {
         setBusinesses([session.business]);
         setSessionState('authenticated');
 
-        const [postResponse, customerResponse, creditResponse, campaignResponse, socialResponse] = await Promise.all([
+        const [postResponse, customerResponse, creditResponse, campaignResponse, socialResponse, brainResponse] = await Promise.all([
           fetch('/api/posts', { credentials: 'same-origin' }),
           fetch('/api/customers', { credentials: 'same-origin' }),
           fetch('/api/credits/balance', { credentials: 'same-origin' }),
           fetch('/api/campaigns', { credentials: 'same-origin' }),
           fetch('/api/social-accounts', { credentials: 'same-origin' }),
+          fetch('/api/brain', { credentials: 'same-origin' }),
         ]);
         if (postResponse.ok) {
           const body = await postResponse.json();
@@ -220,6 +221,10 @@ export default function App() {
           const body = await socialResponse.json();
           if (!cancelled) setSocialAccounts(body.socialAccounts || []);
         }
+        if (brainResponse.ok) {
+          const body = await brainResponse.json();
+          if (!cancelled && body.brain) setAiBrain(body.brain);
+        }
       } catch {
         if (!cancelled) setSessionState('unauthenticated');
       }
@@ -230,36 +235,6 @@ export default function App() {
 
   // Growth Platform Customers CRM State
   const [customers, setCustomers] = useState<CustomerInquiry[]>([]);
-
-  // Credit Deduction Engine
-  const handleDeductCredits = (amount: number, reason: string): boolean => {
-    const total = creditBalance.monthlyAllowance + creditBalance.purchasedCredits + creditBalance.bonusCredits;
-    const remaining = total - creditBalance.usedCredits;
-    if (remaining < amount) {
-      setCurrentView('billing');
-      return false;
-    }
-
-    setCreditBalance((prev) => ({
-      ...prev,
-      usedCredits: prev.usedCredits + amount,
-    }));
-
-    // Log to Audit trail
-    const newLog: AuditLog = {
-      id: `al-${Date.now()}`,
-      businessId: currentBusiness.id,
-      userId: currentUser.id,
-      userName: currentUser.name,
-      action: 'AI_POST_GENERATED',
-      details: `Deducted ${amount} V79 AI Credits for ${reason}`,
-      ipAddress: '190.102.45.12',
-      timestamp: new Date().toISOString(),
-    };
-    setAuditLogs([newLog, ...auditLogs]);
-
-    return true;
-  };
 
   // Sync selected business when user changes
   const handleSelectUser = (user: User) => {
@@ -273,28 +248,36 @@ export default function App() {
     }
   };
 
-  const handleUpdateBusiness = (updated: Business) => {
-    setCurrentBusiness(updated);
-    setBusinesses((items) => items.map((b) => (b.id === updated.id ? updated : b)));
-    void fetch(`/api/businesses/${encodeURIComponent(updated.id)}`, {
+  const handleUpdateBusiness = async (updated: Business): Promise<void> => {
+    const response = await fetch(`/api/businesses/${encodeURIComponent(updated.id)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updated),
-    }).then(async (response) => {
-      if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || 'Could not save business profile.');
-      const body = await response.json();
-      if (body.business) setCurrentBusiness({
-        ...updated,
-        name: body.business.name ?? updated.name,
-        industry: body.business.industry ?? updated.industry,
-        description: body.business.description ?? updated.description,
-        location: body.business.location ?? updated.location,
-        phone: body.business.phone ?? updated.phone,
-        email: body.business.email ?? updated.email,
-        website: body.business.website ?? updated.website,
-        whatsapp: body.business.whatsapp ?? updated.whatsapp,
-      });
-    }).catch((error) => console.error('Business profile save failed:', error));
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok || !body.business) {
+      throw new Error(body.error || 'Could not save business profile.');
+    }
+    const saved: Business = {
+      ...updated,
+      name: body.business.name ?? updated.name,
+      logoUrl: body.business.logoUrl ?? body.business.logo_url ?? updated.logoUrl,
+      coverImageUrl: body.business.coverImageUrl ?? body.business.cover_image_url ?? updated.coverImageUrl,
+      industry: body.business.industry ?? updated.industry,
+      description: body.business.description ?? updated.description,
+      location: body.business.location ?? updated.location,
+      phone: body.business.phone ?? updated.phone,
+      email: body.business.email ?? updated.email,
+      website: body.business.website ?? updated.website,
+      whatsapp: body.business.whatsapp ?? updated.whatsapp,
+      openingHours: body.business.openingHours ?? updated.openingHours,
+      products: body.business.products ?? updated.products,
+      services: body.business.services ?? updated.services,
+      brandProfile: body.business.brandProfile ?? updated.brandProfile,
+      plan: body.business.plan ?? updated.plan,
+    };
+    setCurrentBusiness(saved);
+    setBusinesses((items) => items.map((b) => (b.id === saved.id ? saved : b)));
   };
 
   const handleSchedulePost = async (newPost: Partial<Post>): Promise<void> => {
@@ -477,7 +460,6 @@ export default function App() {
             business={currentBusiness}
             brain={aiBrain}
             onUpdateBrain={setAiBrain}
-            onDeductCredits={handleDeductCredits}
           />
         )}
 
@@ -511,7 +493,6 @@ export default function App() {
             onConvertToSocialPost={(rev) => {
               setCurrentView('ai-image');
             }}
-            onDeductCredits={handleDeductCredits}
           />
         )}
 
@@ -523,7 +504,6 @@ export default function App() {
             onGenerateCounterCampaign={(opp) => {
               setCurrentView('campaigns');
             }}
-            onDeductCredits={handleDeductCredits}
           />
         )}
 
@@ -531,7 +511,8 @@ export default function App() {
           <AiBrandKitView
             business={currentBusiness}
             onUpdateBusinessBrand={(b) => {
-              handleUpdateBusiness({ ...currentBusiness, brandProfile: b });
+              void handleUpdateBusiness({ ...currentBusiness, brandProfile: b })
+                .catch((error) => console.error('Brand profile save failed:', error));
             }}
           />
         )}
