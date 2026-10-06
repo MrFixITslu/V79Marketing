@@ -38,6 +38,7 @@ export const AiContentGenerator: React.FC<AiContentGeneratorProps> = ({
   const [specialDetail, setSpecialDetail] = useState('');
   const [prompt, setPrompt] = useState(initialPrompt);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [generationError, setGenerationError] = useState('');
   const [activePlatform, setActivePlatform] = useState<SocialPlatform | 'whatsapp'>('facebook');
   const [copied, setCopied] = useState(false);
   const [scheduledSuccess, setScheduledSuccess] = useState(false);
@@ -68,6 +69,7 @@ export const AiContentGenerator: React.FC<AiContentGeneratorProps> = ({
     const fullPrompt = `${categories.find((c) => c.id === selectedCategory)?.label}: "${itemName}". Details: "${specialDetail}". ${prompt}`;
 
     setIsGenerating(true);
+    setGenerationError('');
     try {
       const response = await fetch('/api/ai/generate-text', {
         method: 'POST',
@@ -82,12 +84,12 @@ export const AiContentGenerator: React.FC<AiContentGeneratorProps> = ({
         }),
       });
 
-      const data = await response.json();
-      if (data.success && data.data) {
-        setGeneratedContent(data.data);
-      }
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.success || !data.data) throw new Error(data.error || 'Could not generate marketing content.');
+      setGeneratedContent(data.data);
+      if (Number(data.creditsCharged || 0) > 0) window.dispatchEvent(new Event('v79:credits-updated'));
     } catch (err) {
-      console.error('Error calling AI text endpoint:', err);
+      setGenerationError(err instanceof Error ? err.message : 'Could not generate marketing content.');
     } finally {
       setIsGenerating(false);
     }

@@ -18,9 +18,9 @@ import {
   requireMarketingPermission,
   AuthenticatedRequest,
 } from "./src/lib/auth.js";
-import { getCreditBalance, deductCredits, addCredits, CREDIT_COSTS } from "./src/lib/creditService.js";
+import { getCreditBalance, deductCredits, addCredits, refundCredits, CREDIT_COSTS } from "./src/lib/creditService.js";
 import { startPublisherWorker, processScheduledPosts } from "./src/lib/publisher.ts";
-import { consumeHubLaunchTicket, verifyHubPlatformRequest, verifyHubSummaryRequest } from "./src/lib/platform.js";
+import { consumeHubLaunchTicket, verifyHubProvisionRequest, verifyHubSummaryRequest } from "./src/lib/platform.js";
 import { deprovisionHubTeamIdentity, provisionHubIdentity } from "./src/lib/hubProvisioning.js";
 import { queueMarketingEvent, startPlatformEventPump } from "./src/lib/platformEvents.js";
 
@@ -156,22 +156,138 @@ const loginSchema = z.object({
 });
 
 const createPostSchema = z.object({
-  businessId: z.string(),
-  title: z.string().min(1),
-  content: z.record(z.string(), z.any()),
-  mediaUrls: z.array(z.string()).optional(),
-  scheduledFor: z.string(),
-  campaignId: z.string().optional(),
+  businessId: z.string().min(1).max(180),
+  title: z.string().trim().min(1).max(300),
+  content: z.record(z.string(), z.any()).refine(value => Object.keys(value).length <= 10, "Too many platform payloads."),
+  mediaUrls: z.array(z.string().max(5000)).max(10).optional(),
+  scheduledFor: z.string().datetime(),
+  campaignId: z.string().max(180).optional(),
 });
 
 const createCampaignSchema = z.object({
-  name: z.string().min(1).max(160),
-  objective: z.string().min(1).max(2000),
-  startDate: z.string().min(8).max(40),
-  endDate: z.string().min(8).max(40),
+  name: z.string().trim().min(1).max(160),
+  objective: z.string().trim().min(1).max(2000),
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   status: z.enum(["ACTIVE","PLANNED","COMPLETED"]).default("ACTIVE"),
   steps: z.array(z.record(z.string(), z.any())).max(100).default([]),
   aiPlanGenerated: z.boolean().default(false),
+}).refine(data => data.endDate >= data.startDate, {
+  message:"Campaign end date must be on or after the start date.",
+  path:["endDate"],
+});
+
+const businessUpdateSchema = z.object({
+  name: z.string().trim().min(1).max(180).optional(),
+  industry: z.string().trim().max(180).optional(),
+  description: z.string().max(8000).optional(),
+  location: z.string().max(500).optional(),
+  phone: z.string().max(100).optional(),
+  email: z.union([z.string().email().max(320), z.literal("")]).optional(),
+  website: z.string().max(1000).optional(),
+  whatsapp: z.string().max(100).optional(),
+  openingHours: z.array(z.object({
+    day:z.string().max(30),
+    open:z.string().max(30),
+    close:z.string().max(30),
+    closed:z.boolean(),
+  })).max(14).optional(),
+  products: z.array(z.object({
+    id:z.string().max(180),
+    name:z.string().max(300),
+    description:z.string().max(4000),
+    price:z.string().max(100),
+    category:z.string().max(180),
+    imageUrl:z.string().max(5000).optional(),
+  })).max(250).optional(),
+  services: z.array(z.object({
+    id:z.string().max(180),
+    name:z.string().max(300),
+    description:z.string().max(4000),
+    price:z.string().max(100),
+    category:z.string().max(180),
+    imageUrl:z.string().max(5000).optional(),
+  })).max(250).optional(),
+  brandProfile: z.object({
+    primaryColor:z.string().max(50),
+    secondaryColor:z.string().max(50),
+    accentColor:z.string().max(50),
+    brandVoice:z.string().max(3000),
+    targetAudience:z.string().max(3000),
+    keywords:z.array(z.string().max(180)).max(100),
+    tagline:z.string().max(500),
+    fonts:z.object({ heading:z.string().max(180), body:z.string().max(180) }).optional(),
+  }).optional(),
+});
+
+const customerCreateSchema = z.object({
+  name:z.string().trim().min(1).max(180),
+  phone:z.string().trim().min(1).max(100),
+  email:z.union([z.string().trim().email().max(320), z.literal("")]).optional(),
+  channel:z.enum(["whatsapp","facebook","google_business","website"]).default("whatsapp"),
+  status:z.enum(["NEW_INQUIRY","INTERESTED","FOLLOW_UP","CUSTOMER","REPEAT_CUSTOMER"]).default("NEW_INQUIRY"),
+  notes:z.string().max(5000).optional(),
+});
+
+const generateTextSchema = z.object({
+  prompt: z.string().trim().min(1).max(4000),
+});
+
+const generatedSocialCopySchema = z.object({
+  facebook: z.object({ caption:z.string().max(10000), hashtags:z.array(z.string().max(120)).max(50) }),
+  instagram: z.object({ caption:z.string().max(10000), hashtags:z.array(z.string().max(120)).max(50) }),
+  linkedin: z.object({ caption:z.string().max(10000), hashtags:z.array(z.string().max(120)).max(50) }),
+  tiktok: z.object({ caption:z.string().max(10000), hashtags:z.array(z.string().max(120)).max(50) }),
+  whatsapp: z.object({ caption:z.string().max(10000), hashtags:z.array(z.string().max(120)).max(50) }),
+});
+
+const generateCampaignPlanSchema = z.object({
+  campaignName: z.string().trim().min(1).max(160),
+  objective: z.string().trim().min(1).max(2000),
+});
+
+const generatedCampaignStepSchema = z.object({
+  dayNumber: z.coerce.number().int().min(1).max(90),
+  channel: z.enum(["facebook","instagram","linkedin","tiktok","whatsapp","twitter","google_business"]),
+  postTitle: z.string().max(500),
+  caption: z.string().max(10000).optional(),
+  captionPrompt: z.string().max(10000).optional(),
+  suggestedTime: z.string().max(100),
+});
+
+const competitorSchema = z.object({
+  name: z.string().trim().min(1).max(180),
+  handle: z.string().trim().min(1).max(180),
+  platform: z.enum(["facebook","instagram","linkedin","twitter","tiktok","google_business","whatsapp"]).default("instagram"),
+});
+
+const generatedAssetSchema = z.object({
+  prompt: z.string().min(1).max(800),
+  dimension: z.enum(["1080x1080", "1080x1920", "1200x630", "1200x627"]),
+  platformTarget: z.string().min(1).max(120),
+  imageUrl: z.string().min(1).max(1500000).refine(value => value.startsWith("data:image/svg+xml;base64,"), "Only V79-generated SVG assets can be stored."),
+});
+
+const visualTemplateSchema = z.object({
+  prompt: z.string().min(1).max(800),
+  dimension: z.enum(["1080x1080", "1080x1920", "1200x630", "1200x627"]).default("1080x1080"),
+});
+
+const businessBrainSchema = z.object({
+  description: z.string().max(4000).default(""),
+  productsAndServices: z.array(z.string().max(500)).max(100).default([]),
+  brandVoiceAndTone: z.string().max(1500).default("Professional and trustworthy"),
+  targetAudience: z.string().max(2000).default(""),
+  customerDemographics: z.string().max(2000).default(""),
+  primaryGoals: z.array(z.string().max(500)).max(50).default([]),
+  frequentlyAskedQuestions: z.array(z.object({
+    q: z.string().max(1000),
+    a: z.string().max(2000),
+  })).max(100).default([]),
+  seasonalPromotions: z.array(z.string().max(500)).max(50).default([]),
+  preferredPostingTimes: z.string().max(1000).default(""),
+  preferredHashtags: z.array(z.string().max(120)).max(100).default([]),
+  previousCampaignNotes: z.string().max(4000).default(""),
 });
 
 // --- AUTHENTICATION ROUTES ---
@@ -294,7 +410,7 @@ app.post("/api/platform/provision", (req:any, res) => {
   const name = cleanValue(user.name) || email.split("@")[0] || "";
 
   const rawBody = req.rawBody?.toString("utf8") || JSON.stringify(body);
-  if (!verifyHubPlatformRequest({
+  if (!verifyHubProvisionRequest({
     method: req.method,
     pathname: req.path,
     timestamp: cleanValue(req.get("x-v79-timestamp")),
@@ -348,7 +464,7 @@ app.post("/api/platform/members/provision", (req:any, res) => {
   const role = cleanValue(body.role) as "manager" | "staff" | "viewer";
 
   const rawBody = req.rawBody?.toString("utf8") || JSON.stringify(body);
-  if (!verifyHubPlatformRequest({
+  if (!verifyHubProvisionRequest({
     method: req.method,
     pathname: req.path,
     timestamp: cleanValue(req.get("x-v79-timestamp")),
@@ -397,7 +513,7 @@ app.post("/api/platform/members/deprovision", (req:any, res) => {
   const hubUserId = cleanValue(user.id);
   const rawBody = req.rawBody?.toString("utf8") || JSON.stringify(body);
 
-  if (!verifyHubPlatformRequest({
+  if (!verifyHubProvisionRequest({
     method: req.method,
     pathname: req.path,
     timestamp: cleanValue(req.get("x-v79-timestamp")),
@@ -619,11 +735,23 @@ app.get("/api/businesses/public/:slug", (req, res) => {
 
   res.json({
     business: {
-      ...business,
+      id: business.id,
+      name: business.name,
+      slug: business.slug,
+      logoUrl: business.logo_url || "",
+      coverImageUrl: business.cover_image_url || "",
+      industry: business.industry || "",
+      description: business.description || "",
+      location: business.location || "",
+      phone: business.phone || "",
+      email: business.email || "",
+      website: business.website || "",
+      whatsapp: business.whatsapp || "",
       openingHours: JSON.parse(business.opening_hours_json || "[]"),
       products: JSON.parse(business.products_json || "[]"),
       services: JSON.parse(business.services_json || "[]"),
       brandProfile: JSON.parse(business.brand_profile_json || "{}"),
+      createdAt: business.created_at,
     },
   });
 });
@@ -651,7 +779,9 @@ app.get("/api/businesses", authenticate, requireMarketingPermission("business.re
 
 app.put("/api/businesses/:id", authenticate, requireMarketingPermission("business.write"), requireTenantAccess, (req: AuthenticatedRequest, res) => {
   const { id } = req.params;
-  const updates = req.body;
+  const parsed = businessUpdateSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error:"Invalid business profile update.", details:parsed.error.flatten() });
+  const updates = parsed.data;
 
   const existing = db.prepare("SELECT * FROM businesses WHERE id = ?").get(id) as any;
   if (!existing) return res.status(404).json({ error: "Business not found" });
@@ -661,14 +791,14 @@ app.put("/api/businesses/:id", authenticate, requireMarketingPermission("busines
     SET name = ?, industry = ?, description = ?, location = ?, phone = ?, email = ?, website = ?, whatsapp = ?, opening_hours_json = ?, products_json = ?, services_json = ?, brand_profile_json = ?, plan = ?
     WHERE id = ?
   `).run(
-    updates.name || existing.name,
-    updates.industry || existing.industry,
-    updates.description || existing.description,
-    updates.location || existing.location,
-    updates.phone || existing.phone,
-    updates.email || existing.email,
-    updates.website || existing.website,
-    updates.whatsapp || existing.whatsapp,
+    updates.name ?? existing.name,
+    updates.industry ?? existing.industry,
+    updates.description ?? existing.description,
+    updates.location ?? existing.location,
+    updates.phone ?? existing.phone,
+    updates.email ?? existing.email,
+    updates.website ?? existing.website,
+    updates.whatsapp ?? existing.whatsapp,
     updates.openingHours ? JSON.stringify(updates.openingHours) : existing.opening_hours_json,
     updates.products ? JSON.stringify(updates.products) : existing.products_json,
     updates.services ? JSON.stringify(updates.services) : existing.services_json,
@@ -735,7 +865,12 @@ app.post("/api/posts", authenticate, requireMarketingPermission("content.write")
       return res.status(403).json({ error: "Forbidden: Cannot create post for another business" });
     }
 
-    const postId = `post-${Date.now()}`;
+    if (data.campaignId) {
+      const campaign = db.prepare("SELECT id FROM campaigns WHERE id=? AND business_id=?").get(data.campaignId, data.businessId);
+      if (!campaign) return res.status(400).json({ error:"Campaign does not belong to this Marketing workspace." });
+    }
+
+    const postId = `post-${crypto.randomUUID()}`;
     const now = new Date().toISOString();
 
     db.prepare(`
@@ -851,36 +986,138 @@ app.post("/api/social-accounts", authenticate, requireMarketingPermission("socia
   });
 });
 
+// --- TENANT COMPETITOR TRACKING ---
+
+app.get("/api/competitors", authenticate, requireMarketingPermission("social.read"), (req: AuthenticatedRequest, res) => {
+  const rows = db.prepare("SELECT * FROM competitors WHERE business_id=? ORDER BY last_analyzed DESC")
+    .all(req.user!.businessId) as any[];
+  res.json({
+    competitors: rows.map(row => ({
+      id:row.id,
+      businessId:row.business_id,
+      name:row.name,
+      handle:row.handle,
+      platform:row.platform,
+      postingFrequency:row.posting_frequency,
+      estimatedReach:row.estimated_reach,
+      topTopics:JSON.parse(row.top_topics_json || "[]"),
+      opportunityGap:row.opportunity_gap,
+      lastAnalyzed:row.last_analyzed,
+    })),
+  });
+});
+
+app.post("/api/competitors", authenticate, requireMarketingPermission("content.write"), (req: AuthenticatedRequest, res) => {
+  try {
+    const data = competitorSchema.parse(req.body);
+    const id = `comp-${crypto.randomUUID()}`;
+    const lastAnalyzed = new Date().toISOString();
+    const record = {
+      id,
+      businessId:req.user!.businessId,
+      name:data.name,
+      handle:data.handle,
+      platform:data.platform,
+      postingFrequency:"Not measured",
+      estimatedReach:"Not measured",
+      topTopics:[],
+      opportunityGap:"Connect an approved data source before V79 calculates competitor benchmarks.",
+      lastAnalyzed,
+    };
+    db.prepare(`
+      INSERT INTO competitors
+        (id,business_id,name,handle,platform,posting_frequency,estimated_reach,top_topics_json,opportunity_gap,last_analyzed)
+      VALUES (?,?,?,?,?,?,?,?,?,?)
+    `).run(
+      record.id,record.businessId,record.name,record.handle,record.platform,
+      record.postingFrequency,record.estimatedReach,JSON.stringify(record.topTopics),
+      record.opportunityGap,record.lastAnalyzed
+    );
+    res.status(201).json({ competitor:record });
+  } catch (error:any) {
+    res.status(400).json({ error:error?.message || "Invalid competitor record" });
+  }
+});
+
+app.delete("/api/competitors/:id", authenticate, requireMarketingPermission("content.write"), (req: AuthenticatedRequest, res) => {
+  const result = db.prepare("DELETE FROM competitors WHERE id=? AND business_id=?")
+    .run(req.params.id, req.user!.businessId);
+  if (!result.changes) return res.status(404).json({ error:"Competitor record not found" });
+  res.json({ success:true, id:req.params.id });
+});
+
+// --- TENANT MEDIA ASSETS ---
+
+app.get("/api/assets", authenticate, requireMarketingPermission("content.read"), (req: AuthenticatedRequest, res) => {
+  const rows = db.prepare("SELECT * FROM media_assets WHERE business_id=? ORDER BY created_at DESC LIMIT 200")
+    .all(req.user!.businessId) as any[];
+  res.json({
+    assets: rows.map(row => ({
+      id:row.id,
+      businessId:row.business_id,
+      prompt:row.prompt,
+      dimension:row.dimension,
+      platformTarget:row.platform_target,
+      imageUrl:row.image_url,
+      createdAt:row.created_at,
+    })),
+  });
+});
+
+app.post("/api/assets", authenticate, requireMarketingPermission("content.write"), (req: AuthenticatedRequest, res) => {
+  try {
+    const data = generatedAssetSchema.parse(req.body);
+    const id = `asset-${crypto.randomUUID()}`;
+    const createdAt = new Date().toISOString();
+    db.prepare(`
+      INSERT INTO media_assets (id,business_id,prompt,dimension,platform_target,image_url,created_at)
+      VALUES (?,?,?,?,?,?,?)
+    `).run(id,req.user!.businessId,data.prompt,data.dimension,data.platformTarget,data.imageUrl,createdAt);
+    res.status(201).json({
+      asset:{ id,businessId:req.user!.businessId,...data,createdAt },
+    });
+  } catch (error:any) {
+    res.status(400).json({ error:error?.message || "Invalid media asset" });
+  }
+});
+
 // --- AI GENERATION ENDPOINTS WITH CREDIT DEDUCTION & MODEL ROUTING ---
 
 app.post("/api/ai/generate-text", authenticate, requireMarketingPermission("ai.use"), aiGenerationLimiter, async (req: AuthenticatedRequest, res) => {
   try {
-    const { prompt, businessName, industry, brandVoice, location, targetAudience } = req.body;
+    const { prompt } = generateTextSchema.parse(req.body);
     const businessId = req.user!.businessId;
-
-    // Deduct Server-Side Credits
-    const deduction = deductCredits(
-      businessId,
-      req.user!.id,
-      req.user!.name,
-      CREDIT_COSTS.aiPost,
-      `AI Social Content Generation: "${prompt}"`,
-      req.ip || "127.0.0.1"
-    );
-
-    if (!deduction.success) {
-      return res.status(402).json({ error: deduction.error });
+    const balance = getCreditBalance(businessId);
+    if (balance.remainingCredits < CREDIT_COSTS.aiPost) {
+      return res.status(402).json({
+        error:`Monthly V79 AI allowance reached. Required: ${CREDIT_COSTS.aiPost}, Available: ${balance.remainingCredits}. Manage your plan in V79 Hub.`,
+      });
     }
 
-    const generationPrompt = `You are an expert Caribbean and global digital marketing strategist for V79 Marketing.
-Create accurate, useful, platform-specific marketing copy. Do not invent discounts, product claims, addresses, awards or customer results that were not supplied.
+    const business = db.prepare("SELECT name,industry,description,location,brand_profile_json,products_json,services_json FROM businesses WHERE id=?")
+      .get(businessId) as any;
+    if (!business) return res.status(404).json({ error:"Business workspace not found" });
+    const brainRow = db.prepare("SELECT brain_json FROM business_brains WHERE business_id=?").get(businessId) as any;
+    const verifiedContext = {
+      businessName:business.name,
+      industry:business.industry,
+      description:business.description || "",
+      location:business.location || "",
+      brandProfile:JSON.parse(business.brand_profile_json || "{}"),
+      products:JSON.parse(business.products_json || "[]"),
+      services:JSON.parse(business.services_json || "[]"),
+      businessBrain:brainRow ? JSON.parse(brainRow.brain_json || "{}") : {},
+    };
 
-Business Name: ${businessName || "My Business"}
-Industry: ${industry || "General"}
-Brand Voice: ${brandVoice || "Professional and approachable"}
-Location: ${location || "Caribbean"}
-Target Audience: ${targetAudience || "Current and prospective customers"}
-User Goal/Prompt: "${prompt}"
+    const generationPrompt = `You are an expert Caribbean and global digital marketing strategist for V79 Marketing.
+Create accurate, useful, platform-specific marketing copy. Use ONLY facts in VERIFIED_CONTEXT plus the user's requested marketing goal.
+Do not invent discounts, prices, addresses, awards, stock levels, customer results, guarantees, opening hours, products, services or promotions.
+
+VERIFIED_CONTEXT:
+${JSON.stringify(verifiedContext)}
+
+USER_GOAL:
+${prompt}
 
 Return only JSON with this exact shape:
 {
@@ -891,96 +1128,106 @@ Return only JSON with this exact shape:
   "whatsapp": { "caption": "...", "hashtags": [] }
 }`;
 
+    let generated:any = null;
+    let source = "";
     const ollamaData:any = await tryOllamaJson(generationPrompt);
-    if (ollamaData?.facebook && ollamaData?.instagram && ollamaData?.linkedin && ollamaData?.tiktok && ollamaData?.whatsapp) {
-      return res.json({ success:true, data:ollamaData, source:"ollama", remainingCredits:deduction.remainingCredits });
-    }
-
-    const ai = getGenAI();
-    if (ai) {
-      const response = await ai.models.generateContent({
-        model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
-        contents: generationPrompt,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              facebook: { type: Type.OBJECT, properties: { caption: { type: Type.STRING }, hashtags: { type: Type.ARRAY, items: { type: Type.STRING } } }, required: ["caption", "hashtags"] },
-              instagram: { type: Type.OBJECT, properties: { caption: { type: Type.STRING }, hashtags: { type: Type.ARRAY, items: { type: Type.STRING } } }, required: ["caption", "hashtags"] },
-              linkedin: { type: Type.OBJECT, properties: { caption: { type: Type.STRING }, hashtags: { type: Type.ARRAY, items: { type: Type.STRING } } }, required: ["caption", "hashtags"] },
-              tiktok: { type: Type.OBJECT, properties: { caption: { type: Type.STRING }, hashtags: { type: Type.ARRAY, items: { type: Type.STRING } } }, required: ["caption", "hashtags"] },
-              whatsapp: { type: Type.OBJECT, properties: { caption: { type: Type.STRING }, hashtags: { type: Type.ARRAY, items: { type: Type.STRING } } }, required: ["caption", "hashtags"] },
-            },
-            required: ["facebook", "instagram", "linkedin", "tiktok", "whatsapp"],
-          },
-        },
-      });
-
-      if (response.text) {
-        const parsed = JSON.parse(response.text);
-        return res.json({ success: true, data: parsed, source: "gemini", remainingCredits: deduction.remainingCredits });
+    if (ollamaData) {
+      const parsed = generatedSocialCopySchema.safeParse(ollamaData);
+      if (parsed.success) {
+        generated = parsed.data;
+        source = "ollama";
       }
     }
 
-    // Fallback response
-    const bName = businessName || "Your Business";
-    const loc = location || "your market";
-    const fallbackData = {
-      facebook: {
-        caption: `${bName}: ${prompt}. Contact us to learn more about availability, pricing and next steps in ${loc}.`,
-        hashtags: [`#${bName.replace(/\s+/g, "")}`, "#CaribbeanBusiness", "#V79Marketing"],
-      },
-      instagram: {
-        caption: `${prompt} — from ${bName}. Learn more through our official profile or contact us directly.`,
-        hashtags: [`#${bName.replace(/\s+/g, "")}`, "#SupportLocal", "#CaribbeanBusiness"],
-      },
-      linkedin: {
-        caption: `${bName} is sharing an update: "${prompt}". Contact us for the details relevant to your business or organisation.`,
-        hashtags: ["#BusinessGrowth", "#CaribbeanEnterprise", "#SmallBusiness"],
-      },
-      tiktok: {
-        caption: `${bName}: ${prompt}. Check our official details to learn more.`,
-        hashtags: ["#CaribbeanBusiness", "#LocalBusiness"],
-      },
-      whatsapp: {
-        caption: `Update from ${bName}: ${prompt}. Reply to this message if you would like more information.`,
-        hashtags: [],
-      },
-    };
+    if (!generated) {
+      const ai = getGenAI();
+      if (ai) {
+        try {
+          const response = await ai.models.generateContent({
+            model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
+            contents: generationPrompt,
+            config: { responseMimeType:"application/json" },
+          });
+          if (response.text) {
+            const parsed = generatedSocialCopySchema.safeParse(JSON.parse(response.text));
+            if (parsed.success) {
+              generated = parsed.data;
+              source = "gemini";
+            }
+          }
+        } catch (error:any) {
+          console.warn("[V79 Marketing] Gemini content generation unavailable:", error?.message || error);
+        }
+      }
+    }
 
-    return res.json({ success: true, data: fallbackData, source: "fallback", remainingCredits: deduction.remainingCredits });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message || "Failed to generate AI text" });
+    if (generated) {
+      const deduction = deductCredits(
+        businessId,
+        req.user!.id,
+        req.user!.name,
+        CREDIT_COSTS.aiPost,
+        "AI social content generation",
+        req.ip || "unknown"
+      );
+      if (!deduction.success) return res.status(402).json({ error:deduction.error });
+      return res.json({
+        success:true,
+        data:generated,
+        source,
+        creditsCharged:CREDIT_COSTS.aiPost,
+        remainingCredits:deduction.remainingCredits,
+      });
+    }
+
+    const brandProfile = verifiedContext.brandProfile || {};
+    const bName = String(business.name || "Your Business");
+    const fallbackData = {
+      facebook: { caption:`${bName}: ${prompt}. Contact us through our official channels for verified details.`, hashtags:["#CaribbeanBusiness","#V79Marketing"] },
+      instagram: { caption:`${prompt} — from ${bName}. Contact us through our official profile for details.`, hashtags:["#SupportLocal","#CaribbeanBusiness"] },
+      linkedin: { caption:`${bName} is sharing an update: "${prompt}". Contact us for verified details.`, hashtags:["#BusinessGrowth","#CaribbeanEnterprise"] },
+      tiktok: { caption:`${bName}: ${prompt}. Check our official profile for details.`, hashtags:["#CaribbeanBusiness","#LocalBusiness"] },
+      whatsapp: { caption:`Update from ${bName}: ${prompt}. Reply if you would like more information.`, hashtags:[] },
+    };
+    return res.json({
+      success:true,
+      data:fallbackData,
+      source:"template",
+      creditsCharged:0,
+      remainingCredits:balance.remainingCredits,
+      notice: brandProfile?.brandVoice ? "AI provider unavailable; returned a no-charge verified-context template." : "AI provider unavailable; returned a no-charge template.",
+    });
+  } catch (error:any) {
+    res.status(400).json({ error:error?.message || "Failed to generate marketing copy" });
   }
 });
 
 app.post("/api/ai/generate-image", authenticate, requireMarketingPermission("ai.use"), aiGenerationLimiter, async (req: AuthenticatedRequest, res) => {
   try {
-    const { prompt, dimension, businessName, primaryColor } = req.body;
+    const data = visualTemplateSchema.parse(req.body);
     const businessId = req.user!.businessId;
-
-    const deduction = deductCredits(
-      businessId,
-      req.user!.id,
-      req.user!.name,
-      CREDIT_COSTS.aiImage,
-      `Branded graphic generation: "${prompt}"`,
-      req.ip || "127.0.0.1"
-    );
-
-    if (!deduction.success) {
-      return res.status(402).json({ error: deduction.error });
-    }
+    const business = db.prepare("SELECT name,brand_profile_json FROM businesses WHERE id=?").get(businessId) as any;
+    if (!business) return res.status(404).json({ error:"Business workspace not found" });
 
     let width = 1080;
     let height = 1080;
-    if (dimension === "1080x1920") { width = 1080; height = 1920; }
-    else if (dimension === "1200x630") { width = 1200; height = 630; }
+    if (data.dimension === "1080x1920") { width = 1080; height = 1920; }
+    else if (data.dimension === "1200x630" || data.dimension === "1200x627") {
+      width = 1200;
+      height = data.dimension === "1200x627" ? 627 : 630;
+    }
 
-    const brandCol = primaryColor || "#EA580C";
-    const titleText = prompt || "Special Promotional Visual";
-    const subText = businessName || "V79 Marketing";
+    const brandProfile = JSON.parse(business.brand_profile_json || "{}");
+    const requestedColor = String(brandProfile?.primaryColor || "");
+    const brandCol = /^#[0-9A-Fa-f]{6}$/.test(requestedColor) ? requestedColor : "#EA580C";
+    const escapeXml = (value:unknown) => String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&apos;");
+    const titleText = escapeXml(data.prompt);
+    const subText = escapeXml(String(business.name || "V79 Marketing").toUpperCase());
 
     const svgString = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
       <defs>
@@ -992,60 +1239,64 @@ app.post("/api/ai/generate-image", authenticate, requireMarketingPermission("ai.
       <rect width="${width}" height="${height}" fill="url(#bgGrad)"/>
       <circle cx="${width * 0.85}" cy="${height * 0.15}" r="${width * 0.3}" fill="#FFFFFF" opacity="0.08"/>
       <rect x="${width * 0.08}" y="${height * 0.08}" width="${width * 0.84}" height="${height * 0.84}" rx="24" fill="#0F172A" opacity="0.4" stroke="#FFFFFF" stroke-opacity="0.2" stroke-width="2"/>
-      <text x="${width * 0.12}" y="${height * 0.2}" font-family="sans-serif" font-size="20" font-weight="bold" fill="#FFFFFF" letter-spacing="2">
-        ${subText.toUpperCase()}
-      </text>
+      <text x="${width * 0.12}" y="${height * 0.2}" font-family="sans-serif" font-size="20" font-weight="bold" fill="#FFFFFF" letter-spacing="2">${subText}</text>
       <text x="${width * 0.12}" y="${height * 0.42}" font-family="sans-serif" font-size="${width > 1000 ? 52 : 40}" font-weight="800" fill="#FFFFFF">
         <tspan x="${width * 0.12}" dy="0">${titleText.slice(0, 28)}</tspan>
         <tspan x="${width * 0.12}" dy="64">${titleText.slice(28, 60) || "Official Promotion"}</tspan>
       </text>
       <rect x="${width * 0.12}" y="${height * 0.72}" width="${width * 0.4}" height="64" rx="32" fill="${brandCol}"/>
-      <text x="${width * 0.2}" y="${height * 0.72 + 40}" font-family="sans-serif" font-size="22" font-weight="bold" fill="#FFFFFF">
-        EXPLORE NOW →
-      </text>
+      <text x="${width * 0.2}" y="${height * 0.72 + 40}" font-family="sans-serif" font-size="22" font-weight="bold" fill="#FFFFFF">EXPLORE NOW →</text>
     </svg>`;
 
     const base64Svg = Buffer.from(svgString).toString("base64");
     return res.json({
-      success: true,
-      imageUrl: `data:image/svg+xml;base64,${base64Svg}`,
-      source: "brand-template",
-      remainingCredits: deduction.remainingCredits,
+      success:true,
+      imageUrl:`data:image/svg+xml;base64,${base64Svg}`,
+      source:"brand-template",
+      creditsCharged:0,
+      remainingCredits:getCreditBalance(businessId).remainingCredits,
     });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message || "Image generation failed" });
+  } catch (error:any) {
+    res.status(400).json({ error:error?.message || "Visual generation failed" });
   }
 });
 
 // --- AI CAMPAIGN PLAN GENERATION ---
 app.post("/api/ai/generate-campaign-plan", authenticate, requireMarketingPermission("ai.use"), aiGenerationLimiter, async (req: AuthenticatedRequest, res) => {
   try {
-    const { campaignName, objective, businessName, industry } = req.body;
+    const { campaignName, objective } = generateCampaignPlanSchema.parse(req.body);
     const businessId = req.user!.businessId;
-
-    if (!campaignName || !objective) {
-      return res.status(400).json({ error: "campaignName and objective are required" });
+    const balance = getCreditBalance(businessId);
+    if (balance.remainingCredits < CREDIT_COSTS.campaign30Day) {
+      return res.status(402).json({
+        error:`Monthly V79 AI allowance reached. Required: ${CREDIT_COSTS.campaign30Day}, Available: ${balance.remainingCredits}. Manage your plan in V79 Hub.`,
+      });
     }
 
-    const deduction = deductCredits(
-      businessId,
-      req.user!.id,
-      req.user!.name,
-      CREDIT_COSTS.aiPost * 2,
-      `AI 30-Day Campaign Plan Generation: "${campaignName}"`,
-      req.ip || "127.0.0.1"
-    );
+    const business = db.prepare("SELECT name,industry,description,location,brand_profile_json,products_json,services_json FROM businesses WHERE id=?")
+      .get(businessId) as any;
+    if (!business) return res.status(404).json({ error:"Business workspace not found" });
+    const brainRow = db.prepare("SELECT brain_json FROM business_brains WHERE business_id=?").get(businessId) as any;
+    const verifiedContext = {
+      businessName:business.name,
+      industry:business.industry,
+      description:business.description || "",
+      location:business.location || "",
+      brandProfile:JSON.parse(business.brand_profile_json || "{}"),
+      products:JSON.parse(business.products_json || "[]"),
+      services:JSON.parse(business.services_json || "[]"),
+      businessBrain:brainRow ? JSON.parse(brainRow.brain_json || "{}") : {},
+    };
 
-    if (!deduction.success) {
-      return res.status(402).json({ error: deduction.error });
-    }
+    const campaignPrompt = `You are a marketing strategist.
+Use ONLY facts in VERIFIED_CONTEXT and the supplied campaign objective. Do not invent discounts, prices, results, awards, availability, stock levels or product claims.
+VERIFIED_CONTEXT:
+${JSON.stringify(verifiedContext)}
 
-    const campaignPrompt = `You are a marketing strategist for "${businessName || "V79 Partner"}" in the "${industry || "General"}" sector.
-Build a practical four-step multi-channel campaign. Do not invent discounts, performance results, awards, stock levels or product claims that are not in the objective.
-Campaign Title: "${campaignName}"
-Objective: "${objective}"
+CAMPAIGN_TITLE: ${campaignName}
+OBJECTIVE: ${objective}
 
-Return only JSON:
+Return JSON only:
 {
   "steps": [
     { "dayNumber": 1, "channel": "facebook", "postTitle": "...", "caption": "...", "suggestedTime": "10:00 AM" },
@@ -1055,79 +1306,72 @@ Return only JSON:
   ]
 }`;
 
+    let steps:any[] | null = null;
+    let source = "";
+    const parseSteps = (value:any) => {
+      const result = z.array(generatedCampaignStepSchema).min(1).max(30).safeParse(value?.steps);
+      return result.success ? result.data : null;
+    };
+
     const ollamaPlan:any = await tryOllamaJson(campaignPrompt);
-    if (Array.isArray(ollamaPlan?.steps)) {
-      return res.json({ success:true, steps:ollamaPlan.steps, source:"ollama", remainingCredits:deduction.remainingCredits });
-    }
+    steps = parseSteps(ollamaPlan);
+    if (steps) source = "ollama";
 
-    const ai = getGenAI();
-    if (ai) {
-      try {
-        const response = await ai.models.generateContent({
-          model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
-          contents: campaignPrompt,
-          config: {
-            responseMimeType: "application/json",
-          },
-        });
-
-        if (response.text) {
-          const parsed = JSON.parse(response.text);
-          if (parsed.steps && Array.isArray(parsed.steps)) {
-            return res.json({
-              success: true,
-              steps: parsed.steps,
-              source: "gemini",
-              remainingCredits: deduction.remainingCredits,
-            });
+    if (!steps) {
+      const ai = getGenAI();
+      if (ai) {
+        try {
+          const response = await ai.models.generateContent({
+            model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
+            contents:campaignPrompt,
+            config:{ responseMimeType:"application/json" },
+          });
+          if (response.text) {
+            steps = parseSteps(JSON.parse(response.text));
+            if (steps) source = "gemini";
           }
+        } catch (error:any) {
+          console.warn("[V79 Marketing] Gemini campaign generation unavailable:", error?.message || error);
         }
-      } catch (geminiErr) {
-        console.warn("Gemini plan generation failed, falling back to structured templates:", geminiErr);
       }
     }
 
-    // High-quality contextual fallback
-    const bName = businessName || "V79 Enterprise Partner";
-    const steps = [
-      {
-        dayNumber: 1,
-        channel: "facebook",
-        postTitle: "Campaign Kickoff & Core Value Offer",
-        caption: `${bName}: ${objective}. Contact us for verified details, availability and next steps.`,
-        suggestedTime: "10:00 AM",
-      },
-      {
-        dayNumber: 3,
-        channel: "instagram",
-        postTitle: "Visual Spotlight & Engagement Reel",
-        caption: `${campaignName} from ${bName}. Explore the official details and contact us if you would like to know more.`,
-        suggestedTime: "04:30 PM",
-      },
-      {
-        dayNumber: 7,
-        channel: "linkedin",
-        postTitle: "Business Value Spotlight",
-        caption: `A closer look at ${campaignName} from ${bName}. Follow our official updates for more information.`,
-        suggestedTime: "06:00 PM",
-      },
-      {
-        dayNumber: 14,
-        channel: "whatsapp",
-        postTitle: "VIP Subscriber Priority Invitation",
-        caption: `Update from ${bName}: ${campaignName}. Reply if you would like the verified details or help choosing the right option.`,
-        suggestedTime: "09:30 AM",
-      },
-    ];
+    if (steps) {
+      const deduction = deductCredits(
+        businessId,
+        req.user!.id,
+        req.user!.name,
+        CREDIT_COSTS.campaign30Day,
+        `AI campaign plan: "${campaignName}"`,
+        req.ip || "unknown"
+      );
+      if (!deduction.success) return res.status(402).json({ error:deduction.error });
+      return res.json({
+        success:true,
+        steps,
+        source,
+        creditsCharged:CREDIT_COSTS.campaign30Day,
+        remainingCredits:deduction.remainingCredits,
+      });
+    }
 
+    const bName = String(business.name || "Your Business");
+    const fallbackSteps = [
+      { dayNumber:1, channel:"facebook", postTitle:"Campaign kickoff", caption:`${bName}: ${objective}. Contact us for verified details and next steps.`, suggestedTime:"10:00 AM" },
+      { dayNumber:3, channel:"instagram", postTitle:"Visual spotlight", caption:`${campaignName} from ${bName}. Follow our official profile for details.`, suggestedTime:"04:30 PM" },
+      { dayNumber:7, channel:"linkedin", postTitle:"Business value spotlight", caption:`A closer look at ${campaignName} from ${bName}. Contact us for verified information.`, suggestedTime:"11:00 AM" },
+      { dayNumber:14, channel:"whatsapp", postTitle:"Customer follow-up", caption:`Update from ${bName}: ${campaignName}. Reply if you would like more information.`, suggestedTime:"09:30 AM" },
+    ];
     return res.json({
-      success: true,
-      steps,
-      source: "fallback",
-      remainingCredits: deduction.remainingCredits,
+      success:true,
+      steps:fallbackSteps,
+      source:"template",
+      creditsCharged:0,
+      remainingCredits:balance.remainingCredits,
+      notice:"AI provider unavailable; returned a no-charge verified-context campaign template.",
     });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message || "Failed to generate campaign plan" });
+  } catch (error:any) {
+    res.status(400).json({ error:error?.message || "Failed to generate campaign plan" });
   }
 });
 
@@ -1162,12 +1406,9 @@ app.get("/api/customers", authenticate, requireMarketingPermission("customers.re
 
 app.post("/api/customers", authenticate, requireMarketingPermission("customers.write"), (req: AuthenticatedRequest, res) => {
   try {
-    const { name, phone, email, channel, status, notes } = req.body;
-    if (!name || !phone) {
-      return res.status(400).json({ error: "Name and phone are required" });
-    }
+    const { name, phone, email, channel, status, notes } = customerCreateSchema.parse(req.body);
 
-    const customerId = `cust-${Date.now()}`;
+    const customerId = `cust-${crypto.randomUUID()}`;
     const businessId = req.user!.businessId;
     const now = new Date().toISOString();
 
@@ -1207,6 +1448,7 @@ app.post("/api/customers", authenticate, requireMarketingPermission("customers.w
       },
     });
   } catch (err: any) {
+    if (err instanceof z.ZodError) return res.status(400).json({ error:"Invalid customer inquiry.", details:err.flatten() });
     res.status(500).json({ error: "Failed to create customer inquiry" });
   }
 });
@@ -1216,8 +1458,9 @@ app.patch("/api/customers/:id/status", authenticate, requireMarketingPermission(
     const { id } = req.params;
     const { status } = req.body;
 
-    if (!status) {
-      return res.status(400).json({ error: "Status is required" });
+    const allowedStatuses = ["NEW_INQUIRY", "INTERESTED", "FOLLOW_UP", "CUSTOMER", "REPEAT_CUSTOMER"];
+    if (!allowedStatuses.includes(String(status || ""))) {
+      return res.status(400).json({ error: "Invalid customer status" });
     }
 
     const existing = db.prepare("SELECT * FROM customers WHERE id = ?").get(id) as any;
@@ -1336,6 +1579,127 @@ app.put("/api/memory", authenticate, requireMarketingPermission("memory.write"),
   }
 });
 
+// --- PERSISTED AI BUSINESS BRAIN ---
+
+function defaultBusinessBrain(businessId: string) {
+  const business = db.prepare("SELECT * FROM businesses WHERE id=?").get(businessId) as any;
+  const brandProfile = business ? JSON.parse(business.brand_profile_json || "{}") : {};
+  const products = business ? JSON.parse(business.products_json || "[]") : [];
+  const services = business ? JSON.parse(business.services_json || "[]") : [];
+  return {
+    businessId,
+    description: business?.description || "",
+    productsAndServices: [...products, ...services]
+      .map((item:any) => [item?.name, item?.description].filter(Boolean).join(": "))
+      .filter(Boolean)
+      .slice(0, 100),
+    brandVoiceAndTone: brandProfile?.brandVoice || "Professional and trustworthy",
+    targetAudience: brandProfile?.targetAudience || "",
+    customerDemographics: "",
+    primaryGoals: [],
+    frequentlyAskedQuestions: [],
+    seasonalPromotions: [],
+    preferredPostingTimes: "",
+    preferredHashtags: Array.isArray(brandProfile?.keywords) ? brandProfile.keywords : [],
+    previousCampaignNotes: "",
+  };
+}
+
+app.get("/api/brain", authenticate, requireMarketingPermission("memory.read"), (req: AuthenticatedRequest, res) => {
+  try {
+    const row = db.prepare("SELECT brain_json,updated_at FROM business_brains WHERE business_id=?").get(req.user!.businessId) as any;
+    const brain = row ? { businessId:req.user!.businessId, ...businessBrainSchema.parse(JSON.parse(row.brain_json || "{}")) } : defaultBusinessBrain(req.user!.businessId);
+    res.json({ success:true, brain, updatedAt:row?.updated_at || null });
+  } catch (error:any) {
+    res.status(500).json({ error:error?.message || "Failed to load business brain" });
+  }
+});
+
+app.put("/api/brain", authenticate, requireMarketingPermission("memory.write"), (req: AuthenticatedRequest, res) => {
+  try {
+    const parsed = businessBrainSchema.parse(req.body?.brain || req.body || {});
+    const now = new Date().toISOString();
+    db.prepare(`
+      INSERT INTO business_brains (business_id,brain_json,updated_at)
+      VALUES (?,?,?)
+      ON CONFLICT(business_id) DO UPDATE SET brain_json=excluded.brain_json, updated_at=excluded.updated_at
+    `).run(req.user!.businessId, JSON.stringify(parsed), now);
+    res.json({ success:true, brain:{ businessId:req.user!.businessId, ...parsed }, updatedAt:now });
+  } catch (error:any) {
+    res.status(400).json({ error:error?.message || "Invalid business brain" });
+  }
+});
+
+app.post("/api/ai/optimize-brain", authenticate, requireMarketingPermission("ai.use"), aiGenerationLimiter, async (req: AuthenticatedRequest, res) => {
+  const businessId = req.user!.businessId;
+  const ip = req.ip || "unknown";
+  let charged = false;
+  try {
+    const current = businessBrainSchema.parse(req.body?.brain || {});
+    const business = db.prepare("SELECT name,industry,description,location,products_json,services_json,brand_profile_json FROM businesses WHERE id=?").get(businessId) as any;
+    if (!business) return res.status(404).json({ error:"Business workspace not found" });
+
+    const deduction = deductCredits(
+      businessId,
+      req.user!.id,
+      req.user!.name,
+      CREDIT_COSTS.brainOptimize,
+      "AI Business Brain optimisation",
+      ip
+    );
+    if (!deduction.success) return res.status(402).json({ error:deduction.error });
+    charged = true;
+
+    const verifiedContext = {
+      businessName:business.name,
+      industry:business.industry,
+      description:business.description || "",
+      location:business.location || "",
+      products:JSON.parse(business.products_json || "[]"),
+      services:JSON.parse(business.services_json || "[]"),
+      brandProfile:JSON.parse(business.brand_profile_json || "{}"),
+      currentBrain:current,
+    };
+    const prompt = `You are improving a business marketing knowledge profile.
+Use ONLY facts in VERIFIED_CONTEXT. Do not invent customers, demographics, awards, prices, opening hours, locations, promotions, guarantees, results, products, services or FAQs.
+You may improve wording, organise supplied facts, and leave fields empty when the verified context does not support them.
+
+VERIFIED_CONTEXT:
+${JSON.stringify(verifiedContext)}
+
+Return JSON only with exactly these fields:
+description, productsAndServices, brandVoiceAndTone, targetAudience, customerDemographics, primaryGoals, frequentlyAskedQuestions, seasonalPromotions, preferredPostingTimes, preferredHashtags, previousCampaignNotes.`;
+
+    let candidate:any = await tryOllamaJson(prompt);
+    if (!candidate) {
+      const ai = getGenAI();
+      if (ai) {
+        const response = await ai.models.generateContent({
+          model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
+          contents: prompt,
+          config: { responseMimeType:"application/json" },
+        });
+        if (response.text) candidate = JSON.parse(response.text);
+      }
+    }
+    if (!candidate) throw new Error("No configured AI provider returned a result.");
+
+    const optimized = businessBrainSchema.parse(candidate);
+    res.json({
+      success:true,
+      brain:{ businessId, ...optimized },
+      remainingCredits:deduction.remainingCredits,
+      persisted:false,
+      notice:"AI suggestions are ready for review. Save the Business Brain to make them authoritative.",
+    });
+  } catch (error:any) {
+    if (charged) {
+      refundCredits(businessId, req.user!.id, req.user!.name, CREDIT_COSTS.brainOptimize, "AI Business Brain optimisation failed", ip);
+    }
+    res.status(503).json({ error:error?.message || "Business Brain optimisation failed" });
+  }
+});
+
 // --- ADMIN METRICS & AUDIT LOGS ---
 
 app.get("/api/admin/metrics", authenticate, requireRole(["PLATFORM_ADMIN"]), (req, res) => {
@@ -1384,7 +1748,22 @@ app.get("/api/docs", (req, res) => {
   });
 });
 
+function assertProductionConfiguration() {
+  if (process.env.NODE_ENV !== "production") return;
+  const required = [
+    ["JWT_SECRET", process.env.JWT_SECRET],
+    ["V79_MARKETING_LAUNCH_SECRET", process.env.V79_MARKETING_LAUNCH_SECRET],
+    ["V79_HUB_PROVISION_SECRET", process.env.V79_HUB_PROVISION_SECRET],
+    ["V79_PLATFORM_SHARED_SECRET", process.env.V79_PLATFORM_SHARED_SECRET],
+  ] as const;
+  const missing = required
+    .filter(([,value]) => String(value || "").trim().length < 32)
+    .map(([name]) => name);
+  if (missing.length) throw new Error(`Production configuration missing strong secrets: ${missing.join(", ")}`);
+}
+
 async function startServer() {
+  assertProductionConfiguration();
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },

@@ -204,6 +204,24 @@ export function initDb() {
       FOREIGN KEY (business_id) REFERENCES businesses(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS media_assets (
+      id TEXT PRIMARY KEY,
+      business_id TEXT NOT NULL,
+      prompt TEXT NOT NULL,
+      dimension TEXT NOT NULL,
+      platform_target TEXT NOT NULL,
+      image_url TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (business_id) REFERENCES businesses(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS business_brains (
+      business_id TEXT PRIMARY KEY,
+      brain_json TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (business_id) REFERENCES businesses(id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS marketing_audits (
       id TEXT PRIMARY KEY,
       business_id TEXT NOT NULL,
@@ -242,7 +260,8 @@ export function initDb() {
   migrateHubManagedUserEmailScope();
   db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_businesses_hub_org ON businesses(hub_organization_id) WHERE hub_organization_id IS NOT NULL;");
   db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_legacy_email ON users(email) WHERE hub_user_id IS NULL;");
-  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_hub_user ON users(hub_user_id) WHERE hub_user_id IS NOT NULL;");
+  db.exec("DROP INDEX IF EXISTS idx_users_hub_user;");
+  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_hub_user_business ON users(hub_user_id,business_id) WHERE hub_user_id IS NOT NULL;");
 
   if (process.env.NODE_ENV !== "production" && process.env.V79_MARKETING_SEED_DEMO === "1") {
     seedInitialData();

@@ -191,14 +191,15 @@ export default function App() {
         setCurrentBusiness(session.business);
         setUsers([session.user]);
         setBusinesses([session.business]);
-        setSessionState('authenticated');
-
-        const [postResponse, customerResponse, creditResponse, campaignResponse, socialResponse] = await Promise.all([
+        const [postResponse, customerResponse, creditResponse, campaignResponse, socialResponse, brainResponse, assetResponse, competitorResponse] = await Promise.all([
           fetch('/api/posts', { credentials: 'same-origin' }),
           fetch('/api/customers', { credentials: 'same-origin' }),
           fetch('/api/credits/balance', { credentials: 'same-origin' }),
           fetch('/api/campaigns', { credentials: 'same-origin' }),
           fetch('/api/social-accounts', { credentials: 'same-origin' }),
+          fetch('/api/brain', { credentials: 'same-origin' }),
+          fetch('/api/assets', { credentials: 'same-origin' }),
+          fetch('/api/competitors', { credentials: 'same-origin' }),
         ]);
         if (postResponse.ok) {
           const body = await postResponse.json();
@@ -220,6 +221,19 @@ export default function App() {
           const body = await socialResponse.json();
           if (!cancelled) setSocialAccounts(body.socialAccounts || []);
         }
+        if (brainResponse.ok) {
+          const body = await brainResponse.json();
+          if (!cancelled && body.brain) setAiBrain(body.brain);
+        }
+        if (assetResponse.ok) {
+          const body = await assetResponse.json();
+          if (!cancelled) setGeneratedImages(body.assets || []);
+        }
+        if (competitorResponse.ok) {
+          const body = await competitorResponse.json();
+          if (!cancelled) setCompetitors(body.competitors || []);
+        }
+        if (!cancelled) setSessionState('authenticated');
       } catch {
         if (!cancelled) setSessionState('unauthenticated');
       }
@@ -228,38 +242,22 @@ export default function App() {
     return () => { cancelled = true; };
   }, []);
 
+  useEffect(() => {
+    const refreshCredits = () => {
+      void fetch('/api/credits/balance', { credentials:'same-origin' })
+        .then(async response => {
+          if (!response.ok) return;
+          const body = await response.json().catch(() => ({}));
+          if (body.balance) setCreditBalance(body.balance);
+        })
+        .catch(() => undefined);
+    };
+    window.addEventListener('v79:credits-updated', refreshCredits);
+    return () => window.removeEventListener('v79:credits-updated', refreshCredits);
+  }, []);
+
   // Growth Platform Customers CRM State
   const [customers, setCustomers] = useState<CustomerInquiry[]>([]);
-
-  // Credit Deduction Engine
-  const handleDeductCredits = (amount: number, reason: string): boolean => {
-    const total = creditBalance.monthlyAllowance + creditBalance.purchasedCredits + creditBalance.bonusCredits;
-    const remaining = total - creditBalance.usedCredits;
-    if (remaining < amount) {
-      setCurrentView('billing');
-      return false;
-    }
-
-    setCreditBalance((prev) => ({
-      ...prev,
-      usedCredits: prev.usedCredits + amount,
-    }));
-
-    // Log to Audit trail
-    const newLog: AuditLog = {
-      id: `al-${Date.now()}`,
-      businessId: currentBusiness.id,
-      userId: currentUser.id,
-      userName: currentUser.name,
-      action: 'AI_POST_GENERATED',
-      details: `Deducted ${amount} V79 AI Credits for ${reason}`,
-      ipAddress: '190.102.45.12',
-      timestamp: new Date().toISOString(),
-    };
-    setAuditLogs([newLog, ...auditLogs]);
-
-    return true;
-  };
 
   // Sync selected business when user changes
   const handleSelectUser = (user: User) => {
@@ -273,28 +271,36 @@ export default function App() {
     }
   };
 
-  const handleUpdateBusiness = (updated: Business) => {
-    setCurrentBusiness(updated);
-    setBusinesses((items) => items.map((b) => (b.id === updated.id ? updated : b)));
-    void fetch(`/api/businesses/${encodeURIComponent(updated.id)}`, {
+  const handleUpdateBusiness = async (updated: Business): Promise<void> => {
+    const response = await fetch(`/api/businesses/${encodeURIComponent(updated.id)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updated),
-    }).then(async (response) => {
-      if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || 'Could not save business profile.');
-      const body = await response.json();
-      if (body.business) setCurrentBusiness({
-        ...updated,
-        name: body.business.name ?? updated.name,
-        industry: body.business.industry ?? updated.industry,
-        description: body.business.description ?? updated.description,
-        location: body.business.location ?? updated.location,
-        phone: body.business.phone ?? updated.phone,
-        email: body.business.email ?? updated.email,
-        website: body.business.website ?? updated.website,
-        whatsapp: body.business.whatsapp ?? updated.whatsapp,
-      });
-    }).catch((error) => console.error('Business profile save failed:', error));
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok || !body.business) {
+      throw new Error(body.error || 'Could not save business profile.');
+    }
+    const saved: Business = {
+      ...updated,
+      name: body.business.name ?? updated.name,
+      logoUrl: body.business.logoUrl ?? body.business.logo_url ?? updated.logoUrl,
+      coverImageUrl: body.business.coverImageUrl ?? body.business.cover_image_url ?? updated.coverImageUrl,
+      industry: body.business.industry ?? updated.industry,
+      description: body.business.description ?? updated.description,
+      location: body.business.location ?? updated.location,
+      phone: body.business.phone ?? updated.phone,
+      email: body.business.email ?? updated.email,
+      website: body.business.website ?? updated.website,
+      whatsapp: body.business.whatsapp ?? updated.whatsapp,
+      openingHours: body.business.openingHours ?? updated.openingHours,
+      products: body.business.products ?? updated.products,
+      services: body.business.services ?? updated.services,
+      brandProfile: body.business.brandProfile ?? updated.brandProfile,
+      plan: body.business.plan ?? updated.plan,
+    };
+    setCurrentBusiness(saved);
+    setBusinesses((items) => items.map((b) => (b.id === saved.id ? saved : b)));
   };
 
   const handleSchedulePost = async (newPost: Partial<Post>): Promise<void> => {
@@ -315,29 +321,41 @@ export default function App() {
       if (body.post) setPosts((items) => [body.post, ...items.filter((item) => item.id !== body.post.id)]);
   };
 
-  const handleCreateCampaign = (newCamp: Campaign) => {
-    void (async () => {
-      const response = await fetch('/api/campaigns', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name:newCamp.name,
-          objective:newCamp.objective,
-          startDate:newCamp.startDate,
-          endDate:newCamp.endDate,
-          status:newCamp.status,
-          steps:newCamp.steps,
-          aiPlanGenerated:newCamp.aiPlanGenerated,
-        }),
-      });
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(body.error || 'Could not create campaign.');
-      if (body.campaign) setCampaigns((items) => [body.campaign, ...items.filter((item) => item.id !== body.campaign.id)]);
-    })().catch((error) => console.error('Campaign save failed:', error));
+  const handleCreateCampaign = async (newCamp: Campaign): Promise<Campaign> => {
+    const response = await fetch('/api/campaigns', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name:newCamp.name,
+        objective:newCamp.objective,
+        startDate:newCamp.startDate,
+        endDate:newCamp.endDate,
+        status:newCamp.status,
+        steps:newCamp.steps,
+        aiPlanGenerated:newCamp.aiPlanGenerated,
+      }),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok || !body.campaign) throw new Error(body.error || 'Could not create campaign.');
+    setCampaigns((items) => [body.campaign, ...items.filter((item) => item.id !== body.campaign.id)]);
+    return body.campaign as Campaign;
   };
 
-  const handleSaveImageToLibrary = (img: GeneratedImage) => {
-    setGeneratedImages([img, ...generatedImages]);
+  const handleSaveImageToLibrary = async (img: GeneratedImage): Promise<GeneratedImage> => {
+    const response = await fetch('/api/assets', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        prompt:img.prompt,
+        dimension:img.dimension,
+        platformTarget:img.platformTarget,
+        imageUrl:img.imageUrl,
+      }),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok || !body.asset) throw new Error(body.error || 'Could not save media asset.');
+    setGeneratedImages((items) => [body.asset, ...items.filter((item) => item.id !== body.asset.id)]);
+    return body.asset as GeneratedImage;
   };
 
   const handleConnectChannel = (_platform: SocialPlatform, _handle: string) => {
@@ -455,12 +473,16 @@ export default function App() {
               }).catch(error => console.error('Customer save failed:', error));
             }}
             onUpdateCustomerStatus={(id, status) => {
-              setCustomers(items => items.map(c => c.id===id ? {...c,status} : c));
-              void fetch(`/api/customers/${encodeURIComponent(id)}/status`, {
-                method:'PATCH',
-                headers:{'Content-Type':'application/json'},
-                body:JSON.stringify({status}),
-              }).catch(error => console.error('Customer status update failed:', error));
+              void (async () => {
+                const response = await fetch(`/api/customers/${encodeURIComponent(id)}/status`, {
+                  method:'PATCH',
+                  headers:{'Content-Type':'application/json'},
+                  body:JSON.stringify({status}),
+                });
+                const body = await response.json().catch(() => ({}));
+                if (!response.ok) throw new Error(body.error || 'Customer status update failed.');
+                setCustomers(items => items.map(c => c.id===id ? {...c,status} : c));
+              })().catch(error => console.error('Customer status update failed:', error));
             }}
           />
         )}
@@ -468,7 +490,7 @@ export default function App() {
         {currentView === 'one-idea-campaign' && (
           <OneIdeaCampaignView
             business={currentBusiness}
-            onCreateCampaign={(newCamp) => setCampaigns([newCamp, ...campaigns])}
+            onCreateCampaign={handleCreateCampaign}
           />
         )}
 
@@ -477,7 +499,6 @@ export default function App() {
             business={currentBusiness}
             brain={aiBrain}
             onUpdateBrain={setAiBrain}
-            onDeductCredits={handleDeductCredits}
           />
         )}
 
@@ -511,7 +532,6 @@ export default function App() {
             onConvertToSocialPost={(rev) => {
               setCurrentView('ai-image');
             }}
-            onDeductCredits={handleDeductCredits}
           />
         )}
 
@@ -523,7 +543,6 @@ export default function App() {
             onGenerateCounterCampaign={(opp) => {
               setCurrentView('campaigns');
             }}
-            onDeductCredits={handleDeductCredits}
           />
         )}
 
@@ -531,7 +550,8 @@ export default function App() {
           <AiBrandKitView
             business={currentBusiness}
             onUpdateBusinessBrand={(b) => {
-              handleUpdateBusiness({ ...currentBusiness, brandProfile: b });
+              void handleUpdateBusiness({ ...currentBusiness, brandProfile: b })
+                .catch((error) => console.error('Brand profile save failed:', error));
             }}
           />
         )}

@@ -4,7 +4,7 @@ import { CheckCircle2, Layers, RefreshCw, Sparkles } from 'lucide-react';
 
 interface OneIdeaCampaignViewProps {
   business: Business;
-  onCreateCampaign: (newCampaign: Campaign) => void;
+  onCreateCampaign: (newCampaign: Campaign) => Promise<Campaign>;
 }
 
 type GeneratedCampaign = {
@@ -19,6 +19,7 @@ export const OneIdeaCampaignView: React.FC<OneIdeaCampaignViewProps> = ({ busine
   const [generatedCampaign, setGeneratedCampaign] = useState<GeneratedCampaign | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [approvedSuccess, setApprovedSuccess] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
 
   const handleGenerate = async (e: React.FormEvent) => {
@@ -36,6 +37,7 @@ export const OneIdeaCampaignView: React.FC<OneIdeaCampaignViewProps> = ({ busine
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok || !Array.isArray(body.steps)) throw new Error(body.error || 'Campaign generation failed.');
+      if (Number(body.creditsCharged || 0) > 0) window.dispatchEvent(new Event('v79:credits-updated'));
       const steps: CampaignStep[] = body.steps.map((step:any) => ({
         dayNumber:Number(step.dayNumber || 1),
         channel:step.channel || 'facebook',
@@ -52,23 +54,32 @@ export const OneIdeaCampaignView: React.FC<OneIdeaCampaignViewProps> = ({ busine
     }
   };
 
-  const handleApproveAll = () => {
-    if (!generatedCampaign) return;
+  const handleApproveAll = async () => {
+    if (!generatedCampaign || isSaving) return;
     const now = new Date();
-    onCreateCampaign({
-      id:`campaign-${Date.now()}`,
-      businessId:business.id,
-      name:generatedCampaign.name,
-      objective:generatedCampaign.objective,
-      startDate:now.toISOString().slice(0,10),
-      endDate:new Date(now.getTime()+30*86400000).toISOString().slice(0,10),
-      status:'ACTIVE',
-      steps:generatedCampaign.steps,
-      aiPlanGenerated:true,
-      createdAt:now.toISOString(),
-    });
-    setApprovedSuccess(true);
-    setTimeout(() => setApprovedSuccess(false), 2500);
+    setIsSaving(true);
+    setError('');
+    try {
+      await onCreateCampaign({
+        id:`campaign-${Date.now()}`,
+        businessId:business.id,
+        name:generatedCampaign.name,
+        objective:generatedCampaign.objective,
+        startDate:now.toISOString().slice(0,10),
+        endDate:new Date(now.getTime()+30*86400000).toISOString().slice(0,10),
+        status:'ACTIVE',
+        steps:generatedCampaign.steps,
+        aiPlanGenerated:true,
+        createdAt:now.toISOString(),
+      });
+      setApprovedSuccess(true);
+      setTimeout(() => setApprovedSuccess(false), 2500);
+    } catch (err) {
+      setApprovedSuccess(false);
+      setError(err instanceof Error ? err.message : 'Could not save the campaign.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -79,9 +90,9 @@ export const OneIdeaCampaignView: React.FC<OneIdeaCampaignViewProps> = ({ busine
           <h1 className="text-2xl font-black text-slate-900">One Idea → Campaign Plan</h1>
           <p className="text-xs text-slate-500 mt-1">Turn your own offer, service, product or event idea into a structured campaign using the configured V79 AI provider.</p>
         </div>
-        <button disabled={!generatedCampaign} onClick={handleApproveAll} className="px-6 py-3 bg-slate-950 disabled:opacity-40 text-white font-bold rounded-2xl text-xs flex items-center justify-center gap-2">
+        <button disabled={!generatedCampaign || isSaving} onClick={() => void handleApproveAll()} className="px-6 py-3 bg-slate-950 disabled:opacity-40 text-white font-bold rounded-2xl text-xs flex items-center justify-center gap-2">
           {approvedSuccess ? <CheckCircle2 className="w-4 h-4"/> : <Layers className="w-4 h-4"/>}
-          <span>{approvedSuccess ? 'Campaign saved' : 'Approve campaign'}</span>
+          <span>{isSaving ? 'Saving…' : approvedSuccess ? 'Campaign saved' : 'Approve campaign'}</span>
         </button>
       </div>
 

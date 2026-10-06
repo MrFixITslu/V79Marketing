@@ -45,8 +45,9 @@ Key variables:
 - `JWT_SECRET` — 32+ characters
 - `V79_HUB_INTERNAL_URL`
 - `V79_HUB_PUBLIC_URL`
-- `V79_MARKETING_LAUNCH_SECRET` — must match Hub
-- `V79_PLATFORM_SHARED_SECRET` — read-only Hub summary contract
+- `V79_MARKETING_LAUNCH_SECRET` — must match Hub launch-ticket signing
+- `V79_HUB_PROVISION_SECRET` — dedicated Hub → Marketing provisioning/team-write secret
+- `V79_PLATFORM_SHARED_SECRET` — read-only Hub summary/admin-read contract
 - `V79_HUB_EVENT_URL`
 - `V79_HUB_EVENT_SECRET` — Marketing-specific event secret
 - `GEMINI_API_KEY` — optional AI provider key

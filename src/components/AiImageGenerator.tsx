@@ -15,7 +15,7 @@ import {
 
 interface AiImageGeneratorProps {
   business: Business;
-  onSaveToLibrary: (img: GeneratedImage) => void;
+  onSaveToLibrary: (img: GeneratedImage) => Promise<GeneratedImage>;
 }
 
 export const AiImageGenerator: React.FC<AiImageGeneratorProps> = ({
@@ -28,12 +28,15 @@ export const AiImageGenerator: React.FC<AiImageGeneratorProps> = ({
   const [isGenerating, setIsGenerating] = useState(false);
   const [currentImage, setCurrentImage] = useState<string>('');
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [error, setError] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
 
   const handleGenerateImage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!prompt.trim()) return;
 
     setIsGenerating(true);
+    setError('');
     try {
       const response = await fetch('/api/ai/generate-image', {
         method: 'POST',
@@ -46,30 +49,39 @@ export const AiImageGenerator: React.FC<AiImageGeneratorProps> = ({
         }),
       });
 
-      const data = await response.json();
-      if (data.success && data.imageUrl) {
-        setCurrentImage(data.imageUrl);
-      }
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.success || !data.imageUrl) throw new Error(data.error || 'Could not generate the branded visual.');
+      setCurrentImage(data.imageUrl);
     } catch (err) {
-      console.error('Error generating image:', err);
+      setError(err instanceof Error ? err.message : 'Could not generate the branded visual.');
     } finally {
       setIsGenerating(false);
     }
   };
 
-  const handleSaveImage = () => {
-    const newImg: GeneratedImage = {
-      id: `img-${Date.now()}`,
-      businessId: business.id,
-      prompt,
-      dimension,
-      platformTarget: stylePreset,
-      imageUrl: currentImage,
-      createdAt: new Date().toISOString(),
-    };
-    onSaveToLibrary(newImg);
-    setSavedSuccess(true);
-    setTimeout(() => setSavedSuccess(false), 2000);
+  const handleSaveImage = async () => {
+    if (!currentImage || isSaving) return;
+    setIsSaving(true);
+    setError('');
+    try {
+      const newImg: GeneratedImage = {
+        id: `pending-${Date.now()}`,
+        businessId: business.id,
+        prompt,
+        dimension,
+        platformTarget: stylePreset,
+        imageUrl: currentImage,
+        createdAt: new Date().toISOString(),
+      };
+      await onSaveToLibrary(newImg);
+      setSavedSuccess(true);
+      setTimeout(() => setSavedSuccess(false), 2000);
+    } catch (err) {
+      setSavedSuccess(false);
+      setError(err instanceof Error ? err.message : 'Could not save the media asset.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -88,14 +100,20 @@ export const AiImageGenerator: React.FC<AiImageGeneratorProps> = ({
         </div>
 
         <button
-          disabled={!currentImage}
-          onClick={handleSaveImage}
+          disabled={!currentImage || isSaving}
+          onClick={() => void handleSaveImage()}
           className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-white font-medium rounded-lg text-xs border border-slate-700 flex items-center justify-center gap-2 cursor-pointer transition-colors whitespace-nowrap"
         >
           {savedSuccess ? <Check className="w-4 h-4 text-emerald-400" /> : <Save className="w-4 h-4" />}
-          <span>{savedSuccess ? 'Saved to Media Assets' : 'Save to Asset Library'}</span>
+          <span>{isSaving ? 'Saving…' : savedSuccess ? 'Saved to Media Assets' : 'Save to Asset Library'}</span>
         </button>
       </div>
+
+      {error && (
+        <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-xs font-medium text-red-300">
+          {error}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left Settings Panel */}

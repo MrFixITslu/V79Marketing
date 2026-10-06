@@ -21,19 +21,19 @@ interface AiBrainViewProps {
   business: Business;
   brain: AIBusinessBrain;
   onUpdateBrain: (updated: AIBusinessBrain) => void;
-  onDeductCredits?: (amount: number, reason: string) => boolean;
 }
 
 export const AiBrainView: React.FC<AiBrainViewProps> = ({
   business,
   brain,
   onUpdateBrain,
-  onDeductCredits,
 }) => {
   const [activeTab, setActiveTab] = useState<'profile' | 'products' | 'audience' | 'faqs' | 'memory'>('profile');
   const [formData, setFormData] = useState<AIBusinessBrain>(brain);
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [optimizing, setOptimizing] = useState(false);
+  const [error, setError] = useState('');
+  const [proposalReady, setProposalReady] = useState(false);
 
   const [newFaqQ, setNewFaqQ] = useState('');
   const [newFaqA, setNewFaqA] = useState('');
@@ -41,30 +41,45 @@ export const AiBrainView: React.FC<AiBrainViewProps> = ({
   const [newGoal, setNewGoal] = useState('');
   const [newPromo, setNewPromo] = useState('');
 
-  const handleSave = () => {
-    onUpdateBrain(formData);
-    setSavedSuccess(true);
-    setTimeout(() => setSavedSuccess(false), 3000);
-  };
-
-  const handleAiOptimizeBrain = () => {
-    if (onDeductCredits && !onDeductCredits(30, 'AI Brain Knowledge Optimization')) return;
-
-    setOptimizing(true);
-    setTimeout(() => {
-      setFormData((prev) => ({
-        ...prev,
-        brandVoiceAndTone: 'Warm, authentic Caribbean hospitality with culinary passion, refined island elegance, and vibrant storytelling.',
-        customerDemographics: 'Locals & tourists aged 25-60, middle-to-high income, seafood lovers, yachties at Rodney Bay Marina, and couples seeking romantic waterfront sunset dining.',
-        frequentlyAskedQuestions: [
-          ...prev.frequentlyAskedQuestions,
-          { q: 'Can I host private birthday or corporate dinner events?', a: 'Yes! We offer tailored VIP waterfront group packages with customized 3-course menus.' }
-        ]
-      }));
-      setOptimizing(false);
+  const handleSave = async () => {
+    setError('');
+    try {
+      const response = await fetch('/api/brain', {
+        method:'PUT',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({ brain:formData }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || !body.brain) throw new Error(body.error || 'Could not save the Business Brain.');
+      setFormData(body.brain);
+      onUpdateBrain(body.brain);
+      setProposalReady(false);
       setSavedSuccess(true);
       setTimeout(() => setSavedSuccess(false), 3000);
-    }, 1200);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save the Business Brain.');
+    }
+  };
+
+  const handleAiOptimizeBrain = async () => {
+    setOptimizing(true);
+    setError('');
+    try {
+      const response = await fetch('/api/ai/optimize-brain', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({ brain:formData }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || !body.brain) throw new Error(body.error || 'Business Brain optimisation failed.');
+      setFormData(body.brain);
+      setProposalReady(true);
+      window.dispatchEvent(new Event('v79:credits-updated'));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Business Brain optimisation failed.');
+    } finally {
+      setOptimizing(false);
+    }
   };
 
   const addFaq = () => {
@@ -185,6 +200,17 @@ export const AiBrainView: React.FC<AiBrainViewProps> = ({
           </div>
         )}
       </div>
+
+      {error && (
+        <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-xs font-medium text-red-300">
+          {error}
+        </div>
+      )}
+      {proposalReady && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs font-medium text-amber-200">
+          AI suggestions are ready. Review the fields below, then choose Save Brain to make them authoritative.
+        </div>
+      )}
 
       {/* Navigation Sub-Tabs */}
       <div className="flex items-center gap-2 border-b border-slate-200 pb-2 overflow-x-auto text-xs font-bold">

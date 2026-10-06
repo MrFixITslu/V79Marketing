@@ -8,6 +8,7 @@ export const CREDIT_COSTS = {
   aiVideo: 500,
   reviewResponse: 15,
   competitorAudit: 50,
+  brainOptimize: 30,
 };
 
 export function allowanceForPlan(plan: string | null | undefined) {
@@ -19,7 +20,11 @@ export function allowanceForPlan(plan: string | null | undefined) {
     case "BUSINESS":
     case "GROWTH":
     case "BETA":
+    case "HUB":
       return 10000;
+    case "START":
+    case "STARTER":
+      return 5000;
     default:
       return 0;
   }
@@ -115,5 +120,40 @@ export function deductCredits(
 export function addCredits(businessId: string, amount: number) {
   if (!Number.isFinite(amount) || amount <= 0) throw new Error("Credit amount must be positive.");
   db.prepare("UPDATE credit_balances SET purchased_credits = purchased_credits + ? WHERE business_id = ?").run(Math.floor(amount), businessId);
+  return getCreditBalance(businessId);
+}
+
+
+export function refundCredits(
+  businessId: string,
+  userId: string,
+  userName: string,
+  amount: number,
+  actionReason: string,
+  ipAddress: string = "unknown"
+) {
+  const safeAmount = Math.max(0, Math.floor(Number(amount) || 0));
+  if (!safeAmount) return getCreditBalance(businessId);
+
+  const tx = db.transaction(() => {
+    const row = db.prepare("SELECT used_credits FROM credit_balances WHERE business_id=?").get(businessId) as any;
+    if (!row) return;
+    const nextUsed = Math.max(0, Number(row.used_credits || 0) - safeAmount);
+    db.prepare("UPDATE credit_balances SET used_credits=? WHERE business_id=?").run(nextUsed, businessId);
+    db.prepare(`
+      INSERT INTO audit_logs (id, business_id, user_id, user_name, action, details, ip_address, timestamp)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      `al-${crypto.randomUUID()}`,
+      businessId,
+      userId,
+      userName,
+      "AI_CREDIT_REFUNDED",
+      `Refunded ${safeAmount} credits for: ${actionReason}`,
+      ipAddress,
+      new Date().toISOString()
+    );
+  });
+  tx();
   return getCreditBalance(businessId);
 }

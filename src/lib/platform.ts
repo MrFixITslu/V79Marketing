@@ -17,8 +17,10 @@ export function signPlatformRequest(args: { method: string; pathname: string; ti
   return crypto.createHmac("sha256", args.secret).update(canonical).digest("hex");
 }
 
-export function verifyHubPlatformRequest(args: { method: string; pathname: string; timestamp: string; signature: string; serviceId: string; body?: string }) {
-  const secret = clean(process.env.V79_PLATFORM_SHARED_SECRET);
+function verifySignedHubRequest(
+  args: { method: string; pathname: string; timestamp: string; signature: string; serviceId: string; body?: string },
+  secret: string,
+) {
   if (secret.length < 32 || args.serviceId !== SUMMARY_SERVICE_ID) return false;
   const millis = Number(args.timestamp);
   if (!Number.isFinite(millis) || Math.abs(Date.now() - millis) > MAX_SKEW_MS) return false;
@@ -36,6 +38,16 @@ export function verifyHubPlatformRequest(args: { method: string; pathname: strin
   } catch {
     return false;
   }
+}
+
+export function verifyHubProvisionRequest(args: { method: string; pathname: string; timestamp: string; signature: string; serviceId: string; body?: string }) {
+  const dedicated = clean(process.env.V79_HUB_PROVISION_SECRET);
+  const developmentFallback = process.env.NODE_ENV === "production" ? "" : clean(process.env.V79_PLATFORM_SHARED_SECRET);
+  return verifySignedHubRequest(args, dedicated || developmentFallback);
+}
+
+export function verifyHubPlatformRequest(args: { method: string; pathname: string; timestamp: string; signature: string; serviceId: string; body?: string }) {
+  return verifySignedHubRequest(args, clean(process.env.V79_PLATFORM_SHARED_SECRET));
 }
 
 export function verifyHubSummaryRequest(args: { method: string; pathname: string; timestamp: string; signature: string; serviceId: string }) {

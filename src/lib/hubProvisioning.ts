@@ -1,6 +1,7 @@
 import { db } from "./db.js";
 import { assertHubBusinessLink, selectHubUserForBusiness } from "./hubIdentityBoundary.js";
 import type { HubLaunchSession } from "./platform.js";
+import { allowanceForPlan } from "./creditService.js";
 
 function uniqueSlug(base: string, organizationId: string) {
   const seed = (base || "business").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 48) || "business";
@@ -23,11 +24,12 @@ export function marketingRoleForHubRole(role: HubLaunchSession["role"]) {
 export function provisionHubIdentity(session: HubLaunchSession) {
   const businessId = session.organization.id;
   let localBusinessId = businessId;
-  const userId = `hub:${session.user.id}`;
+  const userId = `hub:${businessId}:${session.user.id}`;
   const now = new Date().toISOString();
   const role = marketingRoleForHubRole(session.role);
   const plan = String(session.plan || "HUB").toUpperCase();
   const slug = uniqueSlug(session.organization.slug, businessId);
+  const monthlyAllowance = allowanceForPlan(plan);
 
   const tx = db.transaction(() => {
     const business = db.prepare("SELECT id,hub_organization_id FROM businesses WHERE hub_organization_id=? OR id=?")
@@ -60,8 +62,8 @@ export function provisionHubIdentity(session: HubLaunchSession) {
         .run(session.organization.name, slug, plan, session.organization.id, business.id);
     }
 
-    let candidates = db.prepare("SELECT id,hub_user_id,business_id FROM users WHERE hub_user_id=? LIMIT 2")
-      .all(session.user.id) as any[];
+    let candidates = db.prepare("SELECT id,hub_user_id,business_id FROM users WHERE hub_user_id=? AND business_id=? LIMIT 2")
+      .all(session.user.id, localBusinessId) as any[];
     if (candidates.length === 0) {
       candidates = db.prepare(
         "SELECT id,hub_user_id,business_id FROM users WHERE LOWER(email)=LOWER(?) AND business_id=? AND hub_user_id IS NULL LIMIT 2"
@@ -99,13 +101,13 @@ export function provisionHubIdentity(session: HubLaunchSession) {
     db.prepare(`
       INSERT INTO credit_balances
         (business_id,monthly_allowance,purchased_credits,bonus_credits,used_credits,reset_date)
-      VALUES (?,10000,0,0,0,?)
+      VALUES (?,?,0,0,0,?)
       ON CONFLICT(business_id) DO NOTHING
-    `).run(localBusinessId, new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString());
+    `).run(localBusinessId, monthlyAllowance, new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString());
   });
 
   tx();
-  const localUser = db.prepare("SELECT * FROM users WHERE hub_user_id=?").get(session.user.id) as any;
+  const localUser = db.prepare("SELECT * FROM users WHERE hub_user_id=? AND business_id=?").get(session.user.id, localBusinessId) as any;
   return { businessId: localBusinessId, userId: localUser.id, role: localUser.role };
 }
 
