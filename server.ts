@@ -619,11 +619,23 @@ app.get("/api/businesses/public/:slug", (req, res) => {
 
   res.json({
     business: {
-      ...business,
+      id: business.id,
+      name: business.name,
+      slug: business.slug,
+      logoUrl: business.logo_url || "",
+      coverImageUrl: business.cover_image_url || "",
+      industry: business.industry || "",
+      description: business.description || "",
+      location: business.location || "",
+      phone: business.phone || "",
+      email: business.email || "",
+      website: business.website || "",
+      whatsapp: business.whatsapp || "",
       openingHours: JSON.parse(business.opening_hours_json || "[]"),
       products: JSON.parse(business.products_json || "[]"),
       services: JSON.parse(business.services_json || "[]"),
       brandProfile: JSON.parse(business.brand_profile_json || "{}"),
+      createdAt: business.created_at,
     },
   });
 });
@@ -1216,8 +1228,9 @@ app.patch("/api/customers/:id/status", authenticate, requireMarketingPermission(
     const { id } = req.params;
     const { status } = req.body;
 
-    if (!status) {
-      return res.status(400).json({ error: "Status is required" });
+    const allowedStatuses = ["NEW_INQUIRY", "INTERESTED", "FOLLOW_UP", "CUSTOMER", "REPEAT_CUSTOMER"];
+    if (!allowedStatuses.includes(String(status || ""))) {
+      return res.status(400).json({ error: "Invalid customer status" });
     }
 
     const existing = db.prepare("SELECT * FROM customers WHERE id = ?").get(id) as any;
