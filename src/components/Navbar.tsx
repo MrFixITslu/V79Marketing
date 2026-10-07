@@ -229,6 +229,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         <div className="flex items-center gap-2 sm:gap-4 shrink-0">
           <button
             onClick={() => window.location.assign('/api/platform/hub')}
+            aria-label="Back to V79 Hub"
             className="hover:text-white flex items-center gap-1 text-slate-300 text-xs font-medium cursor-pointer transition-colors"
           >
             <ExternalLink className="w-3.5 h-3.5" />
@@ -243,6 +244,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
           <button
             onClick={onViewPublicProfile}
+            aria-label="Open public storefront"
             className="hover:text-white flex items-center gap-1 text-slate-300 text-xs font-medium cursor-pointer transition-colors"
           >
             <ExternalLink className="w-3.5 h-3.5" />
