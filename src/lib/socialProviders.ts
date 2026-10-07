@@ -55,9 +55,9 @@ function metaVersion() {
 }
 
 function linkedinVersion() {
-  const configured = env("LINKEDIN_VERSION");
+  const configured = env("LINKEDIN_VERSION") || "202609";
   if (!/^20\d{4}$/.test(configured)) {
-    throw new Error("LINKEDIN_VERSION must be configured as YYYYMM before LinkedIn can be used.");
+    throw new Error("LINKEDIN_VERSION must be a supported YYYYMM Marketing API version.");
   }
   return configured;
 }
@@ -98,7 +98,7 @@ export function providerConfigured(platform: string) {
     case "instagram":
       return Boolean(env("META_APP_ID") && env("META_APP_SECRET"));
     case "linkedin":
-      return Boolean(env("LINKEDIN_CLIENT_ID") && env("LINKEDIN_CLIENT_SECRET") && env("LINKEDIN_VERSION"));
+      return Boolean(env("LINKEDIN_CLIENT_ID") && env("LINKEDIN_CLIENT_SECRET"));
     case "tiktok":
       return Boolean(env("TIKTOK_CLIENT_KEY") && env("TIKTOK_CLIENT_SECRET"));
     case "google_business":
@@ -132,7 +132,7 @@ export function buildAuthorizationUrl(platform: ProviderPlatform, state: string,
     url.searchParams.set("response_type", "code");
     url.searchParams.set(
       "scope",
-      "pages_show_list,pages_read_engagement,pages_manage_posts,instagram_basic,instagram_content_publish,business_management"
+      "pages_show_list,pages_read_engagement,pages_manage_posts,instagram_basic,instagram_content_publish"
     );
     return url.toString();
   }
@@ -258,10 +258,18 @@ async function connectLinkedIn(code: string, redirectUri: string, accountHint: s
     "Content-Type": "application/json",
   };
   const acl = (await jsonFetch(
-    "https://api.linkedin.com/rest/organizationAcls?q=roleAssignee&role=ADMINISTRATOR&state=APPROVED&count=100",
+    "https://api.linkedin.com/rest/organizationAcls?q=roleAssignee&state=APPROVED&count=100",
     { headers }
   )).body;
+  const postingRoles = new Set([
+    "ADMINISTRATOR",
+    "CONTENT_ADMINISTRATOR",
+    "CONTENT_ADMIN",
+    "DIRECT_SPONSORED_CONTENT_POSTER",
+    "RECRUITING_POSTER",
+  ]);
   const urns = (acl.elements || [])
+    .filter((item:any) => postingRoles.has(String(item.role || "")))
     .map((item:any) => String(item.organization || item.organizationTarget || ""))
     .filter((urn:string) => /^urn:li:organization:\d+$/.test(urn));
 

@@ -94,12 +94,12 @@ CI uses Node.js 22 because the current native SQLite dependency requires Node 22
 
 ## Social provider integration
 
-V79 Marketing uses official OAuth flows and stores provider access/refresh tokens encrypted at rest. Set a unique `SOCIAL_TOKEN_ENCRYPTION_KEY` (32+ characters) before enabling any provider.
+V79 Marketing uses official OAuth flows and stores provider access/refresh tokens encrypted at rest. Set a unique `SOCIAL_TOKEN_ENCRYPTION_KEY` (32+ characters) before enabling any provider. Back up this key with the application secrets and do not rotate or discard it while provider tokens are stored; losing it makes those tokens unreadable and requires reconnecting the affected accounts.
 
 Supported integrations:
 - **Facebook Pages** — Meta OAuth and Page publishing.
 - **Instagram Business** — Meta OAuth and image publishing through the Instagram Graph API. Publishing requires a publicly reachable HTTPS image URL.
-- **LinkedIn Company Pages** — LinkedIn 3-legged OAuth and the Posts API. The developer app must be approved for the organisation permissions used by the integration.
+- **LinkedIn Company Pages** — LinkedIn 3-legged OAuth and the Posts API. The integration defaults to Marketing API version `202609` (the latest version published as of October 2026) and can be advanced through `LINKEDIN_VERSION`. The developer app must be approved for the organisation permissions used by the integration.
 - **TikTok** — Login Kit plus the Content Posting API. Direct Post requires approved `video.publish` access, explicit per-post privacy/commercial-content choices and media hosted on a verified URL/domain. Unaudited TikTok clients are subject to TikTok's visibility restrictions.
 - **Google Business Profile** — Google OAuth with the `business.manage` scope and Local Posts API access.
 
