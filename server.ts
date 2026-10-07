@@ -2062,8 +2062,14 @@ function assertProductionConfiguration() {
     .filter(([,value]) => String(value || "").trim().length < 32)
     .map(([name]) => name);
   if (missing.length) throw new Error(`Production configuration missing strong secrets: ${missing.join(", ")}`);
-  if (providerStatus().some(provider => provider.configured) && String(process.env.SOCIAL_TOKEN_ENCRYPTION_KEY || "").trim().length < 32) {
-    throw new Error("SOCIAL_TOKEN_ENCRYPTION_KEY must be configured with at least 32 characters when a social provider is enabled.");
+  const connectedProviderTokens = Number(
+    (db.prepare("SELECT COUNT(*) AS count FROM social_accounts WHERE connected=1 AND access_token_enc IS NOT NULL").get() as any)?.count || 0
+  );
+  if (
+    (providerStatus().some(provider => provider.configured) || connectedProviderTokens > 0) &&
+    String(process.env.SOCIAL_TOKEN_ENCRYPTION_KEY || "").trim().length < 32
+  ) {
+    throw new Error("SOCIAL_TOKEN_ENCRYPTION_KEY must be configured with at least 32 characters whenever social providers or stored provider tokens are present.");
   }
 }
 
