@@ -37,6 +37,8 @@ export const SocialAccountsManager: React.FC<SocialAccountsManagerProps> = ({
   const [isConnecting, setIsConnecting] = useState(false);
   const [disconnectingId, setDisconnectingId] = useState('');
   const [connectionError, setConnectionError] = useState('');
+  const [acceptedPrivacy, setAcceptedPrivacy] = useState(false);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [providers, setProviders] = useState<ProviderStatus[]>([]);
 
   const callback = useMemo(() => {
@@ -80,7 +82,13 @@ export const SocialAccountsManager: React.FC<SocialAccountsManagerProps> = ({
         method:'POST',
         credentials:'same-origin',
         headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({ platform:selectedPlatform, accountHandle:handleInput }),
+        body:JSON.stringify({
+          platform:selectedPlatform,
+          accountHandle:handleInput,
+          acceptedPrivacy,
+          acceptedTerms,
+          legalVersion:'2026-10-06',
+        }),
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok || !body.authorizationUrl) throw new Error(body.error || 'Provider OAuth could not be started.');
@@ -118,7 +126,12 @@ export const SocialAccountsManager: React.FC<SocialAccountsManagerProps> = ({
         </div>
 
         <button
-          onClick={() => { setConnectionError(''); setShowConnectModal(true); }}
+          onClick={() => {
+            setConnectionError('');
+            setAcceptedPrivacy(false);
+            setAcceptedTerms(false);
+            setShowConnectModal(true);
+          }}
           className="px-5 py-2.5 bg-gradient-to-r from-orange-500 to-amber-500 text-white font-bold rounded-xl text-sm shadow-md flex items-center gap-2 hover:scale-[1.02] transition-transform cursor-pointer"
         >
           <Plus className="w-4 h-4" />
@@ -289,6 +302,51 @@ export const SocialAccountsManager: React.FC<SocialAccountsManagerProps> = ({
                 </div>
               )}
 
+              <div className="rounded-xl border border-slate-800 bg-slate-950 p-4 space-y-3">
+                <label className="flex items-start gap-3 text-sm text-slate-300">
+                  <input
+                    className="mt-1"
+                    type="checkbox"
+                    checked={acceptedPrivacy}
+                    onChange={(e) => setAcceptedPrivacy(e.target.checked)}
+                  />
+                  <span>
+                    I have read and agree to the{' '}
+                    <a
+                      href="https://v79sl.com/privacy"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-semibold text-cyan-300 underline underline-offset-2"
+                    >
+                      V79 Digital Privacy Policy
+                    </a>.
+                  </span>
+                </label>
+                <label className="flex items-start gap-3 text-sm text-slate-300">
+                  <input
+                    className="mt-1"
+                    type="checkbox"
+                    checked={acceptedTerms}
+                    onChange={(e) => setAcceptedTerms(e.target.checked)}
+                  />
+                  <span>
+                    I agree to the{' '}
+                    <a
+                      href="https://v79sl.com/terms"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-semibold text-cyan-300 underline underline-offset-2"
+                    >
+                      V79 Digital Terms of Service
+                    </a>
+                    {selectedPlatform === 'youtube' ? ', including the linked YouTube Terms of Service' : ''}.
+                  </span>
+                </label>
+                <p className="text-xs leading-5 text-slate-500">
+                  Consent version: 6 October 2026. V79 records the policy version and time you approve this provider connection.
+                </p>
+              </div>
+
               {connectionError && <p className="text-sm leading-5 text-amber-300">{connectionError}</p>}
               <div className="flex items-center justify-end gap-3 pt-2">
                 <button
@@ -300,7 +358,7 @@ export const SocialAccountsManager: React.FC<SocialAccountsManagerProps> = ({
                 </button>
                 <button
                   type="submit"
-                  disabled={isConnecting || selectedProvider?.configured === false}
+                  disabled={isConnecting || selectedProvider?.configured === false || !acceptedPrivacy || !acceptedTerms}
                   className="px-6 py-2 bg-gradient-to-r from-orange-500 to-amber-500 text-white font-bold text-sm rounded-xl shadow-md flex items-center gap-2 cursor-pointer disabled:opacity-50"
                 >
                   {isConnecting && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
