@@ -4,7 +4,6 @@ import {
   PlusCircle,
   Calendar,
   TrendingUp,
-  CreditCard,
   Sparkles,
   Share2
 } from 'lucide-react';
