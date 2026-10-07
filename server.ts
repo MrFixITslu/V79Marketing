@@ -227,7 +227,7 @@ const businessUpdateSchema = z.object({
   }).optional(),
 });
 
-const socialPlatformSchema = z.enum(["facebook","instagram","linkedin","tiktok","google_business"]);
+const socialPlatformSchema = z.enum(["facebook","instagram","linkedin","tiktok","youtube","google_business"]);
 const socialConnectSchema = z.object({
   platform:socialPlatformSchema,
   accountHandle:z.string().trim().max(180).default(""),
@@ -251,6 +251,7 @@ const generatedSocialCopySchema = z.object({
   instagram: z.object({ caption:z.string().max(10000), hashtags:z.array(z.string().max(120)).max(50) }),
   linkedin: z.object({ caption:z.string().max(10000), hashtags:z.array(z.string().max(120)).max(50) }),
   tiktok: z.object({ caption:z.string().max(10000), hashtags:z.array(z.string().max(120)).max(50) }),
+  youtube: z.object({ caption:z.string().max(5000), hashtags:z.array(z.string().max(120)).max(30) }),
   google_business: z.object({ caption:z.string().max(1500), hashtags:z.array(z.string().max(120)).max(20) }),
   whatsapp: z.object({ caption:z.string().max(10000), hashtags:z.array(z.string().max(120)).max(50) }),
 });
@@ -262,7 +263,7 @@ const generateCampaignPlanSchema = z.object({
 
 const generatedCampaignStepSchema = z.object({
   dayNumber: z.coerce.number().int().min(1).max(90),
-  channel: z.enum(["facebook","instagram","linkedin","tiktok","whatsapp","twitter","google_business"]),
+  channel: z.enum(["facebook","instagram","linkedin","tiktok","youtube","whatsapp","twitter","google_business"]),
   postTitle: z.string().max(500),
   caption: z.string().max(10000).optional(),
   captionPrompt: z.string().max(10000).optional(),
@@ -272,7 +273,7 @@ const generatedCampaignStepSchema = z.object({
 const competitorSchema = z.object({
   name: z.string().trim().min(1).max(180),
   handle: z.string().trim().min(1).max(180),
-  platform: z.enum(["facebook","instagram","linkedin","twitter","tiktok","google_business","whatsapp"]).default("instagram"),
+  platform: z.enum(["facebook","instagram","linkedin","twitter","tiktok","youtube","google_business","whatsapp"]).default("instagram"),
 });
 
 const generatedAssetSchema = z.object({
@@ -948,7 +949,7 @@ app.post("/api/posts", authenticate, requireMarketingPermission("content.write")
       data.campaignId || null,
       now
     );
-    const publishablePlatforms = ["facebook","instagram","linkedin","tiktok","google_business"]
+    const publishablePlatforms = ["facebook","instagram","linkedin","tiktok","youtube","google_business"]
       .filter(platform => Object.prototype.hasOwnProperty.call(data.content || {}, platform));
     const insertDelivery = db.prepare(`
       INSERT OR IGNORE INTO post_deliveries
@@ -1423,6 +1424,7 @@ Return only JSON with this exact shape:
   "instagram": { "caption": "...", "hashtags": ["#tag1", "#tag2"] },
   "linkedin": { "caption": "...", "hashtags": ["#tag1", "#tag2"] },
   "tiktok": { "caption": "...", "hashtags": ["#tag1", "#tag2"] },
+  "youtube": { "caption": "Video description...", "hashtags": ["#tag1", "#tag2"] },
   "google_business": { "caption": "...", "hashtags": ["#tag1"] },
   "whatsapp": { "caption": "...", "hashtags": [] }
 }`;
@@ -1486,6 +1488,7 @@ Return only JSON with this exact shape:
       instagram: { caption:`${prompt} — from ${bName}. Contact us through our official profile for details.`, hashtags:["#SupportLocal","#CaribbeanBusiness"] },
       linkedin: { caption:`${bName} is sharing an update: "${prompt}". Contact us for verified details.`, hashtags:["#BusinessGrowth","#CaribbeanEnterprise"] },
       tiktok: { caption:`${bName}: ${prompt}. Check our official profile for details.`, hashtags:["#CaribbeanBusiness","#LocalBusiness"] },
+      youtube: { caption:`${bName}: ${prompt}. Subscribe to our official YouTube channel for verified updates.`, hashtags:["#CaribbeanBusiness","#V79Digital"] },
       google_business: { caption:`${bName}: ${prompt}. Contact us through our official business channels for verified details.`, hashtags:["#CaribbeanBusiness"] },
       whatsapp: { caption:`Update from ${bName}: ${prompt}. Reply if you would like more information.`, hashtags:[] },
     };
@@ -1603,6 +1606,7 @@ Return JSON only:
     { "dayNumber": 3, "channel": "instagram", "postTitle": "...", "caption": "...", "suggestedTime": "04:30 PM" },
     { "dayNumber": 7, "channel": "linkedin", "postTitle": "...", "caption": "...", "suggestedTime": "11:00 AM" },
     { "dayNumber": 10, "channel": "google_business", "postTitle": "...", "caption": "...", "suggestedTime": "09:00 AM" },
+    { "dayNumber": 12, "channel": "youtube", "postTitle": "...", "caption": "...", "suggestedTime": "06:00 PM" },
     { "dayNumber": 14, "channel": "whatsapp", "postTitle": "...", "caption": "...", "suggestedTime": "09:30 AM" }
   ]
 }`;
@@ -1662,6 +1666,7 @@ Return JSON only:
       { dayNumber:3, channel:"instagram", postTitle:"Visual spotlight", caption:`${campaignName} from ${bName}. Follow our official profile for details.`, suggestedTime:"04:30 PM" },
       { dayNumber:7, channel:"linkedin", postTitle:"Business value spotlight", caption:`A closer look at ${campaignName} from ${bName}. Contact us for verified information.`, suggestedTime:"11:00 AM" },
       { dayNumber:10, channel:"google_business", postTitle:"Google Business update", caption:`${bName}: ${campaignName}. Contact us for verified information.`, suggestedTime:"09:00 AM" },
+      { dayNumber:12, channel:"youtube", postTitle:"YouTube video", caption:`${bName}: ${campaignName}. Watch our official video for verified details.`, suggestedTime:"06:00 PM" },
       { dayNumber:14, channel:"whatsapp", postTitle:"Customer follow-up", caption:`Update from ${bName}: ${campaignName}. Reply if you would like more information.`, suggestedTime:"09:30 AM" },
     ];
     return res.json({

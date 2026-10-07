@@ -188,7 +188,7 @@ export const ContentCalendar: React.FC<ContentCalendarProps> = ({
         <span className="text-slate-500 font-bold flex items-center gap-1 mr-2">
           <Filter className="w-3.5 h-3.5" /> Filter channel:
         </span>
-        {['all', 'facebook', 'instagram', 'linkedin', 'tiktok', 'google_business', 'whatsapp'].map((ch) => (
+        {['all', 'facebook', 'instagram', 'linkedin', 'tiktok', 'youtube', 'google_business', 'whatsapp'].map((ch) => (
           <button
             key={ch}
             onClick={() => setSelectedPlatformFilter(ch)}

@@ -10,6 +10,7 @@ import {
   Instagram,
   Linkedin,
   Video,
+  Youtube,
   MessageCircle,
   Gift,
   CalendarDays,
@@ -29,7 +30,7 @@ interface AiContentGeneratorProps {
   initialPrompt?: string;
 }
 
-const PUBLISH_PLATFORMS = ['facebook', 'instagram', 'linkedin', 'tiktok', 'google_business'] as const;
+const PUBLISH_PLATFORMS = ['facebook', 'instagram', 'linkedin', 'tiktok', 'youtube', 'google_business'] as const;
 type PublishPlatform = (typeof PUBLISH_PLATFORMS)[number];
 
 function defaultScheduleValue() {
@@ -44,6 +45,7 @@ const platformLabel: Record<PublishPlatform, string> = {
   instagram: 'Instagram',
   linkedin: 'LinkedIn',
   tiktok: 'TikTok',
+  youtube: 'YouTube',
   google_business: 'Google Business',
 };
 
@@ -68,6 +70,12 @@ export const AiContentGenerator: React.FC<AiContentGeneratorProps> = ({
 
   const [selectedPublishPlatforms, setSelectedPublishPlatforms] = useState<PublishPlatform[]>([]);
   const [mediaUrl, setMediaUrl] = useState(business.coverImageUrl || '');
+  const [youtubeVideoUrl, setYoutubeVideoUrl] = useState('');
+  const [youtubeTitle, setYoutubeTitle] = useState('');
+  const [youtubePrivacy, setYoutubePrivacy] = useState<'private' | 'unlisted' | 'public'>('private');
+  const [youtubeCategoryId, setYoutubeCategoryId] = useState('22');
+  const [youtubeMadeForKids, setYoutubeMadeForKids] = useState(false);
+  const [youtubeSyntheticMedia, setYoutubeSyntheticMedia] = useState(false);
   const [scheduledForLocal, setScheduledForLocal] = useState(defaultScheduleValue);
 
   const [tiktokCreator, setTikTokCreator] = useState<TikTokCreatorInfo | null>(null);
@@ -161,6 +169,7 @@ export const AiContentGenerator: React.FC<AiContentGeneratorProps> = ({
       const data = await response.json().catch(() => ({}));
       if (!response.ok || !data.success || !data.data) throw new Error(data.error || 'Could not generate marketing content.');
       setGeneratedContent(data.data);
+      if (!youtubeTitle.trim()) setYoutubeTitle(itemName || 'V79 Marketing video');
 
       if (selectedPublishPlatforms.length === 0) {
         const connected = PUBLISH_PLATFORMS.filter(platform => connectedByPlatform.has(platform));
@@ -225,6 +234,21 @@ export const AiContentGenerator: React.FC<AiContentGeneratorProps> = ({
       return;
     }
 
+    if (selectedPublishPlatforms.includes('youtube')) {
+      if (!/^https:\/\//i.test(youtubeVideoUrl.trim())) {
+        setScheduleError('YouTube requires a publicly reachable HTTPS video URL.');
+        return;
+      }
+      if (!youtubeTitle.trim()) {
+        setScheduleError('YouTube requires a video title.');
+        return;
+      }
+      if (!connectedByPlatform.has('youtube')) {
+        setScheduleError('Connect a YouTube channel before scheduling a YouTube upload.');
+        return;
+      }
+    }
+
     const scheduledDate = new Date(scheduledForLocal);
     if (Number.isNaN(scheduledDate.getTime())) {
       setScheduleError('Choose a valid schedule date and time.');
@@ -246,6 +270,16 @@ export const AiContentGenerator: React.FC<AiContentGeneratorProps> = ({
           brandContentToggle: tiktokCommercialDisclosure && tiktokBrandedContent,
           isAigc: tiktokIsAigc,
           musicUsageConfirmed: tiktokMusicConfirmed,
+        };
+      }
+      if (platform === 'youtube') {
+        content[platform].youtube = {
+          title: youtubeTitle.trim(),
+          videoUrl: youtubeVideoUrl.trim(),
+          privacyStatus: youtubePrivacy,
+          categoryId: youtubeCategoryId,
+          madeForKids: youtubeMadeForKids,
+          containsSyntheticMedia: youtubeSyntheticMedia,
         };
       }
     }
@@ -282,6 +316,7 @@ export const AiContentGenerator: React.FC<AiContentGeneratorProps> = ({
     instagram: <Instagram className="w-4 h-4 text-pink-600" />,
     linkedin: <Linkedin className="w-4 h-4 text-sky-600" />,
     tiktok: <Video className="w-4 h-4 text-teal-600" />,
+    youtube: <Youtube className="w-4 h-4 text-red-600" />,
     google_business: <Globe2 className="w-4 h-4 text-amber-600" />,
     whatsapp: <MessageCircle className="w-4 h-4 text-emerald-600" />,
   };
@@ -291,6 +326,7 @@ export const AiContentGenerator: React.FC<AiContentGeneratorProps> = ({
     'instagram',
     'linkedin',
     'tiktok',
+    'youtube',
     'google_business',
     'whatsapp',
   ];
@@ -331,7 +367,7 @@ export const AiContentGenerator: React.FC<AiContentGeneratorProps> = ({
           <p className="text-sm text-slate-500 mt-1">V79 AI uses only your verified business profile and the details you enter here.</p>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           {categories.map((cat) => {
             const Icon = cat.icon;
             const isSelected = selectedCategory === cat.id;
@@ -456,7 +492,7 @@ export const AiContentGenerator: React.FC<AiContentGeneratorProps> = ({
             <p className="mt-2 text-xs leading-5 text-slate-500">
               Required for Instagram and TikTok. TikTok also requires the URL/domain to be verified in its developer console.
             </p>
-            {/^^https:\/\//i.test(mediaUrl.trim()) && (
+            {/^https:\/\//i.test(mediaUrl.trim()) && (
               <img src={mediaUrl.trim()} alt="Publishing preview" className="mt-3 max-h-44 w-full rounded-xl border border-slate-200 object-cover" />
             )}
           </div>
@@ -477,6 +513,93 @@ export const AiContentGenerator: React.FC<AiContentGeneratorProps> = ({
             </p>
           </div>
         </div>
+
+        {selectedPublishPlatforms.includes('youtube') && (
+          <div className="rounded-2xl border border-red-200 bg-red-50 p-5 space-y-4">
+            <div>
+              <div className="flex items-center gap-2 text-sm font-black text-slate-900">
+                <Youtube className="h-4 w-4 text-red-600" />
+                YouTube video upload
+              </div>
+              <p className="mt-1 text-xs leading-5 text-slate-600">
+                YouTube uploads require a publicly reachable HTTPS video. Google forces uploads from unverified API projects to private visibility until the project passes its YouTube API compliance audit.
+              </p>
+            </div>
+
+            <div>
+              <label className="text-sm font-bold text-slate-800">Public HTTPS video URL</label>
+              <input
+                value={youtubeVideoUrl}
+                onChange={(e) => setYoutubeVideoUrl(e.target.value)}
+                placeholder="https://your-domain.com/video/campaign.mp4"
+                className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-900 focus:border-red-500 focus:outline-none"
+              />
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="text-sm font-bold text-slate-800">Video title</label>
+                <input
+                  value={youtubeTitle}
+                  maxLength={100}
+                  onChange={(e) => setYoutubeTitle(e.target.value)}
+                  placeholder="Video title"
+                  className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-900 focus:border-red-500 focus:outline-none"
+                />
+                <p className="mt-1 text-xs text-slate-500">{youtubeTitle.length}/100</p>
+              </div>
+
+              <div>
+                <label className="text-sm font-bold text-slate-800">Privacy</label>
+                <select
+                  value={youtubePrivacy}
+                  onChange={(e) => setYoutubePrivacy(e.target.value as 'private' | 'unlisted' | 'public')}
+                  className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-900"
+                >
+                  <option value="private">Private</option>
+                  <option value="unlisted">Unlisted</option>
+                  <option value="public">Public</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-sm font-bold text-slate-800">Category</label>
+                <select
+                  value={youtubeCategoryId}
+                  onChange={(e) => setYoutubeCategoryId(e.target.value)}
+                  className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-900"
+                >
+                  <option value="22">People & Blogs</option>
+                  <option value="24">Entertainment</option>
+                  <option value="26">Howto & Style</option>
+                  <option value="27">Education</option>
+                  <option value="28">Science & Technology</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="flex items-start gap-3 rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-700">
+                <input
+                  className="mt-1"
+                  type="checkbox"
+                  checked={youtubeMadeForKids}
+                  onChange={(e) => setYoutubeMadeForKids(e.target.checked)}
+                />
+                <span>This video is made for kids</span>
+              </label>
+              <label className="flex items-start gap-3 rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-700">
+                <input
+                  className="mt-1"
+                  type="checkbox"
+                  checked={youtubeSyntheticMedia}
+                  onChange={(e) => setYoutubeSyntheticMedia(e.target.checked)}
+                />
+                <span>This video contains realistic altered or synthetic media</span>
+              </label>
+            </div>
+          </div>
+        )}
 
         {selectedPublishPlatforms.includes('tiktok') && (
           <div className="rounded-2xl border border-slate-300 bg-slate-950 p-5 text-white space-y-4">
@@ -620,7 +743,7 @@ export const AiContentGenerator: React.FC<AiContentGeneratorProps> = ({
               }`}
             >
               {platformIcons[platform]}
-              <span>{platform === 'google_business' ? 'Google Business' : platform}</span>
+              <span>{platform === 'google_business' ? 'Google Business' : platform === 'youtube' ? 'YouTube' : platform}</span>
               {platform === 'whatsapp' && <span className="text-[10px] font-medium opacity-70">copy only</span>}
             </button>
           ))}
@@ -632,7 +755,7 @@ export const AiContentGenerator: React.FC<AiContentGeneratorProps> = ({
               <div className="flex items-center justify-between text-xs text-slate-500 border-b border-slate-200/80 pb-2">
                 <span className="font-bold text-slate-900 flex items-center gap-2">
                   {platformIcons[activePlatform]}
-                  <span>{activePlatform === 'google_business' ? 'Google Business' : activePlatform} caption</span>
+                  <span>{activePlatform === 'google_business' ? 'Google Business' : activePlatform === 'youtube' ? 'YouTube' : activePlatform} caption</span>
                 </span>
                 <button
                   onClick={() =>

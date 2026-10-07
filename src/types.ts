@@ -4,7 +4,7 @@ export type PlanTier = 'FREE' | 'STARTER' | 'GROWTH' | 'PROFESSIONAL' | 'ENTERPR
 
 export type PostStatus = 'DRAFT' | 'PENDING_APPROVAL' | 'SCHEDULED' | 'PUBLISHED' | 'FAILED';
 
-export type SocialPlatform = 'facebook' | 'instagram' | 'linkedin' | 'twitter' | 'tiktok' | 'google_business' | 'whatsapp';
+export type SocialPlatform = 'facebook' | 'instagram' | 'linkedin' | 'twitter' | 'tiktok' | 'youtube' | 'google_business' | 'whatsapp';
 
 export interface User {
   id: string;
@@ -228,11 +228,20 @@ export interface TikTokPublishSettings {
   musicUsageConfirmed: boolean;
 }
 
+export interface YouTubePublishSettings {
+  title: string;
+  privacyStatus: 'private' | 'unlisted' | 'public';
+  categoryId: string;
+  madeForKids: boolean;
+  containsSyntheticMedia: boolean;
+}
+
 export interface PostPlatformContent {
   caption: string;
   hashtags: string[];
   imageUrl?: string;
   tiktok?: TikTokPublishSettings;
+  youtube?: YouTubePublishSettings;
 }
 
 export interface TikTokCreatorInfo {
@@ -273,6 +282,7 @@ export interface Post {
     instagram?: PostPlatformContent;
     linkedin?: PostPlatformContent;
     tiktok?: PostPlatformContent;
+    youtube?: PostPlatformContent;
     whatsapp?: PostPlatformContent;
     twitter?: PostPlatformContent;
     google_business?: PostPlatformContent;

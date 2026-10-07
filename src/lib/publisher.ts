@@ -11,7 +11,7 @@ export interface PublishResult {
   providerPostId?: string;
 }
 
-const PUBLISHABLE = new Set(["facebook", "instagram", "linkedin", "tiktok", "google_business"]);
+const PUBLISHABLE = new Set(["facebook", "instagram", "linkedin", "tiktok", "youtube", "google_business"]);
 
 function simulationEnabled() {
   return process.env.NODE_ENV !== "production" && process.env.V79_ENABLE_SIMULATED_PUBLISHER === "1";
