@@ -413,7 +413,7 @@ export default function App() {
     });
     const body = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(body.error || 'Could not disconnect this provider.');
-    setSocialAccounts(items => items.map(item => item.id === id ? { ...item, connected:false } : item));
+    setSocialAccounts(items => items.filter(item => item.id !== id));
   };
 
   const handleRetryDelivery = async (delivery: PostDelivery): Promise<void> => {
@@ -453,6 +453,10 @@ export default function App() {
           <button onClick={() => window.location.assign('/api/platform/start')} className="mt-7 rounded-xl bg-cyan-300 px-5 py-3 font-semibold text-slate-950">
             Continue with V79 Hub
           </button>
+          <div className="mt-6 flex items-center justify-center gap-4 text-xs text-slate-400">
+            <a href="https://v79sl.com/privacy" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 hover:text-white">Privacy Policy</a>
+            <a href="https://v79sl.com/terms" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 hover:text-white">Terms of Service</a>
+          </div>
         </section>
       </main>
     );
@@ -692,8 +696,16 @@ export default function App() {
           <span>|</span>
           <span className="text-slate-500">Credits Remaining: {Math.max(0, creditBalance.monthlyAllowance + creditBalance.purchasedCredits + creditBalance.bonusCredits - creditBalance.usedCredits).toLocaleString()}</span>
         </div>
-        <div className="text-slate-400 flex items-center gap-2">
+        <div className="text-slate-400 flex flex-wrap items-center justify-end gap-2">
           <span>V79 Digital Marketing v3.0</span>
+          <span>•</span>
+          <a href="https://v79sl.com/privacy" target="_blank" rel="noopener noreferrer" className="text-slate-500 hover:text-slate-300 underline font-bold transition-colors">
+            Privacy
+          </a>
+          <span>•</span>
+          <a href="https://v79sl.com/terms" target="_blank" rel="noopener noreferrer" className="text-slate-500 hover:text-slate-300 underline font-bold transition-colors">
+            Terms
+          </a>
           <span>•</span>
           <button onClick={() => window.location.assign('/api/platform/hub')} className="text-slate-500 hover:text-blue-600 underline font-bold transition-colors cursor-pointer">
             Back to Hub
