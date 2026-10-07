@@ -871,6 +871,27 @@ export async function refreshProviderAccess(account: ProviderAccountRecord): Pro
   };
 }
 
+export async function revokeProviderAuthorization(account: ProviderAccountRecord): Promise<void> {
+  if (account.platform !== "youtube" && account.platform !== "google_business") return;
+
+  const token = String(account.refreshToken || account.accessToken || "").trim();
+  if (!token) return;
+
+  const response = await fetch("https://oauth2.googleapis.com/revoke", {
+    method:"POST",
+    headers:{"content-type":"application/x-www-form-urlencoded"},
+    body:new URLSearchParams({ token }),
+    signal:AbortSignal.timeout(15_000),
+  });
+
+  // Google may return 400 when the token is already invalid/revoked. In that
+  // case there is no remaining provider authorization for V79 to preserve.
+  if (!response.ok && response.status !== 400) {
+    const raw = await response.text().catch(() => "");
+    throw new Error(raw || `Google authorization revocation failed (HTTP ${response.status}).`);
+  }
+}
+
 export async function publishWithProvider(account: ProviderAccountRecord, payload: ProviderPublishPayload): Promise<ProviderPublishResult> {
   let providerPostId = "";
   if (account.platform === "facebook") providerPostId = await publishFacebook(account, payload);
