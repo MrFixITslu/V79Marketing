@@ -1,4 +1,4 @@
-type ProviderPlatform = "facebook" | "instagram" | "linkedin" | "tiktok" | "google_business";
+type ProviderPlatform = "facebook" | "instagram" | "linkedin" | "tiktok" | "youtube" | "google_business";
 
 export interface ProviderConnection {
   platform: ProviderPlatform;
@@ -36,6 +36,14 @@ export interface ProviderPublishPayload {
     isAigc?: boolean;
     musicUsageConfirmed?: boolean;
   };
+  youtube?: {
+    title?: string;
+    videoUrl?: string;
+    privacyStatus?: "private" | "unlisted" | "public";
+    categoryId?: string;
+    madeForKids?: boolean;
+    containsSyntheticMedia?: boolean;
+  };
 }
 
 export interface ProviderPublishResult {
@@ -44,7 +52,7 @@ export interface ProviderPublishResult {
   raw?: unknown;
 }
 
-const SUPPORTED: ProviderPlatform[] = ["facebook", "instagram", "linkedin", "tiktok", "google_business"];
+const SUPPORTED: ProviderPlatform[] = ["facebook", "instagram", "linkedin", "tiktok", "youtube", "google_business"];
 
 function env(name: string) {
   return String(process.env[name] || "").trim();
@@ -101,6 +109,8 @@ export function providerConfigured(platform: string) {
       return Boolean(env("LINKEDIN_CLIENT_ID") && env("LINKEDIN_CLIENT_SECRET"));
     case "tiktok":
       return Boolean(env("TIKTOK_CLIENT_KEY") && env("TIKTOK_CLIENT_SECRET"));
+    case "youtube":
+      return Boolean(env("YOUTUBE_CLIENT_ID") && env("YOUTUBE_CLIENT_SECRET"));
     case "google_business":
       return Boolean(env("GOOGLE_CLIENT_ID") && env("GOOGLE_CLIENT_SECRET"));
     default:
@@ -115,9 +125,11 @@ export function providerStatus() {
     capabilities:
       platform === "tiktok"
         ? ["oauth", "photo_publish_with_explicit_consent"]
-        : platform === "instagram"
-          ? ["oauth", "image_publish"]
-          : ["oauth", "text_publish", "image_publish"],
+        : platform === "youtube"
+          ? ["oauth", "video_upload", "privacy_controls"]
+          : platform === "instagram"
+            ? ["oauth", "image_publish"]
+            : ["oauth", "text_publish", "image_publish"],
   }));
 }
 
@@ -154,6 +166,21 @@ export function buildAuthorizationUrl(platform: ProviderPlatform, state: string,
     url.searchParams.set("redirect_uri", redirectUri);
     url.searchParams.set("state", state);
     url.searchParams.set("scope", "user.info.basic,video.publish");
+    return url.toString();
+  }
+
+  if (platform === "youtube") {
+    const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+    url.searchParams.set("client_id", env("YOUTUBE_CLIENT_ID"));
+    url.searchParams.set("redirect_uri", redirectUri);
+    url.searchParams.set("response_type", "code");
+    url.searchParams.set("state", state);
+    url.searchParams.set(
+      "scope",
+      "https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly"
+    );
+    url.searchParams.set("access_type", "offline");
+    url.searchParams.set("prompt", "consent");
     return url.toString();
   }
 
@@ -328,6 +355,51 @@ async function connectTikTok(code: string, redirectUri: string): Promise<Provide
   };
 }
 
+async function connectYouTube(code: string, redirectUri: string): Promise<ProviderConnection> {
+  const body = new URLSearchParams({
+    client_id: env("YOUTUBE_CLIENT_ID"),
+    client_secret: env("YOUTUBE_CLIENT_SECRET"),
+    code,
+    grant_type: "authorization_code",
+    redirect_uri: redirectUri,
+  });
+  const token = (await jsonFetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body,
+  })).body;
+  if (!token.access_token) throw new Error("Google did not return a YouTube access token.");
+
+  const channelUrl = new URL("https://www.googleapis.com/youtube/v3/channels");
+  channelUrl.searchParams.set("part", "id,snippet");
+  channelUrl.searchParams.set("mine", "true");
+  const channelResult = (await jsonFetch(channelUrl.toString(), {
+    headers: { Authorization: `Bearer ${token.access_token}` },
+  })).body;
+  const channel = Array.isArray(channelResult?.items) ? channelResult.items[0] : null;
+  if (!channel?.id) {
+    throw new Error("No YouTube channel was found for the Google account that approved access.");
+  }
+
+  return {
+    platform: "youtube",
+    providerAccountId: String(channel.id),
+    accountName: String(channel.snippet?.title || channel.id),
+    accountHandle: String(channel.snippet?.customUrl || channel.snippet?.title || channel.id),
+    accessToken: String(token.access_token),
+    refreshToken: token.refresh_token ? String(token.refresh_token) : undefined,
+    expiresAt: token.expires_in ? new Date(Date.now() + Number(token.expires_in) * 1000).toISOString() : undefined,
+    scopes: String(token.scope || "https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly")
+      .split(" ")
+      .filter(Boolean),
+    metadata: {
+      channelId: String(channel.id),
+      channelTitle: String(channel.snippet?.title || ""),
+      channelCustomUrl: String(channel.snippet?.customUrl || ""),
+    },
+  };
+}
+
 async function connectGoogle(code: string, redirectUri: string, accountHint: string): Promise<ProviderConnection> {
   const body = new URLSearchParams({
     client_id: env("GOOGLE_CLIENT_ID"),
@@ -385,6 +457,7 @@ export async function exchangeOAuthCode(
   if (platform === "facebook" || platform === "instagram") return connectMeta(platform, code, redirectUri, accountHint);
   if (platform === "linkedin") return connectLinkedIn(code, redirectUri, accountHint);
   if (platform === "tiktok") return connectTikTok(code, redirectUri);
+  if (platform === "youtube") return connectYouTube(code, redirectUri);
   return connectGoogle(code, redirectUri, accountHint);
 }
 
@@ -529,6 +602,97 @@ async function publishTikTok(account: ProviderAccountRecord, payload: ProviderPu
   return String(result?.data?.publish_id || "");
 }
 
+async function publishYouTube(account: ProviderAccountRecord, payload: ProviderPublishPayload) {
+  const settings = payload.youtube || {};
+  const videoUrl = String(settings.videoUrl || "").trim();
+  if (!/^https:\/\//i.test(videoUrl)) {
+    throw new Error("YouTube publishing requires a publicly reachable HTTPS video URL.");
+  }
+
+  const title = String(settings.title || payload.caption || "V79 Marketing video").trim().slice(0, 100);
+  if (!title) throw new Error("YouTube requires a video title.");
+  const description = captionWithHashtags(payload).slice(0, 5000);
+  const privacyStatus = ["private","unlisted","public"].includes(String(settings.privacyStatus))
+    ? String(settings.privacyStatus)
+    : "private";
+  const categoryId = /^\d+$/.test(String(settings.categoryId || "")) ? String(settings.categoryId) : "22";
+
+  const sourceResponse = await fetch(videoUrl, {
+    method: "GET",
+    redirect: "follow",
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!sourceResponse.ok || !sourceResponse.body) {
+    throw new Error(`Could not download the YouTube source video (HTTP ${sourceResponse.status}).`);
+  }
+  const contentType = String(sourceResponse.headers.get("content-type") || "video/mp4").split(";")[0].trim();
+  if (!contentType.startsWith("video/") && contentType !== "application/octet-stream") {
+    try { await sourceResponse.body.cancel(); } catch {}
+    throw new Error("The YouTube source URL did not return a supported video media type.");
+  }
+
+  const metadata = {
+    snippet: {
+      title,
+      description,
+      categoryId,
+    },
+    status: {
+      privacyStatus,
+      selfDeclaredMadeForKids: Boolean(settings.madeForKids),
+      containsSyntheticMedia: Boolean(settings.containsSyntheticMedia),
+    },
+  };
+
+  const initUrl = new URL("https://www.googleapis.com/upload/youtube/v3/videos");
+  initUrl.searchParams.set("uploadType", "resumable");
+  initUrl.searchParams.set("part", "snippet,status");
+  const initHeaders:Record<string,string> = {
+    Authorization: `Bearer ${account.accessToken}`,
+    "Content-Type": "application/json; charset=UTF-8",
+    "X-Upload-Content-Type": contentType,
+  };
+  const contentLength = sourceResponse.headers.get("content-length");
+  if (contentLength && /^\d+$/.test(contentLength)) initHeaders["X-Upload-Content-Length"] = contentLength;
+
+  const initResponse = await fetch(initUrl.toString(), {
+    method: "POST",
+    headers: initHeaders,
+    body: JSON.stringify(metadata),
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!initResponse.ok) {
+    const errorText = await initResponse.text().catch(() => "");
+    try { await sourceResponse.body.cancel(); } catch {}
+    throw new Error(errorText || `YouTube upload session failed (HTTP ${initResponse.status}).`);
+  }
+  const uploadUrl = initResponse.headers.get("location");
+  if (!uploadUrl) {
+    try { await sourceResponse.body.cancel(); } catch {}
+    throw new Error("YouTube did not return a resumable upload session URL.");
+  }
+
+  const uploadHeaders:Record<string,string> = { "Content-Type": contentType };
+  if (contentLength && /^\d+$/.test(contentLength)) uploadHeaders["Content-Length"] = contentLength;
+  const uploadResponse = await fetch(uploadUrl, {
+    method: "PUT",
+    headers: uploadHeaders,
+    body: sourceResponse.body as any,
+    duplex: "half",
+    signal: AbortSignal.timeout(30 * 60 * 1000),
+  } as any);
+
+  const raw = await uploadResponse.text();
+  let result:any = {};
+  try { result = raw ? JSON.parse(raw) : {}; } catch { result = { raw }; }
+  if (!uploadResponse.ok) {
+    const message = result?.error?.message || result?.message || raw || `YouTube upload failed (HTTP ${uploadResponse.status}).`;
+    throw new Error(String(message));
+  }
+  if (!result?.id) throw new Error("YouTube accepted the upload but did not return a video ID.");
+  return String(result.id);
+}
+
 async function publishGoogleBusiness(account: ProviderAccountRecord, payload: ProviderPublishPayload) {
   const locationResource = String(account.metadata.locationResource || account.providerAccountId);
   if (!/^locations\//.test(locationResource)) throw new Error("Google Business Profile location metadata is missing.");
@@ -568,7 +732,19 @@ export async function refreshProviderAccess(account: ProviderAccountRecord): Pro
   }
 
   let token:any;
-  if (account.platform === "google_business") {
+  if (account.platform === "youtube") {
+    const body = new URLSearchParams({
+      client_id:env("YOUTUBE_CLIENT_ID"),
+      client_secret:env("YOUTUBE_CLIENT_SECRET"),
+      refresh_token:account.refreshToken,
+      grant_type:"refresh_token",
+    });
+    token = (await jsonFetch("https://oauth2.googleapis.com/token", {
+      method:"POST",
+      headers:{"content-type":"application/x-www-form-urlencoded"},
+      body,
+    })).body;
+  } else if (account.platform === "google_business") {
     const body = new URLSearchParams({
       client_id:env("GOOGLE_CLIENT_ID"),
       client_secret:env("GOOGLE_CLIENT_SECRET"),
@@ -623,6 +799,7 @@ export async function publishWithProvider(account: ProviderAccountRecord, payloa
   else if (account.platform === "instagram") providerPostId = await publishInstagram(account, payload);
   else if (account.platform === "linkedin") providerPostId = await publishLinkedIn(account, payload);
   else if (account.platform === "tiktok") providerPostId = await publishTikTok(account, payload);
+  else if (account.platform === "youtube") providerPostId = await publishYouTube(account, payload);
   else if (account.platform === "google_business") providerPostId = await publishGoogleBusiness(account, payload);
   else throw new Error("This provider does not support publishing.");
 
