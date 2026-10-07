@@ -1,3 +1,6 @@
+import dns from "node:dns/promises";
+import net from "node:net";
+
 type ProviderPlatform = "facebook" | "instagram" | "linkedin" | "tiktok" | "youtube" | "google_business";
 
 export interface ProviderConnection {
@@ -86,6 +89,70 @@ function chooseByHint<T>(items: T[], hint: string, names: (item: T) => string[])
   const partial = items.filter(item => names(item).some(value => normalized(value || "").includes(needle) || needle.includes(normalized(value || ""))));
   if (partial.length === 1) return partial[0];
   throw new Error("No unique eligible provider account matched the name/handle supplied.");
+}
+
+function isPrivateIp(address:string) {
+  if (net.isIPv4(address)) {
+    const [a,b] = address.split(".").map(Number);
+    return (
+      a === 0 ||
+      a === 10 ||
+      a === 127 ||
+      (a === 100 && b >= 64 && b <= 127) ||
+      (a === 169 && b === 254) ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      a >= 224
+    );
+  }
+  if (net.isIPv6(address)) {
+    const normalized = address.toLowerCase();
+    return (
+      normalized === "::" ||
+      normalized === "::1" ||
+      normalized.startsWith("fc") ||
+      normalized.startsWith("fd") ||
+      normalized.startsWith("fe8") ||
+      normalized.startsWith("fe9") ||
+      normalized.startsWith("fea") ||
+      normalized.startsWith("feb") ||
+      normalized.startsWith("::ffff:127.") ||
+      normalized.startsWith("::ffff:10.") ||
+      normalized.startsWith("::ffff:192.168.")
+    );
+  }
+  return true;
+}
+
+async function assertPublicHttpsUrl(value:string) {
+  const url = new URL(value);
+  if (url.protocol !== "https:") throw new Error("YouTube source video must use HTTPS.");
+  const hostname = url.hostname.toLowerCase();
+  if (hostname === "localhost" || hostname.endsWith(".localhost") || hostname.endsWith(".local") || hostname.endsWith(".internal")) {
+    throw new Error("YouTube source video must be hosted on a public Internet address.");
+  }
+  const addresses = await dns.lookup(hostname, { all:true, verbatim:true });
+  if (!addresses.length || addresses.some(item => isPrivateIp(item.address))) {
+    throw new Error("YouTube source video resolved to a private or non-public network address.");
+  }
+  return url;
+}
+
+async function fetchPublicVideo(value:string, redirects=0):Promise<Response> {
+  if (redirects > 3) throw new Error("YouTube source video redirected too many times.");
+  const url = await assertPublicHttpsUrl(value);
+  const response = await fetch(url, {
+    method:"GET",
+    redirect:"manual",
+    signal:AbortSignal.timeout(30 * 60 * 1000),
+  });
+  if ([301,302,303,307,308].includes(response.status)) {
+    const location = response.headers.get("location");
+    try { await response.body?.cancel(); } catch {}
+    if (!location) throw new Error("YouTube source video redirect did not include a destination.");
+    return fetchPublicVideo(new URL(location, url).toString(), redirects + 1);
+  }
+  return response;
 }
 
 async function jsonFetch(url: string, init?: RequestInit) {
@@ -617,11 +684,7 @@ async function publishYouTube(account: ProviderAccountRecord, payload: ProviderP
     : "private";
   const categoryId = /^\d+$/.test(String(settings.categoryId || "")) ? String(settings.categoryId) : "22";
 
-  const sourceResponse = await fetch(videoUrl, {
-    method: "GET",
-    redirect: "follow",
-    signal: AbortSignal.timeout(30_000),
-  });
+  const sourceResponse = await fetchPublicVideo(videoUrl);
   if (!sourceResponse.ok || !sourceResponse.body) {
     throw new Error(`Could not download the YouTube source video (HTTP ${sourceResponse.status}).`);
   }
@@ -653,6 +716,11 @@ async function publishYouTube(account: ProviderAccountRecord, payload: ProviderP
     "X-Upload-Content-Type": contentType,
   };
   const contentLength = sourceResponse.headers.get("content-length");
+  const maxUploadBytes = Math.max(1, Number(env("YOUTUBE_MAX_UPLOAD_BYTES") || 1073741824));
+  if (contentLength && /^\d+$/.test(contentLength) && Number(contentLength) > maxUploadBytes) {
+    try { await sourceResponse.body.cancel(); } catch {}
+    throw new Error(`YouTube source video exceeds the configured V79 upload limit of ${Math.round(maxUploadBytes / 1024 / 1024)} MB.`);
+  }
   if (contentLength && /^\d+$/.test(contentLength)) initHeaders["X-Upload-Content-Length"] = contentLength;
 
   const initResponse = await fetch(initUrl.toString(), {
@@ -674,10 +742,20 @@ async function publishYouTube(account: ProviderAccountRecord, payload: ProviderP
 
   const uploadHeaders:Record<string,string> = { "Content-Type": contentType };
   if (contentLength && /^\d+$/.test(contentLength)) uploadHeaders["Content-Length"] = contentLength;
+  let streamedBytes = 0;
+  const limitedBody = sourceResponse.body.pipeThrough(new TransformStream<Uint8Array,Uint8Array>({
+    transform(chunk, controller) {
+      streamedBytes += chunk.byteLength;
+      if (streamedBytes > maxUploadBytes) {
+        throw new Error(`YouTube source video exceeds the configured V79 upload limit of ${Math.round(maxUploadBytes / 1024 / 1024)} MB.`);
+      }
+      controller.enqueue(chunk);
+    },
+  }));
   const uploadResponse = await fetch(uploadUrl, {
     method: "PUT",
     headers: uploadHeaders,
-    body: sourceResponse.body as any,
+    body: limitedBody as any,
     duplex: "half",
     signal: AbortSignal.timeout(30 * 60 * 1000),
   } as any);
