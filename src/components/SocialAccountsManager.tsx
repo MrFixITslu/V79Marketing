@@ -10,6 +10,7 @@ import {
   Instagram,
   Linkedin,
   Video,
+  Youtube,
   Globe,
   KeyRound,
   Unplug,
@@ -64,6 +65,7 @@ export const SocialAccountsManager: React.FC<SocialAccountsManagerProps> = ({
     { id: 'instagram', name: 'Instagram Business', icon: <Instagram className="w-5 h-5" />, color: 'text-pink-400' },
     { id: 'linkedin', name: 'LinkedIn Company', icon: <Linkedin className="w-5 h-5" />, color: 'text-sky-400' },
     { id: 'tiktok', name: 'TikTok Creator', icon: <Video className="w-5 h-5" />, color: 'text-teal-400' },
+    { id: 'youtube', name: 'YouTube Channel', icon: <Youtube className="w-5 h-5" />, color: 'text-red-400' },
     { id: 'google_business', name: 'Google Business Profile', icon: <Globe className="w-5 h-5" />, color: 'text-amber-400' },
   ];
 
@@ -213,7 +215,7 @@ export const SocialAccountsManager: React.FC<SocialAccountsManagerProps> = ({
 
       <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
         <h3 className="font-bold text-white">Provider readiness</h3>
-        <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+        <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-6">
           {availablePlatforms.map(platform => {
             const status = providers.find(item => item.platform === platform.id);
             return (
@@ -256,7 +258,7 @@ export const SocialAccountsManager: React.FC<SocialAccountsManagerProps> = ({
                 </select>
               </div>
 
-              {selectedPlatform !== 'tiktok' && (
+              {selectedPlatform !== 'tiktok' && selectedPlatform !== 'youtube' && (
                 <div>
                   <label className="text-sm font-bold text-slate-300 block mb-1">Exact Page, company or location name</label>
                   <input
@@ -279,6 +281,11 @@ export const SocialAccountsManager: React.FC<SocialAccountsManagerProps> = ({
               {selectedPlatform === 'tiktok' && (
                 <div className="rounded-xl border border-sky-500/20 bg-sky-500/10 p-3 text-xs leading-5 text-sky-200">
                   TikTok Direct Post also requires approved Content Posting access, an audited client for public visibility, verified media URLs, and explicit privacy/commercial-content choices on each post.
+                </div>
+              )}
+              {selectedPlatform === 'youtube' && (
+                <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-xs leading-5 text-red-100">
+                  YouTube uploads use the channel attached to the Google account you authorise. Google restricts uploads from unverified API projects to private visibility until the project passes its YouTube API compliance audit.
                 </div>
               )}
 
