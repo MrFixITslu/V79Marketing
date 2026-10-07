@@ -4,7 +4,6 @@ import {
   PlusCircle,
   Calendar,
   TrendingUp,
-  CreditCard,
   Sparkles,
   Share2
 } from 'lucide-react';
@@ -24,7 +23,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
     { id: 'ai-assistant', label: 'Create', icon: PlusCircle, isPrimary: true },
     { id: 'calendar', label: 'Calendar', icon: Calendar },
     { id: 'reviews', label: 'Intel', icon: TrendingUp },
-    { id: 'billing', label: 'Credits', icon: CreditCard },
+    { id: 'social-channels', label: 'Social', icon: Share2 },
   ];
 
   return (

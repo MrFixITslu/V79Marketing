@@ -174,6 +174,13 @@ export const Navbar: React.FC<NavbarProps> = ({
       tabId: 'calendar',
     },
     {
+      id: 'social',
+      label: 'Social',
+      icon: Share2,
+      isSingle: true,
+      tabId: 'social-channels',
+    },
+    {
       id: 'customers_hub',
       label: 'Customers',
       icon: MessageSquare,
