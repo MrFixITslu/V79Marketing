@@ -102,6 +102,7 @@ Supported integrations:
 - **LinkedIn Company Pages** — LinkedIn 3-legged OAuth and the Posts API. The integration defaults to Marketing API version `202609` (the latest version published as of October 2026) and can be advanced through `LINKEDIN_VERSION`. The developer app must be approved for the organisation permissions used by the integration.
 - **TikTok** — Login Kit plus the Content Posting API. Direct Post requires approved `video.publish` access, explicit per-post privacy/commercial-content choices and media hosted on a verified URL/domain. Unaudited TikTok clients are subject to TikTok's visibility restrictions.
 - **Google Business Profile** — Google OAuth with the `business.manage` scope and Local Posts API access.
+- **YouTube Channels** — Google OAuth plus the YouTube Data API v3. V79 uploads a public HTTPS source video using a resumable YouTube upload session and stores the returned video ID. Users explicitly choose title, category, privacy, Made-for-Kids status and realistic altered/synthetic-media disclosure. Google restricts uploads from unverified API projects created after 28 July 2020 to private viewing until the project passes YouTube's API compliance audit. The server rejects private/internal source-video addresses and enforces `YOUTUBE_MAX_UPLOAD_BYTES` (1 GiB by default).
 
 WhatsApp is intentionally not treated as a public social-feed publisher because the WhatsApp Business Platform does not provide a normal public feed/status publishing API. Customer messaging should be implemented as a separate messaging workflow.
 
@@ -111,6 +112,7 @@ Register these production callback URLs in the matching provider developer conso
 - `https://marketing.v79sl.com/api/social-accounts/oauth/linkedin/callback`
 - `https://marketing.v79sl.com/api/social-accounts/oauth/tiktok/callback`
 - `https://marketing.v79sl.com/api/social-accounts/oauth/google_business/callback`
+- `https://marketing.v79sl.com/api/social-accounts/oauth/youtube/callback`
 
 Provider credentials are supplied through the variables documented in `.env.example`. A provider remains visibly unavailable until its credentials are configured; the application never simulates a successful connection or publication.
 
