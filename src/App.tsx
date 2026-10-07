@@ -495,7 +495,7 @@ export default function App() {
       />
 
       {/* Main App Canvas Body */}
-      <main className="flex-1 max-w-[1540px] w-full mx-auto px-4 sm:px-5 xl:px-7 pt-5">
+      <main className="flex-1 max-w-[1540px] w-full mx-auto px-4 sm:px-5 xl:px-7 pt-5 pb-[calc(5.25rem+env(safe-area-inset-bottom))] md:pb-5">
         {currentView === 'landing' && (
           <LandingPage
             onStartDemo={handleGetStartedFromLanding}
@@ -663,7 +663,7 @@ export default function App() {
         )}
 
         {currentView === 'billing' && (
-          <section className="rounded-[22px] border border-[#1a3854] bg-[#091728] p-8">
+          <section className="rounded-[22px] border border-[#1a3854] bg-[#091728] p-5 sm:p-8">
             <h2 className="text-2xl font-semibold text-white">Subscription managed in V79 Hub</h2>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500">
               Your V79 plan, product access and future AI usage add-ons are controlled centrally so you never pay separately inside each app.
@@ -687,7 +687,7 @@ export default function App() {
       </main>
 
       {/* Status Bar / Footer */}
-      <footer className="mt-auto border-t border-[#17324d] bg-[#06101d] px-5 sm:px-8 py-3 text-[10px] font-bold text-slate-600 flex items-center justify-between">
+      <footer className="mt-auto border-t border-[#17324d] bg-[#06101d] px-5 sm:px-8 py-3 text-[10px] font-bold text-slate-600 hidden md:flex items-center justify-between">
         <div className="flex items-center gap-4">
           <span className="flex items-center gap-1.5 text-slate-500">
             <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
