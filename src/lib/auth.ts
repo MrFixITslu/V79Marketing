@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import { db } from "./db.js";
 import { createHubEntitlementChecker } from "./hubEntitlement.js";
+import { hubManagedMapping } from "./hubManagedLink.js";
 
 const checkHubSubscription = process.env.V79_ENTITLEMENT_RECHECK_ENABLED === "1"
   ? createHubEntitlementChecker({
@@ -73,6 +74,13 @@ export async function authenticate(req: AuthenticatedRequest, res: Response, nex
       const business = db.prepare(
         "SELECT hub_organization_id FROM businesses WHERE id=?"
       ).get(liveUser.business_id) as any;
+      const mapping = hubManagedMapping(business?.hub_organization_id, liveUser.hub_user_id);
+      if (mapping.managed && !mapping.valid) {
+        return res.status(403).json({
+          error: "Hub account mapping is incomplete.",
+          code: "HUB_ENTITLEMENT_MAPPING_INVALID",
+        });
+      }
       if (business?.hub_organization_id) {
         const allowed = liveUser.hub_user_id && await checkHubSubscription({
           organizationId: business.hub_organization_id,
