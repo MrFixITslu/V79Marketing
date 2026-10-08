@@ -104,6 +104,15 @@ describe.sequential("Marketing authenticated Hub entitlement runtime", () => {
     expect((await request()).status).toBe(403);
     db.prepare("UPDATE users SET hub_user_id=? WHERE id=?").run("scoped-1",testUser.id);
   });
+  it("rejects previously issued local-only JWTs after enforcement",async()=>{
+    db.prepare("UPDATE users SET hub_user_id=NULL WHERE id=?").run(testUser.id);
+    db.prepare("UPDATE businesses SET hub_organization_id=NULL WHERE id=?").run(businessId);
+    const denied = await request();
+    expect(denied.status).toBe(403);
+    expect((await denied.json()).code).toBe("HUB_IDENTITY_REQUIRED");
+    db.prepare("UPDATE businesses SET hub_organization_id=? WHERE id=?").run("staging-org-1",businessId);
+    db.prepare("UPDATE users SET hub_user_id=? WHERE id=?").run("scoped-1",testUser.id);
+  });
   it("enforces Hub cancellation after signed response lease expires",async()=>{
     await new Promise(resolve=>setTimeout(resolve,1100));
     revoked=true;

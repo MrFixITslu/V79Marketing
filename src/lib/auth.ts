@@ -10,6 +10,8 @@ const checkHubSubscription = process.env.V79_ENTITLEMENT_RECHECK_ENABLED === "1"
       secret: String(process.env.V79_MARKETING_LAUNCH_SECRET || ""),
     })
   : null;
+// Reuse the same server-signed Hub checker in publisher workers. No browser-supplied identity.
+export const verifyMarketingBackgroundEntitlement = checkHubSubscription;
 const TOKEN_EXPIRY = "30m";
 const ISSUER = "v79-marketing";
 const AUDIENCE = "v79-marketing";
@@ -75,6 +77,12 @@ export async function authenticate(req: AuthenticatedRequest, res: Response, nex
         "SELECT hub_organization_id FROM businesses WHERE id=?"
       ).get(liveUser.business_id) as any;
       const mapping = hubManagedMapping(business?.hub_organization_id, liveUser.hub_user_id);
+      if (!mapping.managed) {
+        return res.status(403).json({
+          error: "Sign in through V79 Hub to continue using Marketing.",
+          code: "HUB_IDENTITY_REQUIRED",
+        });
+      }
       if (mapping.managed && !mapping.valid) {
         return res.status(403).json({
           error: "Hub account mapping is incomplete.",
