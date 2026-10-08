@@ -1,7 +1,17 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import { db } from "./db.js";
+import { createHubEntitlementChecker } from "./hubEntitlement.js";
+import { hubManagedMapping } from "./hubManagedLink.js";
 
+const checkHubSubscription = process.env.V79_ENTITLEMENT_RECHECK_ENABLED === "1"
+  ? createHubEntitlementChecker({
+      baseUrl: String(process.env.V79_HUB_INTERNAL_URL || ""),
+      secret: String(process.env.V79_MARKETING_LAUNCH_SECRET || ""),
+    })
+  : null;
+// Reuse the same server-signed Hub checker in publisher workers. No browser-supplied identity.
+export const verifyMarketingBackgroundEntitlement = checkHubSubscription;
 const TOKEN_EXPIRY = "30m";
 const ISSUER = "v79-marketing";
 const AUDIENCE = "v79-marketing";
@@ -41,7 +51,7 @@ export function verifyToken(token: string) {
   }
 }
 
-export function authenticate(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+export async function authenticate(req: AuthenticatedRequest, res: Response, next: NextFunction) {
   let token: string | undefined;
   const authHeader = req.headers.authorization;
   if (authHeader?.startsWith("Bearer ")) {
@@ -57,10 +67,38 @@ export function authenticate(req: AuthenticatedRequest, res: Response, next: Nex
 
   try {
     const liveUser = db.prepare(
-      "SELECT id,email,name,role,business_id FROM users WHERE id=? AND business_id=?"
+      "SELECT id,email,name,role,business_id,hub_user_id FROM users WHERE id=? AND business_id=?"
     ).get(decoded.id, decoded.businessId) as any;
     if (!liveUser) {
       return res.status(401).json({ error: "Your V79 Marketing access has been revoked.", code: "ACCESS_REVOKED" });
+    }
+    if (checkHubSubscription) {
+      const business = db.prepare(
+        "SELECT hub_organization_id FROM businesses WHERE id=?"
+      ).get(liveUser.business_id) as any;
+      const mapping = hubManagedMapping(business?.hub_organization_id, liveUser.hub_user_id);
+      if (!mapping.managed) {
+        return res.status(403).json({
+          error: "Sign in through V79 Hub to continue using Marketing.",
+          code: "HUB_IDENTITY_REQUIRED",
+        });
+      }
+      if (mapping.managed && !mapping.valid) {
+        return res.status(403).json({
+          error: "Hub account mapping is incomplete.",
+          code: "HUB_ENTITLEMENT_MAPPING_INVALID",
+        });
+      }
+      if (business?.hub_organization_id) {
+        const allowed = liveUser.hub_user_id && await checkHubSubscription({
+          organizationId: business.hub_organization_id,
+          scopedUserId: liveUser.hub_user_id,
+        });
+        if (!allowed) return res.status(403).json({
+          error: "V79 Hub subscription is inactive or unavailable.",
+          code: "HUB_ENTITLEMENT_REVOKED",
+        });
+      }
     }
     req.user = {
       id: liveUser.id,

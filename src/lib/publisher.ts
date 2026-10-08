@@ -1,4 +1,6 @@
 import { db } from "./db.js";
+import { verifyMarketingBackgroundEntitlement } from "./auth.js";
+import { allowScheduledPostPublication } from "./publisherEntitlement.js";
 import { decryptToken, encryptToken } from "./tokenVault.js";
 import { publishWithProvider, refreshProviderAccess, type ProviderAccountRecord, type ProviderPlatform } from "./socialProviders.js";
 
@@ -98,6 +100,23 @@ async function loadUsableAccount(businessId:string, platform:ProviderPlatform) {
   return { row, account:refreshed };
 }
 
+// A scheduled job carries no JWT. Resolve author and Hub linkage entirely from DB.
+async function publicationAuthorized(post: {business_id: string; author_id: string}) {
+  if (!verifyMarketingBackgroundEntitlement) return true; // off until coordinated release
+  return allowScheduledPostPublication({
+    businessId: post.business_id, authorId: post.author_id,
+    lookup: (businessId, authorId) => {
+      const linked = db.prepare(`
+        SELECT b.hub_organization_id AS organizationId, u.hub_user_id AS hubUserId
+        FROM businesses b LEFT JOIN users u ON u.business_id=b.id AND u.id=?
+        WHERE b.id=?
+      `).get(authorId,businessId) as any;
+      return linked;
+    },
+    check: verifyMarketingBackgroundEntitlement,
+  });
+}
+
 export async function processScheduledPosts(): Promise<PublishResult[]> {
   const now = new Date().toISOString();
   const duePosts = db.prepare("SELECT * FROM posts WHERE status IN ('SCHEDULED','FAILED') AND scheduled_for <= ? ORDER BY scheduled_for LIMIT 50")
@@ -105,6 +124,11 @@ export async function processScheduledPosts(): Promise<PublishResult[]> {
   const results: PublishResult[] = [];
 
   for (const post of duePosts) {
+    if (!(await publicationAuthorized(post))) {
+      results.push({postId:post.id,platform:"all",status:"QUEUED",
+        error:"Publishing held until Hub subscription and user access can be verified."});
+      continue; // Leave scheduled post unchanged, safely resumable.
+    }
     let content:any = {};
     let mediaUrls:string[] = [];
     try {
@@ -139,6 +163,11 @@ export async function processScheduledPosts(): Promise<PublishResult[]> {
       if (!deliveryBackoffReady(delivery)) continue;
 
       try {
+        if (!(await publicationAuthorized(post))) {
+          results.push({postId:post.id,platform,status:"QUEUED",
+            error:"Publishing paused due to subscription or membership change."});
+          continue;
+        }
         const connection = await loadUsableAccount(post.business_id, platform as ProviderPlatform);
         if (!connection) {
           db.prepare(`
@@ -155,6 +184,13 @@ export async function processScheduledPosts(): Promise<PublishResult[]> {
           WHERE post_id=? AND platform=?
         `).run(connection.row.id, now, post.id, platform);
 
+        // Final signed check immediately before any irreversible provider call.
+        // A queued campaign never grants its own ongoing publishing entitlement.
+        if (!(await publicationAuthorized(post))) {
+          results.push({postId:post.id,platform,status:"QUEUED",
+            error:"Publishing paused before provider delivery."});
+          continue;
+        }
         const published = await publishWithProvider(connection.account, {
           caption:String(platformContent.caption || post.title || ""),
           hashtags:Array.isArray(platformContent.hashtags) ? platformContent.hashtags : [],
