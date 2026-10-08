@@ -78,6 +78,8 @@ export function initDb() {
       provider_account_id TEXT,
       provider_metadata_json TEXT NOT NULL DEFAULT '{}',
       token_scopes TEXT,
+      legal_version TEXT,
+      legal_consented_at TEXT,
       last_synced_at TEXT NOT NULL,
       FOREIGN KEY (business_id) REFERENCES businesses(id) ON DELETE CASCADE
     );
@@ -88,6 +90,8 @@ export function initDb() {
       user_id TEXT NOT NULL,
       platform TEXT NOT NULL,
       account_hint TEXT NOT NULL,
+      legal_version TEXT,
+      consented_at TEXT,
       expires_at TEXT NOT NULL,
       created_at TEXT NOT NULL,
       FOREIGN KEY (business_id) REFERENCES businesses(id) ON DELETE CASCADE
@@ -292,6 +296,10 @@ export function initDb() {
   ensureColumn("social_accounts", "provider_account_id", "TEXT");
   ensureColumn("social_accounts", "provider_metadata_json", "TEXT NOT NULL DEFAULT '{}'");
   ensureColumn("social_accounts", "token_scopes", "TEXT");
+  ensureColumn("social_accounts", "legal_version", "TEXT");
+  ensureColumn("social_accounts", "legal_consented_at", "TEXT");
+  ensureColumn("social_oauth_states", "legal_version", "TEXT");
+  ensureColumn("social_oauth_states", "consented_at", "TEXT");
   migrateHubManagedUserEmailScope();
   db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_businesses_hub_org ON businesses(hub_organization_id) WHERE hub_organization_id IS NOT NULL;");
   db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_legacy_email ON users(email) WHERE hub_user_id IS NULL;");

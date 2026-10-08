@@ -203,7 +203,7 @@ export const ContentCalendar: React.FC<ContentCalendarProps> = ({
         ))}
       </div>
 
-      <div className="bg-slate-900 rounded-2xl p-6 border border-slate-800 shadow-md">
+      <div className="bg-slate-900 rounded-2xl p-3 sm:p-6 border border-slate-800 shadow-md">
         <div className="flex items-center justify-between mb-6 border-b border-slate-800 pb-4">
           <h3 className="font-bold text-white text-base">{monthLabel}</h3>
           <div className="flex items-center gap-2 text-xs text-slate-400">
@@ -230,16 +230,16 @@ export const ContentCalendar: React.FC<ContentCalendarProps> = ({
           </div>
         </div>
 
-        <div className="grid grid-cols-7 gap-2 mb-2 text-center text-xs font-bold text-slate-400 uppercase tracking-wider">
+        <div className="grid grid-cols-7 gap-1 sm:gap-2 mb-2 text-center text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider">
           {['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map((day) => (
             <div key={day} className="py-2">{day}</div>
           ))}
         </div>
 
-        <div className="grid grid-cols-7 gap-2">
+        <div className="grid grid-cols-7 gap-1 sm:gap-2">
           {cells.map((dayNum, index) => {
             if (dayNum === null) {
-              return <div key={`empty-${index}`} className="min-h-[108px]" aria-hidden="true" />;
+              return <div key={`empty-${index}`} className="min-h-[72px] sm:min-h-[108px]" aria-hidden="true" />;
             }
             const dateStr = isoDateLocal(year, month, dayNum);
             const postsForDay = filteredPosts.filter((p) => scheduledLocalDateKey(p.scheduledFor) === dateStr);
@@ -251,7 +251,7 @@ export const ContentCalendar: React.FC<ContentCalendarProps> = ({
             return (
               <div
                 key={dateStr}
-                className={`min-h-[108px] p-2 rounded-xl border text-xs flex flex-col transition-all ${
+                className={`min-h-[72px] sm:min-h-[108px] p-1 sm:p-2 rounded-lg sm:rounded-xl border text-xs flex flex-col transition-all ${
                   postsForDay.length > 0
                     ? 'bg-slate-950 border-slate-700 hover:border-orange-500'
                     : 'bg-slate-950/40 border-slate-800/80 hover:bg-slate-900'
@@ -262,12 +262,12 @@ export const ContentCalendar: React.FC<ContentCalendarProps> = ({
                   {postsForDay.length > 0 && <span className="w-2 h-2 rounded-full bg-orange-500" />}
                 </div>
 
-                <div className="space-y-1 mt-2 flex-1 overflow-y-auto max-h-[84px]">
+                <div className="space-y-1 mt-1 sm:mt-2 flex-1 overflow-y-auto max-h-[52px] sm:max-h-[84px]">
                   {postsForDay.map((post) => (
                     <button
                       key={post.id}
                       onClick={() => onSelectPost(post)}
-                      className="block w-full p-1.5 rounded-lg bg-orange-500/10 border border-orange-500/30 text-left text-orange-300 font-semibold text-[10px] truncate cursor-pointer hover:bg-orange-500/20"
+                      className="block w-full p-1 sm:p-1.5 rounded-md sm:rounded-lg bg-orange-500/10 border border-orange-500/30 text-left text-orange-300 font-semibold text-[9px] sm:text-[10px] truncate cursor-pointer hover:bg-orange-500/20"
                       title={post.title}
                     >
                       {post.title}

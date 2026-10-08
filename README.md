@@ -94,6 +94,15 @@ CI uses Node.js 22 because the current native SQLite dependency requires Node 22
 
 ## Social provider integration
 
+Public legal documents used by provider OAuth and app-review flows:
+- Privacy Policy: https://v79sl.com/privacy
+- Terms of Service: https://v79sl.com/terms
+- Current provider-consent version: `2026-10-06`
+
+V79 Marketing requires users to acknowledge both documents before a social/provider OAuth flow can begin and records the policy version and consent timestamp with the connection. Disconnecting a Google Business Profile or YouTube connection also revokes the Google OAuth authorization before the local provider record is deleted; if revocation fails, V79 keeps the local record so the user can safely retry.
+
+
+
 V79 Marketing uses official OAuth flows and stores provider access/refresh tokens encrypted at rest. Set a unique `SOCIAL_TOKEN_ENCRYPTION_KEY` (32+ characters) before enabling any provider. Back up this key with the application secrets and do not rotate or discard it while provider tokens are stored; losing it makes those tokens unreadable and requires reconnecting the affected accounts.
 
 Supported integrations:

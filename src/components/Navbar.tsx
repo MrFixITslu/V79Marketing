@@ -221,32 +221,34 @@ export const Navbar: React.FC<NavbarProps> = ({
   return (
     <header className="bg-[#07111f]/95 backdrop-blur-xl border-b border-[#17324d]/80 text-slate-100 sticky top-0 z-50">
       {/* Top Utility Bar */}
-      <div className="bg-[#06101d] px-4 py-1.5 text-xs text-slate-400 flex items-center justify-between font-medium border-b border-[#17324d]">
+      <div className="bg-[#06101d] px-3 sm:px-4 py-1.5 text-xs text-slate-400 flex items-center justify-between gap-2 font-medium border-b border-[#17324d]">
         <div className="flex items-center gap-2.5">
           <span className="bg-[#0A86FF]/10 border border-[#0A86FF]/25 text-[#74d0ff] px-2 py-0.5 rounded text-[9px] font-black tracking-[0.18em] uppercase">V79 DIGITAL</span>
           <span className="hidden sm:inline text-slate-500">Marketing & Growth Workspace</span>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 sm:gap-4 shrink-0">
           <button
             onClick={() => window.location.assign('/api/platform/hub')}
+            aria-label="Back to V79 Hub"
             className="hover:text-white flex items-center gap-1 text-slate-300 text-xs font-medium cursor-pointer transition-colors"
           >
             <ExternalLink className="w-3.5 h-3.5" />
-            <span>Back to Hub</span>
+            <span className="hidden sm:inline">Back to Hub</span>
           </button>
           <button
             onClick={() => setCurrency(currency === 'XCD' ? 'USD' : 'XCD')}
             className="hover:text-white flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700/60 px-2.5 py-0.5 rounded text-xs transition-colors cursor-pointer"
           >
             <Globe className="w-3.5 h-3.5 text-slate-400" />
-            <span>Currency: <strong className="text-white ml-0.5">{currency} ({currency === 'XCD' ? 'EC$' : '$'})</strong></span>
+            <span className="hidden sm:inline">Currency: <strong className="text-white ml-0.5">{currency} ({currency === 'XCD' ? 'EC$' : '$'})</strong></span><strong className="sm:hidden text-white">{currency}</strong>
           </button>
           <button
             onClick={onViewPublicProfile}
+            aria-label="Open public storefront"
             className="hover:text-white flex items-center gap-1 text-slate-300 text-xs font-medium cursor-pointer transition-colors"
           >
             <ExternalLink className="w-3.5 h-3.5" />
-            <span>Public Storefront</span>
+            <span className="hidden sm:inline">Public Storefront</span>
           </button>
         </div>
       </div>
@@ -292,7 +294,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             {/* V79 AI Credits Badge */}
             <div
               onClick={onOpenCreditStore}
-              className="flex items-center gap-2.5 bg-[#091728] hover:bg-[#0d1e32] border border-[#1a3854] rounded-xl px-3 py-1.5 text-xs text-slate-400 cursor-pointer transition-colors group"
+              className="flex items-center gap-2 sm:gap-2.5 bg-[#091728] hover:bg-[#0d1e32] border border-[#1a3854] rounded-xl px-2 sm:px-3 py-1.5 text-xs text-slate-400 cursor-pointer transition-colors group"
             >
               <Coins className="w-4 h-4 text-[#b39aff]" />
               <div className="text-left hidden sm:block">
@@ -311,7 +313,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               </div>
               <span className="ml-1 px-2 py-0.5 rounded bg-[#7C3AED]/15 hover:bg-[#7C3AED]/25 border border-[#7C3AED]/25 text-[#c1adff] font-bold text-[9px] flex items-center gap-0.5 transition-colors">
                 <Plus className="w-3 h-3" />
-                <span>Top Up</span>
+                <span className="hidden sm:inline">Top Up</span>
               </span>
             </div>
 
@@ -330,7 +332,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   <p className="font-semibold text-slate-800 leading-tight">{currentUser.name.split(' ')[0]}</p>
                   <p className="text-[10px] text-slate-500">{currentUser.role.replace('_', ' ')}</p>
                 </div>
-                <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+                <ChevronDown className="hidden sm:block w-3.5 h-3.5 text-slate-400" />
               </button>
 
               {/* Role Switcher Modal Dropdown */}

@@ -215,6 +215,8 @@ export interface SocialAccount {
   providerAccountId?: string;
   expiresAt?: string;
   scopes?: string[];
+  legalVersion?: string;
+  legalConsentedAt?: string;
 }
 
 export interface TikTokPublishSettings {
