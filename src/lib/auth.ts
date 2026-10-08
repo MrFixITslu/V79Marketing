@@ -1,7 +1,14 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import { db } from "./db.js";
+import { createHubEntitlementChecker } from "./hubEntitlement.js";
 
+const checkHubSubscription = process.env.V79_ENTITLEMENT_RECHECK_ENABLED === "1"
+  ? createHubEntitlementChecker({
+      baseUrl: String(process.env.V79_HUB_INTERNAL_URL || ""),
+      secret: String(process.env.V79_MARKETING_LAUNCH_SECRET || ""),
+    })
+  : null;
 const TOKEN_EXPIRY = "30m";
 const ISSUER = "v79-marketing";
 const AUDIENCE = "v79-marketing";
@@ -41,7 +48,7 @@ export function verifyToken(token: string) {
   }
 }
 
-export function authenticate(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+export async function authenticate(req: AuthenticatedRequest, res: Response, next: NextFunction) {
   let token: string | undefined;
   const authHeader = req.headers.authorization;
   if (authHeader?.startsWith("Bearer ")) {
@@ -57,10 +64,25 @@ export function authenticate(req: AuthenticatedRequest, res: Response, next: Nex
 
   try {
     const liveUser = db.prepare(
-      "SELECT id,email,name,role,business_id FROM users WHERE id=? AND business_id=?"
+      "SELECT id,email,name,role,business_id,hub_user_id FROM users WHERE id=? AND business_id=?"
     ).get(decoded.id, decoded.businessId) as any;
     if (!liveUser) {
       return res.status(401).json({ error: "Your V79 Marketing access has been revoked.", code: "ACCESS_REVOKED" });
+    }
+    if (checkHubSubscription) {
+      const business = db.prepare(
+        "SELECT hub_organization_id FROM businesses WHERE id=?"
+      ).get(liveUser.business_id) as any;
+      if (business?.hub_organization_id) {
+        const allowed = liveUser.hub_user_id && await checkHubSubscription({
+          organizationId: business.hub_organization_id,
+          scopedUserId: liveUser.hub_user_id,
+        });
+        if (!allowed) return res.status(403).json({
+          error: "V79 Hub subscription is inactive or unavailable.",
+          code: "HUB_ENTITLEMENT_REVOKED",
+        });
+      }
     }
     req.user = {
       id: liveUser.id,
