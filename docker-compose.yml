@@ -33,7 +33,8 @@ services:
       V79_HUB_PUBLIC_URL: ${V79_HUB_PUBLIC_URL:-https://hub.v79sl.com}
       V79_HUB_INTERNAL_URL: ${V79_HUB_INTERNAL_URL:-http://v79-hub:3040}
       V79_MARKETING_LAUNCH_SECRET: ${V79_MARKETING_LAUNCH_SECRET}
-      V79_HUB_PROVISION_SECRET: ${V79_HUB_PROVISION_SECRET}
+      # Hub signs provisioning with the platform key; keep launch-token key separate.
+      V79_HUB_PROVISION_SECRET: ${V79_PLATFORM_SHARED_SECRET}
       V79_PLATFORM_SHARED_SECRET: ${V79_PLATFORM_SHARED_SECRET}
       V79_HUB_EVENT_URL: ${V79_HUB_EVENT_URL:-http://v79-hub:3040/api/platform/events}
       V79_HUB_EVENT_SECRET: ${V79_HUB_EVENT_SECRET}
