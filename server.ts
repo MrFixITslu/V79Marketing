@@ -10,6 +10,7 @@ import { z } from "zod";
 import { GoogleGenAI, Type } from "@google/genai";
 import { createServer as createViteServer } from "vite";
 import { db, initDb } from "./src/lib/db.js";
+import { createAgentCampaignDraft, listAgentCampaignDrafts } from "./src/lib/agentCampaignDrafts.js";
 import {
   generateToken,
   verifyToken,
@@ -1039,6 +1040,33 @@ app.post("/api/post-deliveries/:postId/:platform/retry", authenticate, requireMa
   `).run(now, req.params.postId, platform.data, req.user!.businessId);
   db.prepare("UPDATE posts SET status='SCHEDULED' WHERE id=? AND business_id=?").run(req.params.postId, req.user!.businessId);
   res.json({ success:true, postId:req.params.postId, platform:platform.data, status:"QUEUED", updatedAt:now });
+});
+
+// Human-review-only campaign briefs. These never create posts, deliveries or campaigns.
+app.get("/api/agent-drafts", authenticate, requireMarketingPermission("content.read"), (req: AuthenticatedRequest, res) => {
+  try {
+    res.setHeader("Cache-Control", "no-store");
+    return res.json({ drafts: listAgentCampaignDrafts(db, req.user!.businessId),
+      executionEnabled: false });
+  } catch {
+    return res.status(503).json({ error: "Internal draft store unavailable." });
+  }
+});
+
+app.post("/api/agent-drafts", authenticate, requireMarketingPermission("content.write"), (req: AuthenticatedRequest, res) => {
+  try {
+    res.setHeader("Cache-Control", "no-store");
+    const result = createAgentCampaignDraft(db,
+      { id: req.user!.id, businessId: req.user!.businessId }, req.body);
+    if (result.kind === "invalid") return res.status(400).json({ error: "Invalid internal draft." });
+    if (result.kind === "conflict") return res.status(409).json({ error: "Draft key conflict." });
+    if (result.kind === "limit") return res.status(429).json({ error: "Draft limit reached." });
+    return res.status(result.kind === "created" ? 201 : 200)
+      .json({ draft: result.draft, duplicate: result.kind === "duplicate",
+        executionEnabled: false, published: false, scheduled: false });
+  } catch {
+    return res.status(503).json({ error: "Internal draft store unavailable." });
+  }
 });
 
 // --- CAMPAIGNS & CHANNELS ---

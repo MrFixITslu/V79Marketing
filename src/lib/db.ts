@@ -1,4 +1,5 @@
 import Database from "better-sqlite3";
+import { ensureAgentCampaignDraftTable } from "./agentCampaignDrafts.js";
 import path from "path";
 import fs from "fs";
 import bcrypt from "bcryptjs";
@@ -291,6 +292,7 @@ export function initDb() {
       ON platform_event_outbox(status, next_attempt_at);
   `);
 
+  ensureAgentCampaignDraftTable(db);
   ensureColumn("businesses", "hub_organization_id", "TEXT");
   ensureColumn("users", "hub_user_id", "TEXT");
   ensureColumn("social_accounts", "provider_account_id", "TEXT");
