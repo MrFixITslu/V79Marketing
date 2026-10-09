@@ -1,4 +1,5 @@
 import type Database from "better-sqlite3";
+import { randomUUID } from "node:crypto";
 import { createAgentCampaignDraft } from "./agentCampaignDrafts.js";
 
 // This endpoint accepts only signed Hub requests. It never creates posts,
@@ -50,12 +51,28 @@ export function createHubAgentCampaignDraft(db: Database.Database, raw: unknown)
     { business_id: string; user_id: string } | undefined;
   if (!identity) return { kind: "not_found" as const };
   const idempotencyKey = "hubproposal_" + input.proposalId.replaceAll("-", "").toLowerCase();
-  return createAgentCampaignDraft(db, {
-    id: identity.user_id,
-    businessId: identity.business_id,
-  }, {
-    title: input.title,
-    brief: input.brief,
-    idempotencyKey,
-  });
+  return db.transaction(() => {
+    const result = createAgentCampaignDraft(db, {
+      id: identity.user_id,
+      businessId: identity.business_id,
+    }, {
+      title: input.title,
+      brief: input.brief,
+      idempotencyKey,
+    });
+    if (result.kind === "created") {
+      db.prepare(`
+        INSERT INTO audit_logs
+          (id,business_id,user_id,user_name,action,details,ip_address,timestamp)
+        VALUES (?,?,?,?,?,?,?,?)
+      `).run(
+        randomUUID(), identity.business_id, identity.user_id,
+        "V79 Hub owner", "AGENT_INTERNAL_DRAFT_CREATED",
+        JSON.stringify({ proposalId: input.proposalId, draftId: result.draft.id, status: "DRAFT" }),
+        "signed-internal-v79-hub", new Date().toISOString(),
+      );
+    }
+    // A nested SQLite transaction/rollback keeps draft + audit inseparable.
+    return result;
+  })();
 }
