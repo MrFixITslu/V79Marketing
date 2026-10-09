@@ -38,7 +38,7 @@ export function validateAgentCampaignDraft(input: unknown): DraftRequest | null 
   if (typeof title !== "string" || title.trim() !== title || title.length < 4 || title.length > 160 ||
       typeof brief !== "string" || brief.trim() !== brief || brief.length < 12 || brief.length > 2000 ||
       typeof idempotencyKey !== "string" || !/^[A-Za-z0-9_-]{16,96}$/.test(idempotencyKey)) return null;
-  if (/[\u0000-\u001f\u007f]/.test(title + brief)) return null;
+  if (/[\u0000-\u0009\u000b\u000c\u000e-\u001f\u007f]/.test(title + brief)) return null;
   return { title, brief, idempotencyKey };
 }
 
