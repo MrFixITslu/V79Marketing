@@ -5,7 +5,7 @@ describe("Marketing refresh-safe view routing", () => {
   it("restores internal drafts on refresh", () => {
     const p = marketingNavigationPath("https://marketing.v79sl.com/?utm_campaign=alpha#top", "agent-drafts");
     expect(p).toBe("/?utm_campaign=alpha&view=agent-drafts#top");
-    expect(readMarketingView(p.slice(p.indexOf("?")))).toBe("agent-drafts");
+    expect(readMarketingView(new URL(p, "https://marketing.v79sl.com").search)).toBe("agent-drafts");
   });
   it("preserves attribution and returns home cleanly", () => {
     const p = marketingNavigationPath("https://marketing.v79sl.com/?view=agent-drafts&utm_source=v79", "dashboard");
