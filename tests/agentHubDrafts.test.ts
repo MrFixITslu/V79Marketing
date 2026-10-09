@@ -19,6 +19,7 @@ function database() {
   db.exec(`
     CREATE TABLE businesses(id TEXT PRIMARY KEY,hub_organization_id TEXT UNIQUE);
     CREATE TABLE users(id TEXT PRIMARY KEY,business_id TEXT,hub_user_id TEXT,role TEXT);
+    CREATE TABLE audit_logs(id TEXT PRIMARY KEY,business_id TEXT,user_id TEXT,user_name TEXT,action TEXT,details TEXT,ip_address TEXT,timestamp TEXT);
     INSERT INTO businesses VALUES ('biz-a','synthetic-org-a'),('biz-b','synthetic-org-b');
     INSERT INTO users VALUES
       ('owner-a','biz-a','synthetic-hub-owner-a','BUSINESS_OWNER'),
@@ -54,7 +55,9 @@ describe("signed Hub supervised Marketing draft boundary", () => {
         expect(result.draft.status).toBe("DRAFT");
       }
       expect(db.prepare("SELECT count(*) n FROM agent_campaign_drafts").get()).toEqual({ n: 1 });
+      expect(db.prepare("SELECT count(*) n FROM audit_logs WHERE action=?").get("AGENT_INTERNAL_DRAFT_CREATED")).toEqual({ n: 1 });
       expect(createHubAgentCampaignDraft(db, input).kind).toBe("duplicate");
+      expect(db.prepare("SELECT count(*) n FROM audit_logs WHERE action=?").get("AGENT_INTERNAL_DRAFT_CREATED")).toEqual({ n: 1 });
       expect(createHubAgentCampaignDraft(db, { ...input, brief: input.brief + "\nChanged" }).kind).toBe("conflict");
       const rows = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('campaigns','posts','post_deliveries')").all();
       expect(rows).toHaveLength(0);
@@ -68,6 +71,7 @@ describe("signed Hub supervised Marketing draft boundary", () => {
       expect(createHubAgentCampaignDraft(db, { ...input, actorHubUserId: "synthetic-hub-staff-a" }).kind).toBe("not_found");
       expect(createHubAgentCampaignDraft(db, { ...input, actorHubUserId: "synthetic-missing" }).kind).toBe("not_found");
       expect(db.prepare("SELECT count(*) n FROM agent_campaign_drafts").get()).toEqual({ n: 0 });
+      expect(db.prepare("SELECT count(*) n FROM audit_logs").get()).toEqual({ n: 0 });
     } finally { db.close(); }
   });
 
