@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { readMarketingView, marketingNavigationPath } from './lib/viewNavigation';
 import {
   Business,
   User,
@@ -85,18 +86,21 @@ export type ViewType =
   | 'admin';
 
 export default function App() {
-  const [currentView, setCurrentView] = useState<ViewType>(() => {
-    if (typeof window === 'undefined') return 'dashboard';
-    const requested = new URLSearchParams(window.location.search).get('view') as ViewType | null;
-    const allowed: ViewType[] = [
-      'dashboard','customers','one-idea-campaign','ai_brain','ai-assistant','ai-image','reviews',
-      'competitors','brand_kit','profile-builder','public_storefront','calendar','campaigns','agent-drafts',
-      'social-channels','analytics','billing','admin-portal','admin','landing'
-    ];
-    return requested && allowed.includes(requested) ? requested : 'dashboard';
-  });
+  const [currentView, setCurrentView] = useState<ViewType>(() =>
+    typeof window === 'undefined' ? 'dashboard' : readMarketingView(window.location.search)
+  );
   const [currency, setCurrency] = useState<'XCD' | 'USD'>('XCD');
   const [sessionState, setSessionState] = useState<'loading' | 'authenticated' | 'unauthenticated'>('loading');
+
+  // Keep the current workspace page shareable and stable across reloads.
+  // Do not write the URL until the user session is verified.
+  useEffect(() => {
+    if (sessionState !== 'authenticated') return;
+    const path = marketingNavigationPath(window.location.href, currentView);
+    if (path !== window.location.pathname + window.location.search + window.location.hash) {
+      window.history.replaceState(window.history.state, '', path);
+    }
+  }, [currentView, sessionState]);
 
   // UTM Parameter Tracking State
   const [utmParams, setUtmParams] = useState<UtmTrackingParams | null>(() => {
