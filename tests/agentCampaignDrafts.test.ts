@@ -26,6 +26,15 @@ describe("Internal V79 Marketing campaign drafts", () => {
     expect(validateAgentCampaignDraft({ ...payload, title: "a".repeat(161) })).toBeNull();
   });
 
+
+  it("accepts multiline Hub review briefs while refusing control characters", () => {
+    const brief = "Internal Hub plan\nCampaign: Beta launch\nNot approved for publishing.";
+    expect(validateAgentCampaignDraft({ ...payload, brief })?.brief).toBe(brief);
+    for (const control of ["\\u0000","\\u0001","\\r","\\t","\\u001b","\\u007f"]) {
+      expect(validateAgentCampaignDraft({ ...payload, brief: brief + control })).toBeNull();
+      expect(validateAgentCampaignDraft({ ...payload, title: payload.title + control })).toBeNull();
+    }
+  });
   it("creates an internal DRAFT with no post, campaign or delivery tables", () => {
     const db = fixture();
     try {
