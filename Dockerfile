@@ -1,4 +1,5 @@
-FROM node:22-alpine AS build
+ARG NODE_BASE=node:22-alpine
+FROM ${NODE_BASE} AS build
 WORKDIR /app
 RUN apk add --no-cache python3 make g++
 COPY package*.json ./
@@ -7,7 +8,7 @@ RUN npm ci --no-audit --no-fund
 COPY . .
 RUN npm run build && npm prune --omit=dev
 
-FROM node:22-alpine AS runtime
+FROM ${NODE_BASE} AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3070
