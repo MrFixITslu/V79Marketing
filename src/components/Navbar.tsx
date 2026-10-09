@@ -197,6 +197,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         { id: 'analytics', label: 'Simple Analytics', icon: BarChart3, desc: 'People reached & top posts' },
         { id: 'competitors', label: 'Market Benchmarks', icon: TrendingUp, desc: 'Competitor opportunity gaps' },
         { id: 'campaigns', label: '30-Day Growth Plans', icon: Layers, desc: 'Multi-week growth roadmaps' },
+        { id: 'agent-drafts', label: 'Internal Agent Drafts', icon: Megaphone, desc: 'Private review briefs, no publishing' },
       ],
     },
     {

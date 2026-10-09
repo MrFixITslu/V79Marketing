@@ -47,6 +47,7 @@ import { AiContentGenerator } from './components/AiContentGenerator';
 import { AiImageGenerator } from './components/AiImageGenerator';
 import { ContentCalendar } from './components/ContentCalendar';
 import { CampaignBuilder } from './components/CampaignBuilder';
+import { AgentDraftsView } from './components/AgentDraftsView';
 import { SocialAccountsManager } from './components/SocialAccountsManager';
 import { AnalyticsDashboard } from './components/AnalyticsDashboard';
 import { AdminPortal } from './components/AdminPortal';
@@ -76,6 +77,7 @@ export type ViewType =
   | 'public_storefront'
   | 'calendar'
   | 'campaigns'
+  | 'agent-drafts'
   | 'social-channels'
   | 'analytics'
   | 'billing'
@@ -88,7 +90,7 @@ export default function App() {
     const requested = new URLSearchParams(window.location.search).get('view') as ViewType | null;
     const allowed: ViewType[] = [
       'dashboard','customers','one-idea-campaign','ai_brain','ai-assistant','ai-image','reviews',
-      'competitors','brand_kit','profile-builder','public_storefront','calendar','campaigns',
+      'competitors','brand_kit','profile-builder','public_storefront','calendar','campaigns','agent-drafts',
       'social-channels','analytics','billing','admin-portal','admin','landing'
     ];
     return requested && allowed.includes(requested) ? requested : 'dashboard';
@@ -646,6 +648,8 @@ export default function App() {
             onCreateCampaign={handleCreateCampaign}
           />
         )}
+
+        {currentView === 'agent-drafts' && <AgentDraftsView />}
 
         {currentView === 'social-channels' && (
           <SocialAccountsManager
