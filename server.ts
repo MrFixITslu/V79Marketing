@@ -11,6 +11,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { createServer as createViteServer } from "vite";
 import { db, initDb } from "./src/lib/db.js";
 import { createAgentCampaignDraft, listAgentCampaignDrafts } from "./src/lib/agentCampaignDrafts.js";
+import { createHubAgentCampaignDraft } from "./src/lib/agentHubDrafts.js";
 import {
   generateToken,
   verifyToken,
@@ -1066,6 +1067,39 @@ app.post("/api/agent-drafts", authenticate, requireMarketingPermission("content.
         executionEnabled: false, published: false, scheduled: false });
   } catch {
     return res.status(503).json({ error: "Internal draft store unavailable." });
+  }
+});
+
+// Stage 4: separately signed, owner-scoped and explicitly enabled Hub draft handoff.
+// No customer-facing posts, campaign rows or delivery queue are ever created here.
+app.post("/api/platform/agent-drafts", (req: any, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  if (process.env.V79_AGENT_SUPERVISED_DRAFTS_ENABLED !== "1") {
+    return res.status(503).json({ error: "Supervised agent draft handoff disabled." });
+  }
+  const rawBody = req.rawBody?.toString("utf8") || JSON.stringify(req.body ?? {});
+  if (!verifyHubProvisionRequest({
+    method: req.method,
+    pathname: req.path,
+    timestamp: cleanValue(req.get("x-v79-timestamp")),
+    signature: cleanValue(req.get("x-v79-signature")),
+    serviceId: cleanValue(req.get("x-v79-service-id")),
+    body: rawBody,
+  })) return res.status(401).json({ error: "Invalid Hub handoff signature." });
+  try {
+    const outcome = createHubAgentCampaignDraft(db, req.body);
+    if (outcome.kind === "invalid") return res.status(400).json({ error: "Invalid supervised draft request." });
+    if (outcome.kind === "not_found") return res.status(404).json({ error: "Hub-linked Marketing owner not found." });
+    if (outcome.kind === "conflict") return res.status(409).json({ error: "Proposal draft key conflict." });
+    if (outcome.kind === "limit") return res.status(429).json({ error: "Internal draft limit reached." });
+    return res.status(outcome.kind === "created" ? 201 : 200).json({
+      draftCreated: true, duplicate: outcome.kind === "duplicate",
+      draft: { id: outcome.draft.id, status: outcome.draft.status,
+        businessId: outcome.draft.businessId },
+      executionEnabled: false, sent: false, published: false, scheduled: false,
+    });
+  } catch {
+    return res.status(503).json({ error: "Marketing draft store unavailable." });
   }
 });
 
