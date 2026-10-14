@@ -41,6 +41,8 @@ jobs:
           }
           run_project .
           if [ -f backend/package.json ]; then run_project backend; fi
+      - name: Audit runtime dependencies
+        run: npm audit --omit=dev --audit-level=high
       - name: Verify Docker image can build
         if: ${{ hashFiles('Dockerfile') != '' }}
         run: docker build --build-arg NODE_BASE=public.ecr.aws/docker/library/node:22-alpine --tag v79-ci-image .
