@@ -11,6 +11,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { createServer as createViteServer } from "vite";
 import { db, initDb } from "./src/lib/db.js";
 import { createAgentCampaignDraft, listAgentCampaignDrafts } from "./src/lib/agentCampaignDrafts.js";
+import { installProductionRoutes } from "./src/lib/productionRoutes.js";
 import { createHubAgentCampaignDraft } from "./src/lib/agentHubDrafts.js";
 import {
   generateToken,
@@ -1102,6 +1103,8 @@ app.post("/api/platform/agent-drafts", (req: any, res) => {
     return res.status(503).json({ error: "Marketing draft store unavailable." });
   }
 });
+
+const marketingProduction = installProductionRoutes(app, db);
 
 // --- CAMPAIGNS & CHANNELS ---
 
@@ -2203,6 +2206,7 @@ function assertProductionConfiguration() {
 async function startServer() {
   assertProductionConfiguration();
   startPublisherWorker(15000);
+  marketingProduction.start();
   startPlatformEventPump(30000);
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
