@@ -262,9 +262,11 @@ export type DeliveryStatus = 'QUEUED' | 'AWAITING_CONNECTION' | 'NEEDS_ACTION' |
 export interface PostDelivery {
   postId: string;
   postTitle: string;
-  platform: SocialPlatform;
+  platform: SocialPlatform | 'newsletter';
   status: DeliveryStatus;
   providerPostId?: string;
+  providerUrl?: string;
+  production?: {jobId:string;deliveryId:string};
   lastError?: string;
   attempts: number;
   publishedAt?: string;
@@ -288,11 +290,13 @@ export interface Post {
     whatsapp?: PostPlatformContent;
     twitter?: PostPlatformContent;
     google_business?: PostPlatformContent;
+    newsletter?: PostPlatformContent;
   };
   mediaUrls: string[];
   scheduledFor: string;
   status: PostStatus;
   campaignId?: string;
+  production?: {jobId:string;deliveryId:string};
   analytics?: {
     reach: number;
     impressions: number;

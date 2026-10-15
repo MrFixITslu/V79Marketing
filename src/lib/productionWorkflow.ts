@@ -1,5 +1,6 @@
 import type Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
+import { publicationUrl } from './publicationLinks.js';
 import { configureSchema, queueSchema, creativeSchema, createMaterials, reviewMaterials, digest,
   type Creative, type ProductionBrand, type ProductionPlan, type ProductionBundle, type Asset } from './productionContract.js';
 import { productionStore, productionEvent, queueProduction, decideDelivery, claimDelivery, deliveryDigest,
@@ -14,6 +15,7 @@ export type ProductionDependencies={
   authorized:(actor:ProductionActor)=>Promise<boolean>;
   destinationUnchanged:(actor:ProductionActor,d:Delivery)=>Promise<boolean>;
   dispatch:(actor:ProductionActor,job:ProductionJob,d:Delivery,authorize:()=>Promise<void>)=>Promise<{providerPostId:string;publishedAt:string}>;
+  recordPublished?:(actor:ProductionActor,job:ProductionJob,d:Delivery)=>{postId:string};
   now?:()=>number;
 };
 export function createProductionWorkflow(db:Database.Database,key:string,deps:ProductionDependencies) {
@@ -42,13 +44,36 @@ export function createProductionWorkflow(db:Database.Database,key:string,deps:Pr
     if(j.status==='generating'||j.deliveries.some(d=>['running','succeeded','uncertain'].includes(d.status)))throw Error('Started effects require operator reconciliation');
     j.status='cancelled';for(const d of j.deliveries)if(['awaiting_owner','approved','blocked'].includes(d.status))d.status='cancelled';
     productionEvent(s,'owner_cancelled_package',actor.hubUserId,jobId,null,clock());return {cancelled:true};});}
-  function status(actor:ProductionActor){const s=store.read(actor.businessId);return {...s,events:s.events.slice(-100),jobs:s.jobs.slice(-30).reverse()};}
+  function status(actor:ProductionActor){const s=store.read(actor.businessId);return {...s,events:s.events.slice(-100),jobs:s.jobs.slice(-30).reverse().map(j=>({...j,
+    deliveries:j.deliveries.map(d=>d.status==='succeeded'&&d.result?{...d,result:{...d.result,providerUrl:publicationUrl(d.channel,d.result.providerPostId)}}:d)}))};}
+  function syncPublished(actor:ProductionActor){
+    if(!deps.recordPublished)return;
+    try{
+    for(const job of store.read(actor.businessId).jobs)for(const delivery of job.deliveries){
+      if(delivery.status!=='succeeded'||!delivery.result)continue;
+      try{
+        // Projection and its signed acknowledgment are atomic. The previously
+        // saved provider receipt survives any local tracking failure.
+        db.transaction(()=>{
+          const tracked=deps.recordPublished!(actor,job,delivery);
+          if(delivery.result!.marketingPostId===tracked.postId)return;
+          store.transact(actor.businessId,s=>{
+            const j=s.jobs.find(v=>v.id===job.id)!,d=j.deliveries.find(v=>v.id===delivery.id)!;
+            if(d.status!=='succeeded'||!d.result||d.result.providerPostId!==delivery.result!.providerPostId)throw Error('Receipt changed');
+            d.result.marketingPostId=tracked.postId;productionEvent(s,'marketing_post_recorded','coo-worker',j.id,d.id,clock());
+          });
+        }).immediate();
+      }catch{console.warn('Confirmed production receipt retained; local Marketing tracking will be checked again.');}
+    }
+    }catch{console.warn('Confirmed receipt tracking unavailable; no upload retry was requested.');}
+  }
   let running=false;
   async function tick(actor:ProductionActor){
     if(running)return {state:'busy'};running=true;
     try{
       // Read the current Hub permission before production and every publication.
       if(!await deps.authorized(actor))return {state:'owner_or_entitlement_unavailable'};
+      syncPublished(actor);
       const claimed=store.transact(actor.businessId,s=>{
         if(s.paused||!s.brand||!s.plan||s.ownerHubUserId!==actor.hubUserId)return null;
         if(s.plan.automaticDrafts&&(!s.lastAutomaticAt||clock()-Date.parse(s.lastAutomaticAt)>=s.plan.cadenceDays*86400000)){
@@ -114,6 +139,7 @@ export function createProductionWorkflow(db:Database.Database,key:string,deps:Pr
           if(delivery.status!=='running')throw Error('Dispatch state changed');
           delivery.status='succeeded';delivery.result={providerPostId:result.providerPostId,at:result.publishedAt};
           productionEvent(s,'provider_accepted','coo-worker',job.id,delivery.id,clock());});
+        syncPublished(actor);
         return {state:'published',deliveryId:ready.delivery.id};
       }catch{
         store.transact(actor.businessId,s=>{const j=s.jobs.find(j=>j.id===ready.job.id)!,d=j.deliveries.find(d=>d.id===ready.delivery.id)!;

@@ -142,7 +142,7 @@ export const ContentCalendar: React.FC<ContentCalendarProps> = ({
 
           {recentDeliveries.map(delivery => {
             const key = `${delivery.postId}:${delivery.platform}`;
-            const retryable = ['FAILED','NEEDS_ACTION','AWAITING_CONNECTION'].includes(delivery.status);
+            const retryable = !delivery.production && ['FAILED','NEEDS_ACTION','AWAITING_CONNECTION'].includes(delivery.status);
             return (
               <div key={key} className="rounded-xl border border-slate-800 bg-slate-950 p-4">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -161,6 +161,8 @@ export const ContentCalendar: React.FC<ContentCalendarProps> = ({
                       Scheduled {new Date(delivery.scheduledFor).toLocaleString()}
                       {delivery.publishedAt ? ` · Published ${new Date(delivery.publishedAt).toLocaleString()}` : ''}
                     </div>
+                    {delivery.production&&<p className="mt-2 text-xs text-cyan-300">Owner-approved production · Recorded in Marketing</p>}
+                    {delivery.platform==='youtube'&&delivery.status==='PUBLISHED'&&delivery.providerUrl&&/^https:\/\/www\.youtube\.com\/watch\?v=[A-Za-z0-9_-]{11}$/.test(delivery.providerUrl)&&<a href={delivery.providerUrl} target="_blank" rel="noopener noreferrer" className="mt-2 block break-all text-sm text-cyan-300 underline">{delivery.providerUrl}</a>}
                     {delivery.lastError && (
                       <p className="mt-2 max-w-4xl text-sm leading-5 text-amber-200">{delivery.lastError}</p>
                     )}

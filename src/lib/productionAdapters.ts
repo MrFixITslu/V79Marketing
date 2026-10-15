@@ -1,4 +1,5 @@
 import type Database from 'better-sqlite3';
+import { recordProductionPublication } from './productionTracking.js';
 import { digest, creativeSchema, type Creative } from './productionContract.js';
 import type { ProductionActor, ProductionDependencies } from './productionWorkflow.js';
 import type { Delivery } from './productionStore.js';
@@ -61,6 +62,7 @@ export function productionAdapters(db:Database.Database):ProductionDependencies 
   }
   return {
     authorized,
+    recordPublished:(actor,job,delivery)=>recordProductionPublication(db,actor,job,delivery),
     generate:async(brand,_plan,job)=>{
       // No network research, website fetching, chat history, customer records,
       // tools or credentials are given to the model. Its two strings are data.

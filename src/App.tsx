@@ -281,18 +281,24 @@ export default function App() {
   useEffect(() => {
     if (sessionState !== 'authenticated') return;
     let cancelled = false;
-    const refreshDeliveries = () => {
-      void fetch('/api/post-deliveries', { credentials:'same-origin' })
-        .then(async response => {
-          if (!response.ok) return;
-          const body = await response.json().catch(() => ({}));
-          if (!cancelled) setPostDeliveries(body.deliveries || []);
-        })
-        .catch(() => undefined);
+    let refreshing=false;
+    const refreshDeliveries = async () => {
+      if(refreshing||document.visibilityState==='hidden')return;
+      refreshing=true;
+      try{
+        const results=await Promise.allSettled(['/api/posts','/api/post-deliveries'].map(async path=>{
+          const response=await fetch(path,{credentials:'same-origin',signal:AbortSignal.timeout(10000)});
+          if(!response.ok)throw Error('Marketing status unavailable');return response.json();
+        }));
+        if(!cancelled){
+          if(results[0].status==='fulfilled')setPosts(results[0].value.posts||[]);
+          if(results[1].status==='fulfilled')setPostDeliveries(results[1].value.deliveries||[]);
+        }
+      }finally{refreshing=false;}
     };
-    const handler = () => refreshDeliveries();
+    const handler = () => {void refreshDeliveries();};
     window.addEventListener('v79:deliveries-updated', handler);
-    const interval = window.setInterval(refreshDeliveries, 20_000);
+    const interval = window.setInterval(()=>void refreshDeliveries(), 20_000);
     return () => {
       cancelled = true;
       window.removeEventListener('v79:deliveries-updated', handler);

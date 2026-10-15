@@ -5,7 +5,7 @@ import { canonical, digest, type ProductionBrand, type ProductionPlan, type Prod
 export type Destination = {channel:string; accountId:string; providerAccountId:string; accountFingerprint:string;
   scheduledAt:string; payload:Record<string,unknown>; audienceFingerprint?:string; audienceCount?:number };
 export type Delivery = Destination & {id:string; digest:string; status:'awaiting_owner'|'approved'|'running'|'succeeded'|'blocked'|'uncertain'|'rejected'|'cancelled';
-  blocker?:string; approval?:{by:string; digest:string; expiresAt:string; at:string}; result?:{providerPostId:string; at:string} };
+  blocker?:string; approval?:{by:string; digest:string; expiresAt:string; at:string}; result?:{providerPostId:string; at:string; marketingPostId?:string} };
 export type ProductionJob = {id:string; key:string; inputDigest:string; factId:string; angle:string; configRevision:number;
   status:'queued'|'generating'|'awaiting_owner'|'blocked'|'cancelled'; createdAt:string; source?:string;
   bundle?:ProductionBundle; bundleDigest?:string; deliveries:Delivery[]; failure?:string };
