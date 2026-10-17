@@ -44,4 +44,4 @@ jobs:
         run: npm run build
 
       - name: Docker build
-        run: docker build --build-arg NODE_BASE=public.ecr.aws/docker/library/node:22-alpine -t v79-marketing:redteam .
+        run: docker build --build-arg NODE_BASE=docker.io/library/node:22-alpine -t v79-marketing:redteam .
