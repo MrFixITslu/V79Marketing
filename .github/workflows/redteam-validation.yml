@@ -28,8 +28,14 @@ jobs:
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
 
+      - name: Install local renderer test dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core
+
       - name: TypeScript validation
         run: npm run lint
+
+      - name: Audit runtime dependencies
+        run: npm audit --omit=dev --audit-level=high
 
       - name: Tests
         run: npm test
@@ -38,4 +44,4 @@ jobs:
         run: npm run build
 
       - name: Docker build
-        run: docker build --build-arg NODE_BASE=public.ecr.aws/docker/library/node:22-alpine -t v79-marketing:redteam .
+        run: docker build --build-arg NODE_BASE=docker.io/library/node:22-alpine -t v79-marketing:redteam .

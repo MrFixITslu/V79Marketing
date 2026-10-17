@@ -11,6 +11,9 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { createServer as createViteServer } from "vite";
 import { db, initDb } from "./src/lib/db.js";
 import { createAgentCampaignDraft, listAgentCampaignDrafts } from "./src/lib/agentCampaignDrafts.js";
+import { productionManagedPost } from "./src/lib/productionTracking.js";
+import { publicationUrl } from "./src/lib/publicationLinks.js";
+import { installProductionRoutes } from "./src/lib/productionRoutes.js";
 import { createHubAgentCampaignDraft } from "./src/lib/agentHubDrafts.js";
 import {
   generateToken,
@@ -902,9 +905,9 @@ app.post("/api/credits/buy", authenticate, (_req, res) => {
 app.get("/api/posts", authenticate, requireMarketingPermission("content.read"), (req: AuthenticatedRequest, res) => {
   let rows: any[];
   if (req.user!.role === "PLATFORM_ADMIN") {
-    rows = db.prepare("SELECT * FROM posts ORDER BY created_at DESC").all();
+    rows = db.prepare("SELECT p.*,l.job_id production_job_id,l.delivery_id production_delivery_id FROM posts p LEFT JOIN production_post_links l ON l.post_id=p.id AND l.business_id=p.business_id ORDER BY p.created_at DESC").all();
   } else {
-    rows = db.prepare("SELECT * FROM posts WHERE business_id = ? ORDER BY created_at DESC").all(req.user!.businessId);
+    rows = db.prepare("SELECT p.*,l.job_id production_job_id,l.delivery_id production_delivery_id FROM posts p LEFT JOIN production_post_links l ON l.post_id=p.id AND l.business_id=p.business_id WHERE p.business_id = ? ORDER BY p.created_at DESC").all(req.user!.businessId);
   }
 
   const posts = rows.map((p) => ({
@@ -918,6 +921,7 @@ app.get("/api/posts", authenticate, requireMarketingPermission("content.read"), 
     scheduledFor: p.scheduled_for,
     status: p.status,
     campaignId: p.campaign_id,
+    production: p.production_job_id ? {jobId:p.production_job_id,deliveryId:p.production_delivery_id} : undefined,
     analytics: p.analytics_json ? JSON.parse(p.analytics_json) : undefined,
     createdAt: p.created_at,
   }));
@@ -1000,9 +1004,11 @@ app.post("/api/posts", authenticate, requireMarketingPermission("content.write")
 app.get("/api/post-deliveries", authenticate, requireMarketingPermission("content.read"), (req: AuthenticatedRequest, res) => {
   const rows = db.prepare(`
     SELECT d.post_id,d.platform,d.status,d.provider_post_id,d.last_error,d.attempts,d.published_at,d.updated_at,
+           l.job_id production_job_id,l.delivery_id production_delivery_id,
            p.title,p.scheduled_for,p.status AS post_status
     FROM post_deliveries d
     JOIN posts p ON p.id=d.post_id AND p.business_id=d.business_id
+    LEFT JOIN production_post_links l ON l.post_id=p.id AND l.business_id=p.business_id
     WHERE d.business_id=?
     ORDER BY d.updated_at DESC
     LIMIT 250
@@ -1014,6 +1020,8 @@ app.get("/api/post-deliveries", authenticate, requireMarketingPermission("conten
       platform:row.platform,
       status:row.status,
       providerPostId:row.provider_post_id || undefined,
+      providerUrl:row.status==='PUBLISHED' ? publicationUrl(row.platform,row.provider_post_id||'') : undefined,
+      production:row.production_job_id ? {jobId:row.production_job_id,deliveryId:row.production_delivery_id} : undefined,
       lastError:row.last_error || undefined,
       attempts:Number(row.attempts || 0),
       publishedAt:row.published_at || undefined,
@@ -1033,6 +1041,8 @@ app.post("/api/post-deliveries/:postId/:platform/retry", authenticate, requireMa
     WHERE d.post_id=? AND d.platform=? AND d.business_id=?
   `).get(req.params.postId, platform.data, req.user!.businessId);
   if (!row) return res.status(404).json({ error:"Delivery record not found." });
+  if (productionManagedPost(db, req.params.postId, req.user!.businessId))
+    return res.status(409).json({error:"Production receipts cannot be republished through the general queue. Review the original exact approval workflow."});
   const now = new Date().toISOString();
   db.prepare(`
     UPDATE post_deliveries
@@ -1102,6 +1112,8 @@ app.post("/api/platform/agent-drafts", (req: any, res) => {
     return res.status(503).json({ error: "Marketing draft store unavailable." });
   }
 });
+
+const marketingProduction = installProductionRoutes(app, db);
 
 // --- CAMPAIGNS & CHANNELS ---
 
@@ -2203,6 +2215,7 @@ function assertProductionConfiguration() {
 async function startServer() {
   assertProductionConfiguration();
   startPublisherWorker(15000);
+  marketingProduction.start();
   startPlatformEventPump(30000);
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({

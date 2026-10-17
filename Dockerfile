@@ -15,6 +15,7 @@ ENV PORT=3070
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/package.json ./package.json
+RUN apk add --no-cache ffmpeg font-dejavu
 RUN mkdir -p /app/data && chown node:node /app/data
 USER node
 EXPOSE 3070

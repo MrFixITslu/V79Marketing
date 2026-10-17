@@ -76,4 +76,16 @@ describe.sequential("scheduled social publishing requires current Hub entitlemen
     expect(db.prepare("SELECT status FROM posts WHERE id=?").get(second).status).toBe("SCHEDULED");
     expect(db.prepare("SELECT count(*) AS n FROM post_deliveries WHERE post_id=?").get(second).n).toBe(0);
   });
+  it("never routes recorded production receipts back through the general publisher, even if a status is changed",async()=>{
+    const now=new Date().toISOString();
+    const namespaceId='production-00000000-0000-4000-8000-000000000001',linkedId='legacy-tracked-production';
+    for(const id of [namespaceId,linkedId])db.prepare("INSERT INTO posts (id,business_id,author_id,author_name,title,content_json,media_urls_json,scheduled_for,status,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)")
+      .run(id,biz,author,"Staging Worker","Recorded synthetic upload",JSON.stringify({youtube:{caption:"Already uploaded"}}),"[]",new Date(Date.now()-60000).toISOString(),"SCHEDULED",now);
+    db.prepare(`INSERT INTO production_post_links(post_id,business_id,job_id,delivery_id,bundle_digest,delivery_digest,provider_post_id,provider_account_id,published_at,assets_json) VALUES(?,?,?,?,?,?,?,?,?,?)`)
+      .run(linkedId,biz,'job','delivery','bundle','digest','dQw4w9WgXcQ','channel',now,'[]');
+    permitted=true;const results=await processScheduledPosts();
+    expect(results.filter((r:any)=>[namespaceId,linkedId].includes(r.postId))).toEqual([]);
+    for(const id of [namespaceId,linkedId])expect(db.prepare('SELECT COUNT(*) n FROM post_deliveries WHERE post_id=?').get(id).n).toBe(0);
+  });
+
 });

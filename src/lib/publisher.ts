@@ -119,7 +119,9 @@ async function publicationAuthorized(post: {business_id: string; author_id: stri
 
 export async function processScheduledPosts(): Promise<PublishResult[]> {
   const now = new Date().toISOString();
-  const duePosts = db.prepare("SELECT * FROM posts WHERE status IN ('SCHEDULED','FAILED') AND scheduled_for <= ? ORDER BY scheduled_for LIMIT 50")
+  const duePosts = db.prepare(`SELECT p.* FROM posts p WHERE p.status IN ('SCHEDULED','FAILED') AND p.scheduled_for <= ?
+    AND p.id NOT LIKE 'production-%' AND NOT EXISTS(SELECT 1 FROM production_post_links l WHERE l.post_id=p.id)
+    ORDER BY p.scheduled_for LIMIT 50`)
     .all(now) as any[];
   const results: PublishResult[] = [];
 
