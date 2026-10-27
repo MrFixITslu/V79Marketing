@@ -1,6 +1,7 @@
 import Database from "better-sqlite3";
 import { installProductionTracking } from "./productionTracking.js";
 import { ensureAgentCampaignDraftTable } from "./agentCampaignDrafts.js";
+import { ensureCustomerCampaignAttribution } from "./campaignAttribution.js";
 import path from "path";
 import fs from "fs";
 import bcrypt from "bcryptjs";
@@ -304,6 +305,7 @@ export function initDb() {
   ensureColumn("social_accounts", "legal_consented_at", "TEXT");
   ensureColumn("social_oauth_states", "legal_version", "TEXT");
   ensureColumn("social_oauth_states", "consented_at", "TEXT");
+  ensureCustomerCampaignAttribution(db);
   migrateHubManagedUserEmailScope();
   db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_businesses_hub_org ON businesses(hub_organization_id) WHERE hub_organization_id IS NOT NULL;");
   db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_legacy_email ON users(email) WHERE hub_user_id IS NULL;");
