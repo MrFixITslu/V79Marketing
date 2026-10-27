@@ -545,7 +545,7 @@ export default function App() {
       />
 
       {/* Main App Canvas Body */}
-      <main className="flex-1 max-w-[1540px] w-full mx-auto px-4 sm:px-5 xl:px-7 pt-5 pb-[calc(5.25rem+env(safe-area-inset-bottom))] md:pb-5">
+      <main className="flex-1 max-w-[1540px] w-full mx-auto px-4 sm:px-5 xl:px-7 pt-5 pb-[calc(5.25rem+env(safe-area-inset-bottom))] lg:pb-5">
         {currentView === 'landing' && (
           <LandingPage
             onStartDemo={handleGetStartedFromLanding}
