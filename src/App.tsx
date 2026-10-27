@@ -61,6 +61,7 @@ import { AiBrandKitView } from './components/AiBrandKitView';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { CustomerPipelineView } from './components/CustomerPipelineView';
 import { OneIdeaCampaignView } from './components/OneIdeaCampaignView';
+import { prepareCampaignContent, type CampaignContentHandoff } from './lib/campaignHandoff';
 import { CustomerInquiry } from './types';
 
 export type ViewType =
@@ -86,6 +87,8 @@ export type ViewType =
   | 'admin';
 
 export default function App() {
+  const [contentHandoff, setContentHandoff] = useState<CampaignContentHandoff | null>(null);
+  const [quickContentPrompt, setQuickContentPrompt] = useState('');
   const [currentView, setCurrentView] = useState<ViewType>(() =>
     typeof window === 'undefined' ? 'dashboard' : readMarketingView(window.location.search)
   );
@@ -101,6 +104,12 @@ export default function App() {
       window.history.replaceState(window.history.state, '', path);
     }
   }, [currentView, sessionState]);
+
+  // A campaign handoff only applies while explicitly working in the content creator.
+  // Leaving it never leaves a hidden campaign association on a later unrelated post.
+  useEffect(() => {
+    if (currentView !== 'ai-assistant') setContentHandoff(null);
+  }, [currentView]);
 
   // UTM Parameter Tracking State
   const [utmParams, setUtmParams] = useState<UtmTrackingParams | null>(() => {
@@ -363,6 +372,17 @@ export default function App() {
     setBusinesses((items) => items.map((b) => (b.id === saved.id ? saved : b)));
   };
 
+  const handlePrepareCampaignStep = (campaign: Campaign, step: Campaign['steps'][number]) => {
+    try {
+      const prepared = prepareCampaignContent(campaign, step, currentBusiness.id);
+      setContentHandoff(prepared);
+      setQuickContentPrompt('');
+      setCurrentView('ai-assistant');
+    } catch (error) {
+      console.error('Could not prepare this campaign step:', error);
+    }
+  };
+
   const handleSchedulePost = async (newPost: Partial<Post>): Promise<void> => {
       const response = await fetch('/api/posts', {
         method: 'POST',
@@ -534,6 +554,8 @@ export default function App() {
             } as any}
             onNavigate={(tab) => setCurrentView(tab as ViewType)}
             onQuickGenerate={(prompt) => {
+              setContentHandoff(null);
+              setQuickContentPrompt(prompt);
               setCurrentView('ai-assistant');
             }}
             onViewPublicProfile={() => setCurrentView('public_storefront')}
@@ -575,6 +597,7 @@ export default function App() {
           <OneIdeaCampaignView
             business={currentBusiness}
             onCreateCampaign={handleCreateCampaign}
+            onViewPlans={() => setCurrentView('campaigns')}
           />
         )}
 
@@ -599,6 +622,9 @@ export default function App() {
             business={currentBusiness}
             socialAccounts={socialAccounts}
             onSchedulePost={handleSchedulePost}
+            initialPrompt={contentHandoff?.prompt || quickContentPrompt}
+            initialTitle={contentHandoff?.title}
+            campaignContext={contentHandoff}
           />
         )}
 
@@ -655,7 +681,8 @@ export default function App() {
           <CampaignBuilder
             business={currentBusiness}
             campaigns={campaigns}
-            onCreateCampaign={handleCreateCampaign}
+            onCreateNewPlan={() => setCurrentView('one-idea-campaign')}
+            onPrepareStep={handlePrepareCampaignStep}
           />
         )}
 
