@@ -31,7 +31,11 @@ jobs:
           set -euo pipefail
           npm install -g npm@11.9.0
           npm --version
-          npm audit fix --package-lock-only --ignore-scripts --no-fund
+          # npm audit fix may return nonzero for dev-only advisories even when
+          # production dependencies were remediated. The mandatory production
+          # audit below is NOT bypassed; all changes are tested before commit.
+          npm audit fix --package-lock-only --ignore-scripts --no-fund || echo 'Initial remediation left further advisories; final security gate still required.'
+          npm audit fix --package-lock-only --ignore-scripts --no-fund || echo 'Additional advisories remain for independent follow-up.'
           node - <<'NODE'
           const fs=require('fs');
           const {execFileSync}=require('child_process');
