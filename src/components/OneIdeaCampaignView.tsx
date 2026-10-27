@@ -36,7 +36,7 @@ export const OneIdeaCampaignView: React.FC<OneIdeaCampaignViewProps> = ({ busine
 
   const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!ideaPrompt.trim() || !targetAudience.trim() || !desiredAction.trim()) return;
+    if (isSaved || !ideaPrompt.trim() || !targetAudience.trim() || !desiredAction.trim()) return;
     setIsGenerating(true);
     setGeneratedCampaign(null);
     setError('');
@@ -132,9 +132,9 @@ export const OneIdeaCampaignView: React.FC<OneIdeaCampaignViewProps> = ({ busine
         </details>
         <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
           <p className="text-xs text-slate-600">Creates a reviewable plan only. Nothing is published or scheduled here.</p>
-          <button type="submit" disabled={isGenerating || !ideaPrompt.trim() || !targetAudience.trim() || !desiredAction.trim()} className="px-8 py-3 bg-gradient-to-r from-orange-500 to-amber-500 disabled:opacity-40 text-white font-bold text-sm rounded-2xl flex items-center justify-center gap-2">
+          <button type="submit" disabled={isGenerating || isSaved || !ideaPrompt.trim() || !targetAudience.trim() || !desiredAction.trim()} className="px-8 py-3 bg-gradient-to-r from-orange-500 to-amber-500 disabled:opacity-40 text-white font-bold text-sm rounded-2xl flex items-center justify-center gap-2">
             {isGenerating ? <RefreshCw className="w-4 h-4 animate-spin"/> : <Sparkles className="w-4 h-4"/>}
-            <span>{isGenerating ? 'Generating…' : 'Build campaign plan'}</span>
+            <span>{isGenerating ? 'Generating…' : isSaved ? 'Edit details for another plan' : 'Build campaign plan'}</span>
           </button>
         </div>
         {error && <p className="text-xs font-medium text-red-600">{error}</p>}
