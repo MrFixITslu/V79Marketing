@@ -3,6 +3,9 @@ on:
   push:
     branches:
       - security/marketing-lockfile-audit-20261027
+  pull_request:
+    branches:
+      - main
 permissions:
   contents: write
 concurrency:
@@ -10,12 +13,13 @@ concurrency:
   cancel-in-progress: false
 jobs:
   patch:
-    if: github.repository == 'MrFixITslu/V79Marketing' && github.ref == 'refs/heads/security/marketing-lockfile-audit-20261027'
+    if: github.repository == 'MrFixITslu/V79Marketing' && (github.ref == 'refs/heads/security/marketing-lockfile-audit-20261027' || github.event.pull_request.head.ref == 'security/marketing-lockfile-audit-20261027')
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: security/marketing-lockfile-audit-20261027
           persist-credentials: true
       - uses: actions/setup-node@v4
         with:
@@ -25,6 +29,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          npm install -g npm@11.9.0
           npm --version
           npm audit fix --package-lock-only --ignore-scripts --no-fund
           node - <<'NODE'
