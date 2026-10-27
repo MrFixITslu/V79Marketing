@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { CustomerInquiry, CustomerStatus, Business } from '../types';
+import { CustomerInquiry, CustomerStatus, Business, Campaign } from '../types';
 import {
   Users,
   MessageCircle,
@@ -20,13 +20,15 @@ import {
 interface CustomerPipelineViewProps {
   business: Business;
   customers: CustomerInquiry[];
-  onAddCustomer: (customer: CustomerInquiry) => void;
+  campaigns: Campaign[];
+  onAddCustomer: (customer: CustomerInquiry) => Promise<void>;
   onUpdateCustomerStatus: (id: string, status: CustomerStatus) => void;
 }
 
 export const CustomerPipelineView: React.FC<CustomerPipelineViewProps> = ({
   business,
   customers,
+  campaigns,
   onAddCustomer,
   onUpdateCustomerStatus,
 }) => {
@@ -40,6 +42,10 @@ export const CustomerPipelineView: React.FC<CustomerPipelineViewProps> = ({
   const [newPhone, setNewPhone] = useState('');
   const [newEmail, setNewEmail] = useState('');
   const [newChannel, setNewChannel] = useState<'whatsapp' | 'facebook' | 'google_business' | 'website'>('whatsapp');
+  const [newCampaignId, setNewCampaignId] = useState('');
+  const [savingInquiry, setSavingInquiry] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const ownCampaigns = campaigns.filter(c => c.businessId === business.id);
 
   const pipelineStages: { key: CustomerStatus; label: string; bg: string; border: string; text: string }[] = [
     { key: 'NEW_INQUIRY', label: 'New Inquiries', bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-700' },
@@ -49,9 +55,12 @@ export const CustomerPipelineView: React.FC<CustomerPipelineViewProps> = ({
     { key: 'REPEAT_CUSTOMER', label: 'VIP Repeat', bg: 'bg-indigo-50', border: 'border-indigo-200', text: 'text-indigo-700' },
   ];
 
-  const handleCreateCustomer = (e: React.FormEvent) => {
+  const handleCreateCustomer = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newName || !newPhone) return;
+    if (savingInquiry || !newName.trim() || !newPhone.trim()) return;
+    setSavingInquiry(true);
+    setSaveError('');
+    try {
 
     const newInquiry: CustomerInquiry = {
       id: `cust-${Date.now()}`,
@@ -60,15 +69,23 @@ export const CustomerPipelineView: React.FC<CustomerPipelineViewProps> = ({
       phone: newPhone,
       email: newEmail || undefined,
       channel: newChannel,
+      campaignId: newCampaignId || undefined,
+      attributionMethod: newCampaignId ? 'manual' : undefined,
       status: 'NEW_INQUIRY',
       createdAt: new Date().toISOString(),
     };
 
-    onAddCustomer(newInquiry);
+    await onAddCustomer(newInquiry);
     setNewName('');
     setNewPhone('');
     setNewEmail('');
+    setNewCampaignId('');
     setShowAddModal(false);
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : 'Could not save this enquiry.');
+    } finally {
+      setSavingInquiry(false);
+    }
   };
 
   const handleOpenWhatsApp = (customer: CustomerInquiry) => {
@@ -207,6 +224,11 @@ export const CustomerPipelineView: React.FC<CustomerPipelineViewProps> = ({
                         </span>
                       </div>
 
+                      {cust.campaignId && cust.attributionMethod === 'manual' && (
+                        <p className="rounded-md bg-orange-50 px-2 py-1 text-[11px] text-orange-900">
+                          Manually attributed: {ownCampaigns.find(c=>c.id === cust.campaignId)?.name || 'Saved campaign'}
+                        </p>
+                      )}
                       {cust.notes && <p className="text-[11px] text-slate-500 line-clamp-2">{cust.notes}</p>}
 
                       <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-1">
@@ -242,7 +264,7 @@ export const CustomerPipelineView: React.FC<CustomerPipelineViewProps> = ({
       {/* Add New Customer Modal */}
       {showAddModal && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-slate-200">
+          <div role="dialog" aria-modal="true" aria-label="Add customer enquiry" className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-slate-200 max-h-[90dvh] overflow-y-auto">
             <h3 className="text-lg font-black text-slate-900">Add Customer Inquiry</h3>
 
             <form onSubmit={handleCreateCustomer} className="space-y-3 text-xs">
@@ -284,9 +306,23 @@ export const CustomerPipelineView: React.FC<CustomerPipelineViewProps> = ({
                 </select>
               </div>
 
+              <div>
+                <label htmlFor="customer-campaign-attribution" className="font-bold text-slate-700 block mb-1">Related marketing campaign (optional)</label>
+                <select id="customer-campaign-attribution" value={newCampaignId} onChange={e=>setNewCampaignId(e.target.value)} disabled={savingInquiry}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 focus:outline-none">
+                  <option value="">Unknown or no campaign — do not attribute</option>
+                  {ownCampaigns.map(c=><option value={c.id} key={c.id}>{c.name}</option>)}
+                </select>
+                <p className="mt-1 text-[11px] leading-relaxed text-slate-600">
+                  Choose a campaign only when the customer has told you how they found you or you have reliable evidence.
+                  This is manual attribution, not verified ad-click tracking.
+                </p>
+              </div>
+              {saveError && <p role="alert" className="rounded-lg bg-red-50 p-2 text-xs text-red-800">{saveError}</p>}
               <div className="flex gap-2 pt-3">
                 <button
                   type="button"
+                  disabled={savingInquiry}
                   onClick={() => setShowAddModal(false)}
                   className="flex-1 py-2.5 border border-slate-200 text-slate-600 font-bold rounded-xl hover:bg-slate-50"
                 >
@@ -294,9 +330,10 @@ export const CustomerPipelineView: React.FC<CustomerPipelineViewProps> = ({
                 </button>
                 <button
                   type="submit"
+                  disabled={savingInquiry}
                   className="flex-1 py-2.5 bg-emerald-600 text-white font-bold rounded-xl hover:bg-emerald-700 shadow-md"
                 >
-                  Save Inquiry
+                  {savingInquiry ? 'Saving…' : 'Save Inquiry'}
                 </button>
               </div>
             </form>
