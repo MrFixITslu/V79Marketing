@@ -681,6 +681,7 @@ export default function App() {
           <CampaignBuilder
             business={currentBusiness}
             campaigns={campaigns}
+            posts={posts}
             onCreateNewPlan={() => setCurrentView('one-idea-campaign')}
             onPrepareStep={handlePrepareCampaignStep}
           />
