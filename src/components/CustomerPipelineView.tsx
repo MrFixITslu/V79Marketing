@@ -123,7 +123,7 @@ export const CustomerPipelineView: React.FC<CustomerPipelineViewProps> = ({
             <div>
               <h3 className="font-extrabold text-sm">Follow-Up Action Required</h3>
               <p className="text-xs text-amber-100 mt-0.5">
-                You have {customers.filter((c) => c.status === 'NEW_INQUIRY' || c.status === 'FOLLOW_UP').length} customer inquiries awaiting reply. Quick responses double conversion rates.
+                You have {customers.filter((c) => c.status === 'NEW_INQUIRY' || c.status === 'FOLLOW_UP').length} customer inquiries awaiting reply. Follow up promptly so potential customers are not overlooked.
               </p>
             </div>
           </div>
