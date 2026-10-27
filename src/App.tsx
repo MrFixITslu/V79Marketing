@@ -61,6 +61,7 @@ import { AiBrandKitView } from './components/AiBrandKitView';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { CustomerPipelineView } from './components/CustomerPipelineView';
 import { OneIdeaCampaignView } from './components/OneIdeaCampaignView';
+import type { CampaignOutcome } from './lib/campaignAttribution';
 import { prepareCampaignContent, type CampaignContentHandoff } from './lib/campaignHandoff';
 import { CustomerInquiry } from './types';
 
@@ -217,7 +218,7 @@ export default function App() {
         setCurrentBusiness(session.business);
         setUsers([session.user]);
         setBusinesses([session.business]);
-        const [postResponse, customerResponse, creditResponse, campaignResponse, socialResponse, brainResponse, assetResponse, competitorResponse, deliveryResponse] = await Promise.all([
+        const [postResponse, customerResponse, creditResponse, campaignResponse, socialResponse, brainResponse, assetResponse, competitorResponse, deliveryResponse, outcomeResponse] = await Promise.all([
           fetch('/api/posts', { credentials: 'same-origin' }),
           fetch('/api/customers', { credentials: 'same-origin' }),
           fetch('/api/credits/balance', { credentials: 'same-origin' }),
@@ -227,6 +228,7 @@ export default function App() {
           fetch('/api/assets', { credentials: 'same-origin' }),
           fetch('/api/competitors', { credentials: 'same-origin' }),
           fetch('/api/post-deliveries', { credentials: 'same-origin' }),
+          fetch('/api/campaigns/outcomes', { credentials: 'same-origin' }),
         ]);
         if (postResponse.ok) {
           const body = await postResponse.json();
@@ -263,6 +265,10 @@ export default function App() {
         if (deliveryResponse.ok) {
           const body = await deliveryResponse.json();
           if (!cancelled) setPostDeliveries(body.deliveries || []);
+        }
+        if (!cancelled && outcomeResponse.ok) {
+          const body = await outcomeResponse.json();
+          setCampaignOutcomes(body.outcomes || []);
         }
         if (!cancelled) setSessionState('authenticated');
       } catch {
@@ -317,6 +323,17 @@ export default function App() {
 
   // Growth Platform Customers CRM State
   const [customers, setCustomers] = useState<CustomerInquiry[]>([]);
+  const [campaignOutcomes, setCampaignOutcomes] = useState<CampaignOutcome[] | null>(null);
+  const refreshCampaignOutcomes = async () => {
+    try {
+      const response=await fetch('/api/campaigns/outcomes',{credentials:'same-origin'});
+      if (!response.ok) {setCampaignOutcomes(null);return;}
+      const data=await response.json();
+      setCampaignOutcomes(Array.isArray(data.outcomes) ? data.outcomes : null);
+    } catch {
+      setCampaignOutcomes(null);
+    }
+  };
 
   // Sync selected business when user changes
   const handleSelectUser = (user: User) => {
@@ -418,6 +435,7 @@ export default function App() {
     const body = await response.json().catch(() => ({}));
     if (!response.ok || !body.campaign) throw new Error(body.error || 'Could not create campaign.');
     setCampaigns((items) => [body.campaign, ...items.filter((item) => item.id !== body.campaign.id)]);
+    void refreshCampaignOutcomes();
     return body.campaign as Campaign;
   };
 
@@ -567,16 +585,20 @@ export default function App() {
           <CustomerPipelineView
             business={currentBusiness}
             customers={customers}
-            onAddCustomer={(newCust) => {
-              void fetch('/api/customers', {
+            campaigns={campaigns}
+            onAddCustomer={async (newCust) => {
+              const response=await fetch('/api/customers',{
                 method:'POST',
                 headers:{'Content-Type':'application/json'},
-                body:JSON.stringify(newCust),
-              }).then(async response => {
-                const body=await response.json().catch(()=>({}));
-                if(!response.ok) throw new Error(body.error || 'Could not add customer.');
-                if(body.customer) setCustomers(items => [body.customer, ...items]);
-              }).catch(error => console.error('Customer save failed:', error));
+                body:JSON.stringify({
+                  name:newCust.name,phone:newCust.phone,email:newCust.email,
+                  channel:newCust.channel,status:newCust.status,campaignId:newCust.campaignId
+                }),
+              });
+              const body=await response.json().catch(()=>({}));
+              if(!response.ok || !body.customer) throw new Error(body.error || 'Could not save customer enquiry.');
+              setCustomers(items=>[body.customer,...items]);
+              await refreshCampaignOutcomes();
             }}
             onUpdateCustomerStatus={(id, status) => {
               void (async () => {
@@ -588,6 +610,7 @@ export default function App() {
                 const body = await response.json().catch(() => ({}));
                 if (!response.ok) throw new Error(body.error || 'Customer status update failed.');
                 setCustomers(items => items.map(c => c.id===id ? {...c,status} : c));
+                await refreshCampaignOutcomes();
               })().catch(error => console.error('Customer status update failed:', error));
             }}
           />
@@ -681,6 +704,7 @@ export default function App() {
           <CampaignBuilder
             business={currentBusiness}
             campaigns={campaigns}
+            outcomes={campaignOutcomes}
             posts={posts}
             onCreateNewPlan={() => setCurrentView('one-idea-campaign')}
             onPrepareStep={handlePrepareCampaignStep}
