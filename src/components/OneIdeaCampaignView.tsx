@@ -114,21 +114,21 @@ export const OneIdeaCampaignView: React.FC<OneIdeaCampaignViewProps> = ({ busine
         <div className="grid gap-4 md:grid-cols-2">
           <div className="md:col-span-2">
             <label htmlFor="marketing-campaign-idea" className="text-sm font-bold text-slate-800 block mb-2">1. What are you promoting?</label>
-            <input id="marketing-campaign-idea" required maxLength={240} value={ideaPrompt} onChange={e=>{setIdeaPrompt(e.target.value);invalidatePreview();}} placeholder="E.g. Introduce Tiquet to local service businesses" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-500"/>
+            <input id="marketing-campaign-idea" disabled={isGenerating} required maxLength={240} value={ideaPrompt} onChange={e=>{setIdeaPrompt(e.target.value);invalidatePreview();}} placeholder="E.g. Introduce Tiquet to local service businesses" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-500"/>
           </div>
           <div>
             <label htmlFor="marketing-campaign-audience" className="text-sm font-bold text-slate-800 block mb-2">2. Who needs it?</label>
-            <input id="marketing-campaign-audience" required maxLength={160} value={targetAudience} onChange={e=>{setTargetAudience(e.target.value);invalidatePreview();}} placeholder="E.g. Small businesses struggling with service follow-ups" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-500"/>
+            <input id="marketing-campaign-audience" disabled={isGenerating} required maxLength={160} value={targetAudience} onChange={e=>{setTargetAudience(e.target.value);invalidatePreview();}} placeholder="E.g. Small businesses struggling with service follow-ups" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-500"/>
           </div>
           <div>
             <label htmlFor="marketing-campaign-action" className="text-sm font-bold text-slate-800 block mb-2">3. What should they do next?</label>
-            <input id="marketing-campaign-action" required maxLength={100} value={desiredAction} onChange={e=>{setDesiredAction(e.target.value);invalidatePreview();}} placeholder="E.g. Request a demo, book a call or visit the website" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-500"/>
+            <input id="marketing-campaign-action" disabled={isGenerating} required maxLength={100} value={desiredAction} onChange={e=>{setDesiredAction(e.target.value);invalidatePreview();}} placeholder="E.g. Request a demo, book a call or visit the website" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-500"/>
           </div>
         </div>
         <details className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
           <summary className="cursor-pointer text-sm font-bold text-slate-800">Add confirmed offer details (optional)</summary>
           <label htmlFor="marketing-campaign-facts" className="mt-3 mb-2 block text-xs text-slate-600">Include only prices, claims, offer terms or benefits your business can substantiate.</label>
-          <textarea id="marketing-campaign-facts" maxLength={350} rows={2} value={confirmedFacts} onChange={e=>{setConfirmedFacts(e.target.value);invalidatePreview();}} placeholder="E.g. Free 14-day pilot — if this offer is approved and available" className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-500"/>
+          <textarea id="marketing-campaign-facts" disabled={isGenerating} maxLength={350} rows={2} value={confirmedFacts} onChange={e=>{setConfirmedFacts(e.target.value);invalidatePreview();}} placeholder="E.g. Free 14-day pilot — if this offer is approved and available" className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-500"/>
         </details>
         <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
           <p className="text-xs text-slate-600">Creates a reviewable plan only. Nothing is published or scheduled here.</p>
