@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Business, Post, SocialAccount, SocialPlatform, TikTokCreatorInfo } from '../types';
 import type { CampaignContentHandoff } from '../lib/campaignHandoff';
 import {
@@ -70,6 +70,7 @@ export const AiContentGenerator: React.FC<AiContentGeneratorProps> = ({
   const [copied, setCopied] = useState(false);
   const [scheduledSuccess, setScheduledSuccess] = useState(false);
   const [schedulePending, setSchedulePending] = useState(false);
+  const scheduleLock = useRef(false);
   const [scheduleError, setScheduleError] = useState('');
   const [generatedContent, setGeneratedContent] = useState<any>({});
 
@@ -194,7 +195,6 @@ export const AiContentGenerator: React.FC<AiContentGeneratorProps> = ({
 
   const togglePublishPlatform = (platform: PublishPlatform) => {
     setScheduleError('');
-    setScheduledSuccess(false);
     setSelectedPublishPlatforms(current =>
       current.includes(platform) ? current.filter(item => item !== platform) : [...current, platform]
     );
@@ -216,7 +216,7 @@ export const AiContentGenerator: React.FC<AiContentGeneratorProps> = ({
   };
 
   const handleScheduleCurrent = async () => {
-    if (schedulePending || scheduledSuccess) return;
+    if (scheduleLock.current || schedulePending || scheduledSuccess) return;
     setScheduleError('');
     if (!Object.keys(generatedContent || {}).length) {
       setScheduleError('Generate the marketing copy before scheduling it.');
@@ -308,6 +308,7 @@ export const AiContentGenerator: React.FC<AiContentGeneratorProps> = ({
       mediaUrls: publicMedia ? [publicMedia] : [],
     };
 
+    scheduleLock.current = true;
     setSchedulePending(true);
     try {
       await onSchedulePost(newPost);
@@ -316,6 +317,7 @@ export const AiContentGenerator: React.FC<AiContentGeneratorProps> = ({
     } catch (error) {
       setScheduleError(error instanceof Error ? error.message : 'Could not save this post. Try again.');
     } finally {
+      scheduleLock.current = false;
       setSchedulePending(false);
     }
   };
