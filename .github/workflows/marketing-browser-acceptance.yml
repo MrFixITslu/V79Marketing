@@ -39,7 +39,7 @@ jobs:
             sleep 1
           done
           curl --fail http://127.0.0.1:4173/ >/dev/null
-          npx playwright test e2e/marketing-browser-acceptance.mjs --reporter=line --workers=1
+          npx playwright test e2e/marketing-browser-acceptance.spec.mjs --reporter=line --workers=1
       - name: Upload browser screenshots or failures
         if: always()
         uses: actions/upload-artifact@v4
