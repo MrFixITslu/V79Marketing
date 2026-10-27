@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   patch:
-    if: github.repository == 'MrFixITslu/V79Marketing' && github.ref == 'refs/heads/security/marketing-lockfile-audit-20261027' && github.actor == 'MrFixITslu'
+    if: github.repository == 'MrFixITslu/V79Marketing' && github.ref == 'refs/heads/security/marketing-lockfile-audit-20261027'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
