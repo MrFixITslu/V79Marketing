@@ -1,182 +1,106 @@
 import React, { useState } from 'react';
-import { Business, Campaign, CampaignStep } from '../types';
-import {
-  Layers,
-  Sparkles,
-  Plus,
-  CheckCircle2,
-  Clock,
-  Calendar,
-  Share2,
-  RefreshCw,
-  Target
-} from 'lucide-react';
+import { ArrowRight, CalendarDays, CheckCircle2, ClipboardList, Layers, Plus, Sparkles } from 'lucide-react';
+import type { Business, Campaign, CampaignStep } from '../types';
 
 interface CampaignBuilderProps {
   business: Business;
   campaigns: Campaign[];
-  onCreateCampaign: (campaign: Campaign) => void;
+  onCreateNewPlan: () => void;
+  onPrepareStep: (campaign: Campaign, step: CampaignStep) => void;
 }
 
 export const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
-  business,
-  campaigns,
-  onCreateCampaign,
+  business, campaigns, onCreateNewPlan, onPrepareStep
 }) => {
-  const [campaignName, setCampaignName] = useState('');
-  const [objective, setObjective] = useState('');
-  const [isGenerating, setIsGenerating] = useState(false);
-
-  const [activeCampaign, setActiveCampaign] = useState<Campaign>(campaigns[0]);
-
-  const handleGenerateAiPlan = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!campaignName || !objective) return;
-
-    setIsGenerating(true);
-    try {
-      const response = await fetch('/api/ai/generate-campaign-plan', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          campaignName,
-          objective,
-          businessName: business.name,
-          industry: business.industry,
-        }),
-      });
-
-      const data = await response.json();
-      if (data.success && data.steps) {
-        const formattedSteps: CampaignStep[] = data.steps.map((s: any) => ({
-          dayNumber: s.dayNumber || 1,
-          channel: s.channel || 'facebook',
-          postTitle: s.postTitle || 'Campaign Milestone',
-          captionPrompt: s.captionPrompt || s.caption || '',
-          suggestedTime: s.suggestedTime || '10:00 AM',
-          completed: false,
-        }));
-
-        const newCamp: Campaign = {
-          id: `camp-${Date.now()}`,
-          businessId: business.id,
-          name: campaignName,
-          objective,
-          startDate: new Date().toISOString().split('T')[0],
-          endDate: new Date(Date.now() + 86400000 * 30).toISOString().split('T')[0],
-          status: 'ACTIVE',
-          steps: formattedSteps,
-          aiPlanGenerated: true,
-          createdAt: new Date().toISOString(),
-        };
-        onCreateCampaign(newCamp);
-        setActiveCampaign(newCamp);
-      }
-    } catch (err) {
-      console.error('Error generating campaign plan:', err);
-    } finally {
-      setIsGenerating(false);
-    }
-  };
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const ownCampaigns = campaigns.filter(campaign => campaign.businessId === business.id);
+  const activeCampaign = ownCampaigns.find(campaign => campaign.id === selectedId) || ownCampaigns[0];
 
   return (
     <div className="space-y-6 pb-12">
-      {/* Header */}
-      <div className="bg-slate-900 p-6 rounded-xl border border-slate-800 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">
-            <Layers className="w-4 h-4 text-slate-300" />
-            <span>Automated AI Marketing Campaigns</span>
-          </div>
-          <h1 className="text-2xl font-bold text-white tracking-tight">Campaign Manager</h1>
-          <p className="text-xs text-slate-400 mt-1">
-            Generate a structured multi-channel campaign roadmap with V79 AI
-          </p>
-        </div>
-      </div>
-
-      {/* AI Campaign Generator Form */}
-      <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-xs space-y-4">
-        <h3 className="font-semibold text-slate-900 text-base flex items-center gap-2">
-          <Sparkles className="w-4 h-4 text-slate-700" />
-          <span>Launch New 30-Day Campaign Strategy</span>
-        </h3>
-
-        <form onSubmit={handleGenerateAiPlan} className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="text-xs font-medium text-slate-700 block mb-1">Campaign Title</label>
-              <input
-                type="text"
-                value={campaignName}
-                onChange={(e) => setCampaignName(e.target.value)}
-                placeholder="e.g. September Customer Growth Campaign"
-                className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 focus:bg-white"
-              />
+      <section className="rounded-3xl border border-slate-200 bg-white p-5 sm:p-6">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2 text-xs font-semibold text-orange-700 uppercase tracking-wider">
+              <Layers className="h-4 w-4" /> Guided campaign workflow
             </div>
-
-            <div>
-              <label className="text-xs font-medium text-slate-700 block mb-1">Core Campaign Objective</label>
-              <input
-                type="text"
-                value={objective}
-                onChange={(e) => setObjective(e.target.value)}
-                placeholder="e.g. Generate qualified enquiries and increase repeat business"
-                className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 focus:bg-white"
-              />
-            </div>
+            <h1 className="mt-2 text-2xl font-extrabold text-slate-900">Your Campaign Plans</h1>
+            <p className="mt-1 text-sm text-slate-600">Pick a saved plan, prepare one piece of content, review it and choose whether to schedule it.</p>
           </div>
-
-          <button
-            type="submit"
-            disabled={isGenerating}
-            className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs rounded-lg shadow-xs transition-colors flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-          >
-            {isGenerating ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-            <span>{isGenerating ? 'Synthesizing 30-Day Campaign Strategy...' : 'Generate 30-Day Campaign Plan'}</span>
+          <button type="button" onClick={onCreateNewPlan}
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-orange-600 px-5 py-3 text-sm font-bold text-white hover:bg-orange-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-600">
+            <Plus className="h-4 w-4" /> Create a campaign
           </button>
-        </form>
-      </div>
+        </div>
+        <ol className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-3" aria-label="Campaign stages">
+          <li className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700"><span className="font-bold text-slate-900">1. Plan</span> — set goal and audience</li>
+          <li className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700"><span className="font-bold text-slate-900">2. Create</span> — generate and review a post</li>
+          <li className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700"><span className="font-bold text-slate-900">3. Schedule</span> — choose connected channels</li>
+        </ol>
+      </section>
 
-      {/* Campaign Details View */}
-      {activeCampaign && (
-        <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-xs space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
-            <div>
-              <span className="text-[11px] font-semibold text-slate-700 uppercase tracking-wider bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md">
-                Active Campaign
-              </span>
-              <h2 className="text-lg font-bold text-slate-900 mt-2">{activeCampaign.name}</h2>
-              <p className="text-xs text-slate-500 mt-0.5">{activeCampaign.objective}</p>
-            </div>
-
-            <div className="flex items-center gap-2 text-xs text-slate-600 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200">
-              <Calendar className="w-4 h-4 text-slate-500" />
-              <span>{activeCampaign.startDate} to {activeCampaign.endDate}</span>
-            </div>
-          </div>
-
-          {/* Steps Timeline */}
-          <div className="space-y-3">
-            <h3 className="font-semibold text-slate-900 text-sm">Campaign Step Schedule ({activeCampaign.steps.length} Steps)</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {activeCampaign.steps.map((step, idx) => (
-                <div
-                  key={idx}
-                  className="p-4 rounded-lg bg-slate-50 border border-slate-200 space-y-2 relative"
-                >
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-semibold text-slate-800">Day {step.dayNumber} • {step.suggestedTime}</span>
-                    <span className="capitalize text-[10px] bg-white text-slate-700 font-medium px-2 py-0.5 rounded border border-slate-200">
-                      {step.channel.replace('_', ' ')}
-                    </span>
-                  </div>
-                  <h4 className="font-semibold text-slate-900 text-xs">{step.postTitle}</h4>
-                  <p className="text-xs text-slate-600 leading-relaxed">{step.captionPrompt}</p>
-                </div>
+      {ownCampaigns.length === 0 ? (
+        <section className="rounded-3xl border border-dashed border-slate-300 bg-white p-8 text-center">
+          <ClipboardList className="mx-auto h-9 w-9 text-orange-500" />
+          <h2 className="mt-3 text-lg font-bold text-slate-900">No saved campaign plans yet</h2>
+          <p className="mt-2 text-sm text-slate-600">Start with one idea. AI will suggest steps for you to review.</p>
+          <button type="button" onClick={onCreateNewPlan} className="mt-4 rounded-xl bg-slate-900 px-5 py-3 text-sm font-bold text-white">Build your first plan</button>
+        </section>
+      ) : (
+        <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(220px,300px)_minmax(0,1fr)]">
+          <section className="rounded-2xl border border-slate-200 bg-white p-4" aria-label="Saved campaign plans">
+            <h2 className="mb-3 text-sm font-bold text-slate-900">Saved plans ({ownCampaigns.length})</h2>
+            <div className="space-y-2">
+              {ownCampaigns.map(campaign => (
+                <button type="button" key={campaign.id} onClick={() => setSelectedId(campaign.id)}
+                  aria-pressed={activeCampaign?.id === campaign.id}
+                  className={`block w-full rounded-xl border p-3 text-left transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-600 ${activeCampaign?.id === campaign.id ? 'border-orange-500 bg-orange-50' : 'border-slate-200 bg-slate-50 hover:border-orange-300'}`}>
+                  <span className="block truncate text-sm font-bold text-slate-900">{campaign.name}</span>
+                  <span className="mt-1 block text-xs text-slate-600">
+                    {campaign.status === 'PLANNED' ? 'Saved plan — not published' : campaign.status === 'ACTIVE' ? 'Marked active — check publication separately' : 'Completed plan'}
+                  </span>
+                </button>
               ))}
             </div>
-          </div>
+          </section>
+
+          {activeCampaign && (
+            <section className="min-w-0 space-y-4 rounded-2xl border border-slate-200 bg-white p-4 sm:p-6">
+              <div className="border-b border-slate-200 pb-4">
+                <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
+                  <CalendarDays className="h-4 w-4" />
+                  <span>{activeCampaign.startDate} to {activeCampaign.endDate}</span>
+                  <span className="rounded-md bg-slate-100 px-2 py-1 font-medium">{activeCampaign.status}</span>
+                </div>
+                <h2 className="mt-2 text-xl font-extrabold text-slate-900">{activeCampaign.name}</h2>
+                <p className="mt-2 whitespace-pre-line break-words text-sm text-slate-700">{activeCampaign.objective}</p>
+                <p className="mt-3 text-xs font-medium text-amber-800">A saved campaign plan is not approval to post. Every draft and platform must be reviewed.</p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Sparkles className="h-5 w-5 text-orange-600" />
+                <h3 className="text-base font-bold text-slate-900">Choose a step to prepare</h3>
+              </div>
+              {activeCampaign.steps.length ? (
+                <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                  {activeCampaign.steps.map((step, index) => (
+                    <article key={`${activeCampaign.id}-${index}`} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="flex items-center gap-2 text-xs font-semibold text-orange-700">
+                        <CheckCircle2 className="h-4 w-4" /> Day {step.dayNumber} · {step.channel.replace('_', ' ')}
+                      </div>
+                      <h4 className="mt-2 text-sm font-bold text-slate-900">{step.postTitle}</h4>
+                      <p className="mt-2 break-words text-xs leading-relaxed text-slate-600">{step.captionPrompt || 'Review this campaign step and prepare content.'}</p>
+                      <p className="mt-2 text-xs text-slate-500">Suggested time: {step.suggestedTime} (not scheduled)</p>
+                      <button type="button" onClick={() => onPrepareStep(activeCampaign, step)}
+                        className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-bold text-white hover:bg-slate-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900">
+                        Prepare content <ArrowRight className="h-4 w-4" />
+                      </button>
+                    </article>
+                  ))}
+                </div>
+              ) : <p className="rounded-xl bg-slate-50 p-4 text-sm text-slate-600">This plan has no steps. Create another campaign to start from a fresh brief.</p>}
+            </section>
+          )}
         </div>
       )}
     </div>
