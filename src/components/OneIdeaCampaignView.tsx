@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Business, Campaign, CampaignStep } from '../types';
 import { CheckCircle2, Layers, RefreshCw, Sparkles } from 'lucide-react';
+import { buildCampaignBrief } from '../lib/campaignBrief';
 
 interface OneIdeaCampaignViewProps {
   business: Business;
@@ -16,6 +17,17 @@ type GeneratedCampaign = {
 
 export const OneIdeaCampaignView: React.FC<OneIdeaCampaignViewProps> = ({ business, onCreateCampaign }) => {
   const [ideaPrompt, setIdeaPrompt] = useState('');
+  const [targetAudience, setTargetAudience] = useState(business.brandProfile?.targetAudience || '');
+  const [desiredAction, setDesiredAction] = useState('');
+  const [confirmedFacts, setConfirmedFacts] = useState('');
+  const [isSaved, setIsSaved] = useState(false);
+
+  const invalidatePreview = () => {
+    setGeneratedCampaign(null);
+    setIsSaved(false);
+    setApprovedSuccess(false);
+    setError('');
+  };
   const [generatedCampaign, setGeneratedCampaign] = useState<GeneratedCampaign | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [approvedSuccess, setApprovedSuccess] = useState(false);
@@ -24,12 +36,14 @@ export const OneIdeaCampaignView: React.FC<OneIdeaCampaignViewProps> = ({ busine
 
   const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!ideaPrompt.trim()) return;
+    if (!ideaPrompt.trim() || !targetAudience.trim() || !desiredAction.trim()) return;
     setIsGenerating(true);
+    setGeneratedCampaign(null);
     setError('');
     try {
-      const campaignName = ideaPrompt.trim().slice(0, 120);
-      const objective = `Create a focused multi-channel campaign for this business idea: ${ideaPrompt.trim()}`;
+      const { name: campaignName, objective } = buildCampaignBrief({
+        idea:ideaPrompt, audience:targetAudience, nextAction:desiredAction, confirmedFacts
+      });
       const response = await fetch('/api/ai/generate-campaign-plan', {
         method: 'POST',
         headers: {'Content-Type':'application/json'},
@@ -54,8 +68,8 @@ export const OneIdeaCampaignView: React.FC<OneIdeaCampaignViewProps> = ({ busine
     }
   };
 
-  const handleApproveAll = async () => {
-    if (!generatedCampaign || isSaving) return;
+  const handleSavePlan = async () => {
+    if (!generatedCampaign || isSaving || isSaved) return;
     const now = new Date();
     setIsSaving(true);
     setError('');
@@ -67,13 +81,13 @@ export const OneIdeaCampaignView: React.FC<OneIdeaCampaignViewProps> = ({ busine
         objective:generatedCampaign.objective,
         startDate:now.toISOString().slice(0,10),
         endDate:new Date(now.getTime()+30*86400000).toISOString().slice(0,10),
-        status:'ACTIVE',
+        status:'PLANNED',
         steps:generatedCampaign.steps,
-        aiPlanGenerated:true,
+        aiPlanGenerated:generatedCampaign.source === 'ollama' || generatedCampaign.source === 'gemini',
         createdAt:now.toISOString(),
       });
       setApprovedSuccess(true);
-      setTimeout(() => setApprovedSuccess(false), 2500);
+      setIsSaved(true);
     } catch (err) {
       setApprovedSuccess(false);
       setError(err instanceof Error ? err.message : 'Could not save the campaign.');
@@ -88,21 +102,39 @@ export const OneIdeaCampaignView: React.FC<OneIdeaCampaignViewProps> = ({ busine
         <div>
           <div className="flex items-center gap-2 text-xs font-bold text-orange-600 uppercase tracking-wider mb-1"><Sparkles className="w-4 h-4"/><span>One idea campaign builder</span></div>
           <h1 className="text-2xl font-black text-slate-900">One Idea → Campaign Plan</h1>
-          <p className="text-xs text-slate-500 mt-1">Turn your own offer, service, product or event idea into a structured campaign using the configured V79 AI provider.</p>
+          <p className="text-sm text-slate-600 mt-1">Tell us what you offer, who it helps and what customers should do next. Review the proposed plan before using any copy.</p>
         </div>
-        <button disabled={!generatedCampaign || isSaving} onClick={() => void handleApproveAll()} className="px-6 py-3 bg-slate-950 disabled:opacity-40 text-white font-bold rounded-2xl text-xs flex items-center justify-center gap-2">
+        <button type="button" disabled={!generatedCampaign || isSaving || isSaved} onClick={() => void handleSavePlan()} className="px-6 py-3 bg-slate-950 disabled:opacity-40 text-white font-bold rounded-2xl text-sm flex items-center justify-center gap-2">
           {approvedSuccess ? <CheckCircle2 className="w-4 h-4"/> : <Layers className="w-4 h-4"/>}
-          <span>{isSaving ? 'Saving…' : approvedSuccess ? 'Campaign saved' : 'Approve campaign'}</span>
+          <span>{isSaving ? 'Saving…' : approvedSuccess ? 'Plan saved' : 'Save campaign plan'}</span>
         </button>
       </div>
 
       <form onSubmit={handleGenerate} className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs space-y-4">
-        <label className="text-xs font-bold text-slate-800 block">What do you want to promote?</label>
-        <div className="flex flex-col sm:flex-row gap-3">
-          <input value={ideaPrompt} onChange={e=>setIdeaPrompt(e.target.value)} placeholder="Describe the offer, product, service or event and the result you want…" className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-500"/>
-          <button type="submit" disabled={isGenerating || !ideaPrompt.trim()} className="px-8 py-3 bg-gradient-to-r from-orange-500 to-amber-500 disabled:opacity-40 text-white font-bold text-xs rounded-2xl flex items-center justify-center gap-2">
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="md:col-span-2">
+            <label htmlFor="marketing-campaign-idea" className="text-sm font-bold text-slate-800 block mb-2">1. What are you promoting?</label>
+            <input id="marketing-campaign-idea" required maxLength={240} value={ideaPrompt} onChange={e=>{setIdeaPrompt(e.target.value);invalidatePreview();}} placeholder="E.g. Introduce Tiquet to local service businesses" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-500"/>
+          </div>
+          <div>
+            <label htmlFor="marketing-campaign-audience" className="text-sm font-bold text-slate-800 block mb-2">2. Who needs it?</label>
+            <input id="marketing-campaign-audience" required maxLength={160} value={targetAudience} onChange={e=>{setTargetAudience(e.target.value);invalidatePreview();}} placeholder="E.g. Small businesses struggling with service follow-ups" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-500"/>
+          </div>
+          <div>
+            <label htmlFor="marketing-campaign-action" className="text-sm font-bold text-slate-800 block mb-2">3. What should they do next?</label>
+            <input id="marketing-campaign-action" required maxLength={100} value={desiredAction} onChange={e=>{setDesiredAction(e.target.value);invalidatePreview();}} placeholder="E.g. Request a demo, book a call or visit the website" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-500"/>
+          </div>
+        </div>
+        <details className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <summary className="cursor-pointer text-sm font-bold text-slate-800">Add confirmed offer details (optional)</summary>
+          <label htmlFor="marketing-campaign-facts" className="mt-3 mb-2 block text-xs text-slate-600">Include only prices, claims, offer terms or benefits your business can substantiate.</label>
+          <textarea id="marketing-campaign-facts" maxLength={350} rows={2} value={confirmedFacts} onChange={e=>{setConfirmedFacts(e.target.value);invalidatePreview();}} placeholder="E.g. Free 14-day pilot — if this offer is approved and available" className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-500"/>
+        </details>
+        <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
+          <p className="text-xs text-slate-600">Creates a reviewable plan only. Nothing is published or scheduled here.</p>
+          <button type="submit" disabled={isGenerating || !ideaPrompt.trim() || !targetAudience.trim() || !desiredAction.trim()} className="px-8 py-3 bg-gradient-to-r from-orange-500 to-amber-500 disabled:opacity-40 text-white font-bold text-sm rounded-2xl flex items-center justify-center gap-2">
             {isGenerating ? <RefreshCw className="w-4 h-4 animate-spin"/> : <Sparkles className="w-4 h-4"/>}
-            <span>{isGenerating ? 'Generating…' : 'Build campaign'}</span>
+            <span>{isGenerating ? 'Generating…' : 'Build campaign plan'}</span>
           </button>
         </div>
         {error && <p className="text-xs font-medium text-red-600">{error}</p>}
@@ -113,7 +145,8 @@ export const OneIdeaCampaignView: React.FC<OneIdeaCampaignViewProps> = ({ busine
           <div className="flex flex-col gap-1 border-b border-slate-100 pb-4">
             <h2 className="font-extrabold text-slate-900">{generatedCampaign.name}</h2>
             <p className="text-xs text-slate-500">{generatedCampaign.objective}</p>
-            <p className="text-[10px] uppercase tracking-wider text-slate-400">Generation source: {generatedCampaign.source || 'V79 AI'}</p>
+            <p className="text-xs text-slate-500">Generation source: {generatedCampaign.source === 'template' ? 'Basic template (AI unavailable)' : generatedCampaign.source || 'V79 AI'}</p>
+            <p className="text-xs text-amber-700 mt-2">Review all claims, details, channel suggestions and times. Saving this plan does not authorise publishing.</p>
           </div>
           <div className="mt-4 grid gap-3 md:grid-cols-2">
             {generatedCampaign.steps.map((step,index)=>(
