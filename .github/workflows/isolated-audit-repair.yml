@@ -54,6 +54,8 @@ jobs:
             if(a[0]<b[0]||(a[0]===b[0]&&(a[1]<b[1]||(a[1]===b[1]&&a[2]<b[2]))))throw Error(p+' remains outdated '+entry.version);
           }
           NODE
+      - name: Install renderer dependencies for real media test
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core
       - name: Run complete code and production-dependency audit checks
         shell: bash
         run: |
