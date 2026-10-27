@@ -6,6 +6,7 @@ import { buildCampaignBrief } from '../lib/campaignBrief';
 interface OneIdeaCampaignViewProps {
   business: Business;
   onCreateCampaign: (newCampaign: Campaign) => Promise<Campaign>;
+  onViewPlans: () => void;
 }
 
 type GeneratedCampaign = {
@@ -15,7 +16,7 @@ type GeneratedCampaign = {
   source?: string;
 };
 
-export const OneIdeaCampaignView: React.FC<OneIdeaCampaignViewProps> = ({ business, onCreateCampaign }) => {
+export const OneIdeaCampaignView: React.FC<OneIdeaCampaignViewProps> = ({ business, onCreateCampaign, onViewPlans }) => {
   const [ideaPrompt, setIdeaPrompt] = useState('');
   const [targetAudience, setTargetAudience] = useState(business.brandProfile?.targetAudience || '');
   const [desiredAction, setDesiredAction] = useState('');
@@ -110,6 +111,17 @@ export const OneIdeaCampaignView: React.FC<OneIdeaCampaignViewProps> = ({ busine
         </button>
       </div>
 
+      {isSaved && (
+        <div className="flex flex-col gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 sm:flex-row sm:items-center sm:justify-between" role="status">
+          <div>
+            <p className="text-sm font-bold text-emerald-900">Plan saved — not published</p>
+            <p className="mt-1 text-sm text-emerald-800">Next, choose one step and prepare a post for review.</p>
+          </div>
+          <button type="button" onClick={onViewPlans} className="rounded-xl bg-emerald-800 px-5 py-3 text-sm font-bold text-white hover:bg-emerald-900">
+            Continue to your plans
+          </button>
+        </div>
+      )}
       <form onSubmit={handleGenerate} className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs space-y-4">
         <div className="grid gap-4 md:grid-cols-2">
           <div className="md:col-span-2">
