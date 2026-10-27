@@ -1,0 +1,85 @@
+name: Isolated dependency audit repair
+on:
+  push:
+    branches:
+      - security/marketing-lockfile-audit-20261027
+  pull_request:
+    branches:
+      - main
+permissions:
+  contents: write
+concurrency:
+  group: isolated-marketing-lock-repair
+  cancel-in-progress: false
+jobs:
+  patch:
+    if: github.repository == 'MrFixITslu/V79Marketing' && (github.ref == 'refs/heads/security/marketing-lockfile-audit-20261027' || github.event.pull_request.head.ref == 'security/marketing-lockfile-audit-20261027')
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: security/marketing-lockfile-audit-20261027
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Calculate patched lockfile in isolated runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install -g npm@11.9.0
+          npm --version
+          # npm audit fix may return nonzero for dev-only advisories even when
+          # production dependencies were remediated. The mandatory production
+          # audit below is NOT bypassed; all changes are tested before commit.
+          npm audit fix --package-lock-only --ignore-scripts --no-fund || echo 'Initial remediation left further advisories; final security gate still required.'
+          npm audit fix --package-lock-only --ignore-scripts --no-fund || echo 'Additional advisories remain for independent follow-up.'
+          # Vitest accepts the patched root Vite 6 release. Dedupe eliminates
+          # its separate vulnerable Vite 8 when dependency constraints permit.
+          npm dedupe --package-lock-only --ignore-scripts --no-fund
+          node - <<'NODE'
+          const fs=require('fs');
+          const {execFileSync}=require('child_process');
+          const pkg=JSON.parse(fs.readFileSync('package.json','utf8'));
+          const lock=JSON.parse(fs.readFileSync('package-lock.json','utf8'));
+          if(lock.lockfileVersion!==3 || JSON.stringify(lock.packages[''].dependencies)!==JSON.stringify(pkg.dependencies)) {
+            throw Error('Dependency ranges or lockfile root changed unexpectedly');
+          }
+          const changed=execFileSync('git',['diff','--name-only'],{encoding:'utf8'}).trim().split('\n').filter(Boolean);
+          if(changed.some(p=>p!=='package-lock.json'))throw Error('Audit repair touched a file outside package-lock.json: '+changed.join(', '));
+          for (const [p,minimum] of [['node_modules/zod','4.6.6'],['node_modules/body-parser','1.20.9']]) {
+            const entry=lock.packages[p];
+            if(!entry)throw Error(p+' missing after resolution');
+            const tuple=v=>v.split('.').map(x=>Number(x));
+            const a=tuple(entry.version),b=tuple(minimum);
+            if(a[0]<b[0]||(a[0]===b[0]&&(a[1]<b[1]||(a[1]===b[1]&&a[2]<b[2]))))throw Error(p+' remains outdated '+entry.version);
+          }
+          NODE
+      - name: Install renderer dependencies for real media test
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core
+      - name: Run complete code and production-dependency audit checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --no-fund --no-audit
+          npm run lint
+          npm test
+          npm run build
+          npm audit --omit=dev --audit-level=high
+          npm audit --audit-level=high
+      - name: Commit verified lockfile only to isolated security branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- package-lock.json; then
+            echo 'No lockfile changes needed.'
+            exit 0
+          fi
+          git config user.name 'v79-security-ci'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- package-lock.json
+          test "$(git diff --cached --name-only)" = 'package-lock.json'
+          git commit -m 'fix(security): resolve audited dependency lockfile without range expansion [skip ci]'
+          git push origin HEAD:security/marketing-lockfile-audit-20261027
