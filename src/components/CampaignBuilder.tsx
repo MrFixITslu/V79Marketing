@@ -1,17 +1,19 @@
 import React, { useState } from 'react';
 import { ArrowRight, CalendarDays, CheckCircle2, ClipboardList, Layers, Plus, Sparkles } from 'lucide-react';
 import type { Business, Campaign, CampaignStep, Post } from '../types';
+import type { CampaignOutcome } from '../lib/campaignAttribution';
 
 interface CampaignBuilderProps {
   business: Business;
   campaigns: Campaign[];
   posts: Post[];
+  outcomes: CampaignOutcome[] | null;
   onCreateNewPlan: () => void;
   onPrepareStep: (campaign: Campaign, step: CampaignStep) => void;
 }
 
 export const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
-  business, campaigns, posts, onCreateNewPlan, onPrepareStep
+  business, campaigns, posts, outcomes, onCreateNewPlan, onPrepareStep
 }) => {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const ownCampaigns = campaigns.filter(campaign => campaign.businessId === business.id);
@@ -21,6 +23,7 @@ export const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
     : [];
   const scheduledCount = campaignPosts.filter(post => post.status === 'SCHEDULED').length;
   const publishedCount = campaignPosts.filter(post => post.status === 'PUBLISHED').length;
+  const outcome = activeCampaign && outcomes ? outcomes.find(row=>row.campaignId === activeCampaign.id) : undefined;
 
   return (
     <div className="space-y-6 pb-12">
@@ -87,6 +90,18 @@ export const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
                   <span className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">{publishedCount} published</span>
                 </div>
                 <p className="mt-2 text-xs text-slate-500">These counts come from saved post records, not estimates of reach, enquiries or sales.</p>
+                <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4" aria-label="Manually linked CRM results">
+                  <h3 className="text-sm font-bold text-emerald-950">Customer enquiry outcomes</h3>
+                  {outcomes === null ? (
+                    <p className="mt-2 text-sm text-emerald-900">Customer outcome data unavailable. We will not show zero as if it were verified.</p>
+                  ) : (
+                    <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
+                      <div><strong className="block text-2xl text-emerald-950">{outcome?.attributedEnquiries ?? 0}</strong><span>Manually linked enquiries</span></div>
+                      <div><strong className="block text-2xl text-emerald-950">{outcome?.customerStatuses ?? 0}</strong><span>Records marked as customers</span></div>
+                    </div>
+                  )}
+                  <p className="mt-2 text-xs text-emerald-900">These are actual customer-pipeline records with a manually selected campaign. They do not prove an ad click, confirmed sale or revenue.</p>
+                </div>
               </div>
 
               <div className="flex items-center gap-2">
