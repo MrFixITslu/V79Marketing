@@ -1,20 +1,26 @@
 import React, { useState } from 'react';
 import { ArrowRight, CalendarDays, CheckCircle2, ClipboardList, Layers, Plus, Sparkles } from 'lucide-react';
-import type { Business, Campaign, CampaignStep } from '../types';
+import type { Business, Campaign, CampaignStep, Post } from '../types';
 
 interface CampaignBuilderProps {
   business: Business;
   campaigns: Campaign[];
+  posts: Post[];
   onCreateNewPlan: () => void;
   onPrepareStep: (campaign: Campaign, step: CampaignStep) => void;
 }
 
 export const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
-  business, campaigns, onCreateNewPlan, onPrepareStep
+  business, campaigns, posts, onCreateNewPlan, onPrepareStep
 }) => {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const ownCampaigns = campaigns.filter(campaign => campaign.businessId === business.id);
   const activeCampaign = ownCampaigns.find(campaign => campaign.id === selectedId) || ownCampaigns[0];
+  const campaignPosts = activeCampaign
+    ? posts.filter(post => post.businessId === business.id && post.campaignId === activeCampaign.id)
+    : [];
+  const scheduledCount = campaignPosts.filter(post => post.status === 'SCHEDULED').length;
+  const publishedCount = campaignPosts.filter(post => post.status === 'PUBLISHED').length;
 
   return (
     <div className="space-y-6 pb-12">
@@ -75,6 +81,12 @@ export const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
                 <h2 className="mt-2 text-xl font-extrabold text-slate-900">{activeCampaign.name}</h2>
                 <p className="mt-2 whitespace-pre-line break-words text-sm text-slate-700">{activeCampaign.objective}</p>
                 <p className="mt-3 text-xs font-medium text-amber-800">A saved campaign plan is not approval to post. Every draft and platform must be reviewed.</p>
+                <div className="mt-4 flex flex-wrap gap-3 text-xs font-semibold text-slate-700" aria-label="Verified campaign activity">
+                  <span className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">{campaignPosts.length} linked posts</span>
+                  <span className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">{scheduledCount} scheduled</span>
+                  <span className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">{publishedCount} published</span>
+                </div>
+                <p className="mt-2 text-xs text-slate-500">These counts come from saved post records, not estimates of reach, enquiries or sales.</p>
               </div>
 
               <div className="flex items-center gap-2">
