@@ -11,6 +11,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { createServer as createViteServer } from "vite";
 import { db, initDb } from "./src/lib/db.js";
 import { createAgentCampaignDraft, listAgentCampaignDrafts } from "./src/lib/agentCampaignDrafts.js";
+import { listCampaignOutcomes, resolveCustomerCampaignId } from "./src/lib/campaignAttribution.js";
 import { productionManagedPost } from "./src/lib/productionTracking.js";
 import { publicationUrl } from "./src/lib/publicationLinks.js";
 import { installProductionRoutes } from "./src/lib/productionRoutes.js";
@@ -26,6 +27,7 @@ import {
 } from "./src/lib/auth.js";
 import { getCreditBalance, deductCredits, addCredits, refundCredits, CREDIT_COSTS } from "./src/lib/creditService.js";
 import { startPublisherWorker, processScheduledPosts } from "./src/lib/publisher.ts";
+import { resetBlockedDelivery } from "./src/lib/deliveryRetry.js";
 import { consumeHubLaunchTicket, verifyHubProvisionRequest, verifyHubSummaryRequest } from "./src/lib/platform.js";
 import { deprovisionHubTeamIdentity, provisionHubIdentity } from "./src/lib/hubProvisioning.js";
 import { queueMarketingEvent, startPlatformEventPump } from "./src/lib/platformEvents.js";
@@ -247,6 +249,7 @@ const customerCreateSchema = z.object({
   phone:z.string().trim().min(1).max(100),
   email:z.union([z.string().trim().email().max(320), z.literal("")]).optional(),
   channel:z.enum(["whatsapp","facebook","google_business","website"]).default("whatsapp"),
+  campaignId:z.string().max(160).optional(),
   status:z.enum(["NEW_INQUIRY","INTERESTED","FOLLOW_UP","CUSTOMER","REPEAT_CUSTOMER"]).default("NEW_INQUIRY"),
   notes:z.string().max(5000).optional(),
 });
@@ -1044,11 +1047,8 @@ app.post("/api/post-deliveries/:postId/:platform/retry", authenticate, requireMa
   if (productionManagedPost(db, req.params.postId, req.user!.businessId))
     return res.status(409).json({error:"Production receipts cannot be republished through the general queue. Review the original exact approval workflow."});
   const now = new Date().toISOString();
-  db.prepare(`
-    UPDATE post_deliveries
-    SET status='QUEUED', attempts=0, last_error=NULL, provider_post_id=NULL, published_at=NULL, updated_at=?
-    WHERE post_id=? AND platform=? AND business_id=?
-  `).run(now, req.params.postId, platform.data, req.user!.businessId);
+  if (!resetBlockedDelivery(db, req.user!.businessId, req.params.postId, platform.data, now))
+    return res.status(409).json({error:"Only failed or blocked deliveries without a publication receipt can be retried."});
   db.prepare("UPDATE posts SET status='SCHEDULED' WHERE id=? AND business_id=?").run(req.params.postId, req.user!.businessId);
   res.json({ success:true, postId:req.params.postId, platform:platform.data, status:"QUEUED", updatedAt:now });
 });
@@ -1133,6 +1133,15 @@ app.get("/api/campaigns", authenticate, requireMarketingPermission("content.read
       createdAt: row.created_at,
     })),
   });
+});
+
+// Evidence-based CRM summaries. Manual attribution is self-reported, never proof of an ad click.
+app.get("/api/campaigns/outcomes", authenticate, requireMarketingPermission("content.read"), requireMarketingPermission("customers.read"), (req: AuthenticatedRequest, res) => {
+  try {
+    res.json({success:true,method:"manual",outcomes:listCampaignOutcomes(db,req.user!.businessId)});
+  } catch {
+    res.status(500).json({error:"Campaign enquiry summary is unavailable."});
+  }
 });
 
 app.post("/api/campaigns", authenticate, requireMarketingPermission("content.write"), (req: AuthenticatedRequest, res) => {
@@ -1833,6 +1842,8 @@ app.get("/api/customers", authenticate, requireMarketingPermission("customers.re
       phone: c.phone,
       email: c.email || undefined,
       channel: c.channel,
+      campaignId: c.campaign_id || undefined,
+      attributionMethod: c.attribution_method === 'manual' ? 'manual' : undefined,
       status: c.status,
       notes: c.notes || undefined,
       lastContactedAt: c.last_contacted_at || undefined,
@@ -1847,15 +1858,21 @@ app.get("/api/customers", authenticate, requireMarketingPermission("customers.re
 
 app.post("/api/customers", authenticate, requireMarketingPermission("customers.write"), (req: AuthenticatedRequest, res) => {
   try {
-    const { name, phone, email, channel, status, notes } = customerCreateSchema.parse(req.body);
+    const { name, phone, email, channel, status, notes, campaignId } = customerCreateSchema.parse(req.body);
+    const businessId = req.user!.businessId;
+    let linkedCampaignId: string | null;
+    try {
+      linkedCampaignId = resolveCustomerCampaignId(db,businessId,campaignId);
+    } catch (error) {
+      return res.status(400).json({error: error instanceof Error ? error.message : 'Invalid campaign attribution.'});
+    }
 
     const customerId = `cust-${crypto.randomUUID()}`;
-    const businessId = req.user!.businessId;
     const now = new Date().toISOString();
 
     db.prepare(`
-      INSERT INTO customers (id, business_id, name, phone, email, channel, status, notes, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO customers (id, business_id, name, phone, email, channel, status, notes, created_at, campaign_id, attribution_method)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       customerId,
       businessId,
@@ -1865,13 +1882,15 @@ app.post("/api/customers", authenticate, requireMarketingPermission("customers.w
       channel || "whatsapp",
       status || "NEW_INQUIRY",
       notes ? notes.trim() : null,
-      now
+      now,
+      linkedCampaignId,
+      linkedCampaignId ? 'manual' : null
     );
     queueMarketingEvent({
       businessId,
       type: "marketing.lead_created",
       subjectId: customerId,
-      payload: { channel: channel || "whatsapp", hasEmail: Boolean(email) },
+      payload: { channel: channel || "whatsapp", hasEmail: Boolean(email), manuallyAttributed: Boolean(linkedCampaignId) },
     });
 
     res.json({
@@ -1883,6 +1902,8 @@ app.post("/api/customers", authenticate, requireMarketingPermission("customers.w
         phone: phone.trim(),
         email: email ? email.trim() : undefined,
         channel: channel || "whatsapp",
+        campaignId: linkedCampaignId || undefined,
+        attributionMethod: linkedCampaignId ? 'manual' : undefined,
         status: status || "NEW_INQUIRY",
         notes: notes ? notes.trim() : undefined,
         createdAt: now,

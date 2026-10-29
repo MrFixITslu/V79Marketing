@@ -580,7 +580,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
 
         {/* Clean, Grouped Nav Bar (No Scrollbar, Uncluttered) */}
-        <div className="border-t border-slate-100 py-2 relative" ref={dropdownRef}>
+        <div className="hidden lg:block border-t border-slate-100 py-2 relative" ref={dropdownRef}>
           <nav className="flex items-center justify-between sm:justify-start gap-1 sm:gap-2 no-scrollbar text-xs">
             {navGroups.map((group) => {
               const Icon = group.icon;

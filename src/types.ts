@@ -402,6 +402,8 @@ export interface CustomerInquiry {
   phone: string;
   email?: string;
   channel: 'whatsapp' | 'facebook' | 'google_business' | 'website';
+  campaignId?: string;
+  attributionMethod?: 'manual';
   status: CustomerStatus;
   notes?: string;
   lastContactedAt?: string;
