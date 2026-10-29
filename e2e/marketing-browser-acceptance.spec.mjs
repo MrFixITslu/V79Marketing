@@ -85,7 +85,7 @@ for(const device of [{name:'desktop',width:1440,height:900},{name:'mobile',width
       await page.getByRole('button',{name:'Schedule Selected Channels'}).click();
       await expect(page.getByText('Generate copy for every selected channel before scheduling. No channels have been queued.')).toBeVisible();
       await page.getByRole('button',{name:'Generate Channel Copy'}).click();
-      await expect(page.getByRole('alert')).toHaveText('Synthetic generation outage');
+      await expect(page.getByRole('alert').filter({hasText:'Synthetic generation outage'})).toHaveText('Synthetic generation outage');
       await expect(page.getByText('Synthetic old copy',{exact:true})).toHaveCount(0);
       await page.getByRole('button',{name:'Schedule Selected Channels'}).click();
       await expect(page.getByText('Generate the marketing copy before scheduling it.')).toBeVisible();
