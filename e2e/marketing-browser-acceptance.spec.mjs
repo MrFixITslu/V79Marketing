@@ -66,6 +66,32 @@ async function syntheticApi(page) {
 }
 
 for(const device of [{name:'desktop',width:1440,height:900},{name:'mobile',width:390,height:844}]){
+  test(device.name+' — failed regeneration and missing channel copy cannot queue stale content',async ({browser})=>{
+    const context=await browser.newContext({viewport:{width:device.width,height:device.height}});
+    const page=await context.newPage();
+    try{
+      await syntheticApi(page);
+      let generation=0, scheduled=0;
+      page.on('request',req=>{if(new URL(req.url()).pathname==='/api/posts'&&req.method()==='POST')scheduled++;});
+      await page.route('**/api/ai/generate-text',async route=>{
+        generation++;
+        await route.fulfill({status:generation===1?200:503,contentType:'application/json',body:JSON.stringify(
+          generation===1?{success:true,data:{facebook:{caption:'Synthetic old copy',hashtags:[]}}}:{error:'Synthetic generation outage'})});
+      });
+      await page.goto('http://127.0.0.1:4173/?view=ai-assistant');
+      await page.getByRole('button',{name:'Generate Channel Copy'}).click();
+      await expect(page.getByText('Synthetic old copy',{exact:true})).toBeVisible();
+      await page.getByRole('button',{name:/^LinkedIn Not connected/}).click();
+      await page.getByRole('button',{name:'Schedule Selected Channels'}).click();
+      await expect(page.getByText('Generate copy for every selected channel before scheduling. No channels have been queued.')).toBeVisible();
+      await page.getByRole('button',{name:'Generate Channel Copy'}).click();
+      await expect(page.getByRole('alert')).toHaveText('Synthetic generation outage');
+      await expect(page.getByText('Synthetic old copy',{exact:true})).toHaveCount(0);
+      await page.getByRole('button',{name:'Schedule Selected Channels'}).click();
+      await expect(page.getByText('Generate the marketing copy before scheduling it.')).toBeVisible();
+      expect(scheduled).toBe(0);
+    }finally{await context.close();}
+  });
   test(device.name+' — campaign creation, resume, manual enquiry attribution and no auto-publish',async ({browser})=>{
     const context=await browser.newContext({viewport:{width:device.width,height:device.height}});
     const page=await context.newPage();

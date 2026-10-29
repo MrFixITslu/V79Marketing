@@ -166,6 +166,7 @@ export const AiContentGenerator: React.FC<AiContentGeneratorProps> = ({
     setIsGenerating(true);
     setScheduledSuccess(false);
     setGenerationError('');
+    setGeneratedContent({});
     try {
       const response = await fetch('/api/ai/generate-text', {
         method: 'POST',
@@ -216,7 +217,7 @@ export const AiContentGenerator: React.FC<AiContentGeneratorProps> = ({
   };
 
   const handleScheduleCurrent = async () => {
-    if (scheduleLock.current || schedulePending || scheduledSuccess) return;
+    if (scheduleLock.current || schedulePending || scheduledSuccess || isGenerating) return;
     setScheduleError('');
     if (!Object.keys(generatedContent || {}).length) {
       setScheduleError('Generate the marketing copy before scheduling it.');
@@ -224,6 +225,10 @@ export const AiContentGenerator: React.FC<AiContentGeneratorProps> = ({
     }
     if (!selectedPublishPlatforms.length) {
       setScheduleError('Choose at least one publishing channel.');
+      return;
+    }
+    if (selectedPublishPlatforms.some(platform => !generatedContent[platform]?.caption?.trim())) {
+      setScheduleError('Generate copy for every selected channel before scheduling. No channels have been queued.');
       return;
     }
     if (campaignContext && selectedPublishPlatforms.some(platform => !connectedByPlatform.has(platform))) {
@@ -358,7 +363,7 @@ export const AiContentGenerator: React.FC<AiContentGeneratorProps> = ({
 
         <button
           onClick={handleScheduleCurrent}
-          disabled={schedulePending || scheduledSuccess}
+          disabled={isGenerating || schedulePending || scheduledSuccess}
           className="px-6 py-3 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-bold rounded-2xl text-sm shadow-md flex items-center justify-center gap-2 transition-all cursor-pointer whitespace-nowrap disabled:opacity-50"
         >
           {scheduledSuccess ? <Check className="w-4 h-4" /> : <Calendar className="w-4 h-4" />}

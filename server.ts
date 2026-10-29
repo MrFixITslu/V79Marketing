@@ -27,6 +27,7 @@ import {
 } from "./src/lib/auth.js";
 import { getCreditBalance, deductCredits, addCredits, refundCredits, CREDIT_COSTS } from "./src/lib/creditService.js";
 import { startPublisherWorker, processScheduledPosts } from "./src/lib/publisher.ts";
+import { resetBlockedDelivery } from "./src/lib/deliveryRetry.js";
 import { consumeHubLaunchTicket, verifyHubProvisionRequest, verifyHubSummaryRequest } from "./src/lib/platform.js";
 import { deprovisionHubTeamIdentity, provisionHubIdentity } from "./src/lib/hubProvisioning.js";
 import { queueMarketingEvent, startPlatformEventPump } from "./src/lib/platformEvents.js";
@@ -1046,11 +1047,8 @@ app.post("/api/post-deliveries/:postId/:platform/retry", authenticate, requireMa
   if (productionManagedPost(db, req.params.postId, req.user!.businessId))
     return res.status(409).json({error:"Production receipts cannot be republished through the general queue. Review the original exact approval workflow."});
   const now = new Date().toISOString();
-  db.prepare(`
-    UPDATE post_deliveries
-    SET status='QUEUED', attempts=0, last_error=NULL, provider_post_id=NULL, published_at=NULL, updated_at=?
-    WHERE post_id=? AND platform=? AND business_id=?
-  `).run(now, req.params.postId, platform.data, req.user!.businessId);
+  if (!resetBlockedDelivery(db, req.user!.businessId, req.params.postId, platform.data, now))
+    return res.status(409).json({error:"Only failed or blocked deliveries without a publication receipt can be retried."});
   db.prepare("UPDATE posts SET status='SCHEDULED' WHERE id=? AND business_id=?").run(req.params.postId, req.user!.businessId);
   res.json({ success:true, postId:req.params.postId, platform:platform.data, status:"QUEUED", updatedAt:now });
 });
