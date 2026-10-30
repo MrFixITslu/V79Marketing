@@ -1036,11 +1036,14 @@ app.post("/api/post-deliveries/:postId/:platform/retry", authenticate, requireMa
   const platform = socialPlatformSchema.safeParse(req.params.platform);
   if (!platform.success) return res.status(400).json({ error:"Unsupported publishing platform." });
   const row = db.prepare(`
-    SELECT d.post_id FROM post_deliveries d
+    SELECT d.post_id,d.status FROM post_deliveries d
     JOIN posts p ON p.id=d.post_id AND p.business_id=d.business_id
     WHERE d.post_id=? AND d.platform=? AND d.business_id=?
   `).get(req.params.postId, platform.data, req.user!.businessId);
   if (!row) return res.status(404).json({ error:"Delivery record not found." });
+  // Never offer a blind replay after a provider call or crash could have published.
+  if (["PUBLISHED","DISPATCHING","OUTCOME_UNKNOWN"].includes((row as {status:string}).status))
+    return res.status(409).json({error:"Provider outcome requires verification. Do not retry a published, running or uncertain post."});
   if (productionManagedPost(db, req.params.postId, req.user!.businessId))
     return res.status(409).json({error:"Production receipts cannot be republished through the general queue. Review the original exact approval workflow."});
   const now = new Date().toISOString();
