@@ -2,6 +2,7 @@ import Database from "better-sqlite3";
 import { installProductionTracking } from "./productionTracking.js";
 import { ensureAgentCampaignDraftTable } from "./agentCampaignDrafts.js";
 import { ensureMediaKeyTable } from "./mediaProviderVault.js";
+import { ensurePersonalSkillTables } from "./personalMarketingSkills.js";
 import path from "path";
 import fs from "fs";
 import bcrypt from "bcryptjs";
@@ -309,6 +310,7 @@ export function initDb() {
   // Creating the BYOK FK before this legacy users-table rename would bind it
   // to users_global_email_legacy and break both cleanup and account deletion.
   ensureMediaKeyTable(db);
+  ensurePersonalSkillTables(db);
   db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_businesses_hub_org ON businesses(hub_organization_id) WHERE hub_organization_id IS NOT NULL;");
   db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_legacy_email ON users(email) WHERE hub_user_id IS NULL;");
   db.exec("DROP INDEX IF EXISTS idx_users_hub_user;");
