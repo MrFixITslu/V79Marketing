@@ -204,10 +204,11 @@ export async function processScheduledPosts(): Promise<PublishResult[]> {
         }
         // Durable boundary before any irreversible provider request. A timeout
         // or process crash from this point requires reconciliation, not retry.
-        db.prepare(`
+        const claim=db.prepare(`
           UPDATE post_deliveries SET status='DISPATCHING', attempts=attempts+1, updated_at=?
           WHERE post_id=? AND platform=? AND status='QUEUED'
         `).run(new Date().toISOString(),post.id,platform);
+        if(claim.changes!==1)continue; // Another worker owns or reconciles this post.
         const published = await publishWithProvider(connection.account, {
           caption:String(platformContent.caption || post.title || ""),
           hashtags:Array.isArray(platformContent.hashtags) ? platformContent.hashtags : [],
