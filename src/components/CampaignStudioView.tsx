@@ -28,12 +28,25 @@ export function CampaignStudioView({business,onCreateCampaign}:{
   const [status,setStatus]=useState<Stage>('draft');
   const [saved,setSaved]=useState<Campaign|null>(null);
   const [showInspector,setShowInspector]=useState(true);
+  const [verifiedFacts,setVerifiedFacts]=useState<{id:string;service:string;statement:string}[]>([]);
+  const [verifiedAvailable,setVerifiedAvailable]=useState(false);
+  const [videoSource,setVideoSource]=useState('');
+  const [selectedFact,setSelectedFact]=useState('');
+  const [video,setVideo]=useState<{videoUrl:string;sha256:string;subtitles:string;notice:string}|null>(null);
+  const [videoBusy,setVideoBusy]=useState(false);
+  const [videoError,setVideoError]=useState('');
+
   useEffect(()=>{
     let active=true;
     fetch('/api/creative/capabilities',{credentials:'same-origin',cache:'no-store'})
       .then(r=>r.ok?r.json():Promise.reject(Error('Connections unavailable')))
       .then(v=>{if(active)setCapabilities(v.providers||[]);})
       .catch(()=>{if(active)setCapError('Provider availability could not be checked. Local composition remains the fallback.');});
+    fetch('/api/creative/verified-brief',{credentials:'same-origin',cache:'no-store'})
+      .then(r=>r.ok?r.json():Promise.reject(Error('Approved facts unavailable')))
+      .then(v=>{if(active){setVerifiedAvailable(v.approved===true);
+        setVerifiedFacts(Array.isArray(v.facts)?v.facts:[]);
+        setSelectedFact(v.facts?.[0]?.id||'');}}).catch(()=>{});
     return()=>{active=false;};
   },[]);
   const imageProvider=capabilities.find(x=>x.provider==='gemini'&&x.type==='image');
@@ -98,6 +111,33 @@ export function CampaignStudioView({business,onCreateCampaign}:{
       setSaved(result);setStatus('saved');setStep(3);
     }catch{setError('Campaign save rejected. Your personal skill may have changed; regenerate the plan before saving.');}
     finally{setRunning(false);}
+  }
+  async function selectVideoSource(file:File|null){
+    setVideo(null);setVideoSource('');setVideoError('');
+    if(!file)return;
+    if(file.size>1000000||!['image/png','image/jpeg'].includes(file.type)){
+      setVideoError('Choose a personal PNG or JPEG image smaller than 1MB.');return;
+    }
+    const reader=new FileReader();
+    reader.onload=()=>{if(typeof reader.result==='string')setVideoSource(reader.result);};
+    reader.onerror=()=>setVideoError('Cannot read this local image.');
+    reader.readAsDataURL(file);
+  }
+  async function composeVideo(){
+    const image=videoSource||(asset?.imageUrl?.startsWith('data:image/png')||
+      asset?.imageUrl?.startsWith('data:image/jpeg')?asset.imageUrl:'');
+    if(!image||!selectedFact||videoBusy||!verifiedAvailable)return;
+    setVideoBusy(true);setVideoError('');setVideo(null);
+    try{
+      const response=await fetch('/api/creative/local-video',{method:'POST',
+        credentials:'same-origin',headers:{'content-type':'application/json'},
+        body:JSON.stringify({sourceImageData:image,factId:selectedFact})});
+      const result=await response.json().catch(()=>({}));
+      if(!response.ok||typeof result.videoUrl!=='string'||result.source!=='local-motion-composition')
+        throw Error('Local composition unavailable');
+      setVideo(result);
+    }catch{setVideoError('The local video could not be rendered. Verify the approved business facts, photo format and FFmpeg availability.');}
+    finally{setVideoBusy(false);}
   }
   const stages=['Campaign brief','Creative concepts','Asset workspace','Review & save'];
   return <div className="mx-auto max-w-7xl space-y-6 pb-16 text-[#0b1f33]">
@@ -191,9 +231,38 @@ export function CampaignStudioView({business,onCreateCampaign}:{
             {running?<RefreshCw className="animate-spin" size={17}/>:<ImageIcon size={17}/>}
             {asset?'Regenerate this image':'Generate draft image'}
           </button>
-          <div className="mt-5 border-t border-slate-200 pt-5">
-            <h3 className="flex items-center gap-2 text-sm font-bold"><PlayCircle size={17}/> Video composition</h3>
-            <p className="mt-1 text-sm text-slate-600">A captioned local MP4 renderer exists in the founder production workflow. Personal Studio video export is not yet connected; no playable video is claimed here.</p>
+          <div className="mt-5 space-y-3 border-t border-slate-200 pt-5">
+            <h3 className="flex items-center gap-2 text-sm font-bold"><PlayCircle size={17}/> Local motion video · 9:16</h3>
+            <p className="text-sm text-slate-600">Compose a real, captioned MP4 from your own photograph and an owner-approved business statement. Gentle motion is added locally—no AI footage or external video charges.</p>
+            {!verifiedAvailable&&<p className="rounded-xl bg-amber-50 p-3 text-xs text-amber-900">An owner-approved brand and service claim are required. No video can be produced from unverified offers.</p>}
+            {verifiedAvailable&&<>
+              <label htmlFor="studio-verified-fact" className="block text-sm font-semibold">Approved service statement</label>
+              <select id="studio-verified-fact" value={selectedFact} onChange={e=>{setSelectedFact(e.target.value);setVideo(null);}}
+                className="min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm">
+                {verifiedFacts.map(x=><option key={x.id} value={x.id}>{x.service}</option>)}
+              </select>
+              <label htmlFor="studio-source-photo" className="block text-sm font-semibold">Your own photo (PNG/JPEG, up to 1MB)</label>
+              <input id="studio-source-photo" type="file" accept="image/png,image/jpeg"
+                onChange={e=>void selectVideoSource(e.target.files?.[0]||null)}
+                className="w-full rounded-xl border border-slate-300 bg-white p-3 text-sm"/>
+              <p className="text-xs text-slate-600">You can also use the generated image above if it is a PNG/JPEG under 1MB. SVG layout previews cannot be used as video source.</p>
+              <button type="button" onClick={()=>void composeVideo()} disabled={videoBusy||(!videoSource&&!asset?.imageUrl?.match(/^data:image\/(png|jpeg);base64,/))}
+                className="flex min-h-11 items-center gap-2 rounded-xl bg-[#0b1f33] px-4 py-2.5 text-sm font-bold text-white disabled:opacity-40">
+                {videoBusy?<RefreshCw size={16} className="animate-spin"/>:<Clapperboard size={16}/>}
+                Compose local 9:16 video
+              </button>
+            </>}
+            {videoError&&<p role="alert" className="rounded-xl bg-red-50 p-3 text-xs text-red-800">{videoError}</p>}
+            {video&&<div className="space-y-3">
+              <video controls playsInline preload="metadata" src={video.videoUrl}
+                aria-label="Locally composed motion video preview"
+                className="mx-auto max-h-[540px] w-full max-w-xs rounded-xl bg-slate-900"/>
+              <a download="v79-local-motion-draft.mp4" href={video.videoUrl}
+                className="inline-flex min-h-11 items-center rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold">
+                Save playable MP4 draft
+              </a>
+              <p className="text-xs text-slate-600">{video.notice}</p>
+            </div>}
           </div>
         </section>}
       </div>
