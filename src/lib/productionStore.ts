@@ -1,15 +1,17 @@
 import type Database from 'better-sqlite3';
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { canonical, digest, type ProductionBrand, type ProductionPlan, type ProductionBundle } from './productionContract.js';
+import type { SkillSnapshot } from './personalMarketingSkills.js';
 
 export type Destination = {channel:string; accountId:string; providerAccountId:string; accountFingerprint:string;
   scheduledAt:string; payload:Record<string,unknown>; audienceFingerprint?:string; audienceCount?:number };
 export type Delivery = Destination & {id:string; digest:string; status:'awaiting_owner'|'approved'|'running'|'succeeded'|'blocked'|'uncertain'|'rejected'|'cancelled';
   blocker?:string; approval?:{by:string; digest:string; expiresAt:string; at:string}; result?:{providerPostId:string; at:string; marketingPostId?:string} };
 export type ProductionJob = {id:string; key:string; inputDigest:string; factId:string; angle:string; configRevision:number;
+  skillPin?:SkillSnapshot;
   status:'queued'|'generating'|'awaiting_owner'|'blocked'|'cancelled'; createdAt:string; source?:string;
   bundle?:ProductionBundle; bundleDigest?:string; deliveries:Delivery[]; failure?:string };
-export type ProductionState = {version:1; paused:boolean; configRevision:number; ownerHubUserId:string;
+export type ProductionState = {version:1; paused:boolean; configRevision:number; ownerHubUserId:string; ownerLocalUserId?:string;
   brand:ProductionBrand|null; plan:ProductionPlan|null; lastAutomaticAt:string|null;
   seenRequests:{id:string;expiresAt:number}[]; jobs:ProductionJob[]; events:{type:string; actor:string; at:string; jobId:string|null; deliveryId:string|null}[] };
 export function initialProductionState():ProductionState {
@@ -46,18 +48,19 @@ export function productionStore(db:Database.Database, secret:string) {
 export function productionEvent(s:ProductionState,type:string,actor:string,jobId:string|null=null,deliveryId:string|null=null,now=Date.now()) {
   s.events.push({type,actor,at:new Date(now).toISOString(),jobId,deliveryId});
 }
-export function queueProduction(s:ProductionState,input:{factId:string;angle:string;idempotencyKey:string},actor:string,now=Date.now()) {
+export function queueProduction(s:ProductionState,input:{factId:string;angle:string;idempotencyKey:string},actor:string,now=Date.now(),skillPin?:SkillSnapshot) {
   if (!s.brand || !s.plan || !s.brand.facts.some(f=>f.id===input.factId) || s.paused) throw Error('Approved active brand plan required');
-  const inputDigest = digest({factId:input.factId,angle:input.angle,configRevision:s.configRevision});
+  if(!skillPin || !skillPin.digest || skillPin.userId!==s.ownerLocalUserId)throw Error('Exact creator-owned skill snapshot required');
+  const inputDigest = digest({factId:input.factId,angle:input.angle,configRevision:s.configRevision,skillDigest:skillPin.digest});
   const prior = s.jobs.find(j=>j.key===input.idempotencyKey);
   if (prior) {if (prior.inputDigest!==inputDigest) throw Error('Idempotency conflict'); return prior;}
   if (s.jobs.length>=200) throw Error('Production history capacity reached');
   const job:ProductionJob={id:randomUUID(),key:input.idempotencyKey,inputDigest,factId:input.factId,
-    angle:input.angle,configRevision:s.configRevision,status:'queued',createdAt:new Date(now).toISOString(),deliveries:[]};
+    angle:input.angle,configRevision:s.configRevision,skillPin,status:'queued',createdAt:new Date(now).toISOString(),deliveries:[]};
   s.jobs.push(job); productionEvent(s,'coo_production_queued',actor,job.id,null,now); return job;
 }
 export function deliveryDigest(job:ProductionJob,d:Destination) {
-  return digest({bundleDigest:job.bundleDigest,configRevision:job.configRevision,channel:d.channel,
+  return digest({bundleDigest:job.bundleDigest,configRevision:job.configRevision,skillDigest:job.skillPin?.digest||null,channel:d.channel,
     accountId:d.accountId,providerAccountId:d.providerAccountId,accountFingerprint:d.accountFingerprint,
     scheduledAt:d.scheduledAt,payload:d.payload,audienceFingerprint:d.audienceFingerprint||null,audienceCount:d.audienceCount||null});
 }
@@ -110,7 +113,7 @@ export function claimDelivery(s:ProductionState,now=Date.now()) {
   if (s.paused) return null;
   for (const j of s.jobs) for (const d of j.deliveries) {
     if (d.status!=='approved') continue;
-    if (j.configRevision!==s.configRevision || !j.bundle || digest(j.bundle)!==j.bundleDigest ||
+    if (!j.skillPin || j.configRevision!==s.configRevision || !j.bundle || digest(j.bundle)!==j.bundleDigest ||
         d.approval?.digest!==d.digest || deliveryDigest(j,d)!==d.digest || Date.parse(d.approval.expiresAt)<=now) {
       d.status='blocked';d.blocker='Approval expired or exact content/configuration changed';continue;
     }
