@@ -286,6 +286,39 @@ export function acceptTemplateUpdate(db:Database.Database,actor:SkillActor,expec
   const master=activeMasterTemplate(db);
   return writeVersion(db,actor,expected,preview.proposed,'template_update',master.version,master.content);
 }
+// Explicitly requested merge of an unpublished draft during a protected action.
+// Compute changed fields against the active base, then apply only those deltas
+// to the target version. No original draft is lost on validation/transaction
+// failure. Existing campaign pins are never rewritten.
+export function mergeUnpublishedDraft(db:Database.Database,actor:SkillActor,expected:number,
+  expectedDraftRevision:number,action:'reset'|'restore'|'template_update',
+  version?:number,proposalDigest?:string){
+  return db.transaction(()=>{
+    const active=currentSkill(db,actor);
+    if(active.version!==expected)throw Error('Skill version changed');
+    const row=db.prepare('SELECT base_version,draft_revision,content_json FROM personal_marketing_skill_drafts WHERE business_id=? AND user_id=?')
+      .get(actor.businessId,actor.id) as {base_version:number;draft_revision:number;content_json:string}|undefined;
+    if(!row||row.base_version!==expected||row.draft_revision!==expectedDraftRevision)
+      throw Error('Draft version changed');
+    const draft=validatedSkill(JSON.parse(row.content_json));
+    const m=activeMasterTemplate(db);
+    let target:SkillContent,templateVersion:string,base:SkillContent,sourceVersion:number|null=null;
+    if(action==='reset'){target={...m.content};templateVersion=m.version;base=m.content;}
+    else if(action==='restore'){
+      if(!version)throw Error('Missing historical skill version');
+      const history=skillVersion(db,actor,version);
+      if(history.kind==='deleted')throw Error('Cannot restore tombstone');
+      target=history.content;templateVersion=history.templateVersion;base=history.template;sourceVersion=version;
+    }else{
+      const preview=templateUpdatePreview(db,actor);
+      if(!preview.available||preview.digest!==proposalDigest)throw Error('Template proposal changed');
+      target=preview.proposed;templateVersion=m.version;base=m.content;
+    }
+    const merged=mergeTemplateFields(target,active.content,draft);
+    return writeVersion(db,actor,expected,merged,action==='reset'?'reset':action==='restore'?'restore':'template_update',
+      templateVersion,base,sourceVersion);
+  }).immediate();
+}
 export function skillPreview(content:unknown){
   const data=personalSkillSchema.parse(content),conflicts=skillConflicts(data);
   // Fixed illustrative example; never a fictional customer or user brand.
