@@ -257,7 +257,7 @@ export interface TikTokCreatorInfo {
   maxVideoPostDurationSec: number;
 }
 
-export type DeliveryStatus = 'QUEUED' | 'AWAITING_CONNECTION' | 'NEEDS_ACTION' | 'FAILED' | 'PUBLISHED';
+export type DeliveryStatus = 'QUEUED' | 'AWAITING_CONNECTION' | 'NEEDS_ACTION' | 'FAILED' | 'PUBLISHED' | 'DISPATCHING' | 'OUTCOME_UNKNOWN';
 
 export interface PostDelivery {
   postId: string;
