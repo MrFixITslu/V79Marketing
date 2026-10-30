@@ -1176,6 +1176,32 @@ app.post("/api/campaigns", authenticate, requireMarketingPermission("content.wri
   }
 });
 
+// An explicit regeneration creates a NEW, unapproved draft with the current
+// creator skill. Existing running/published/approved records are immutable.
+app.post("/api/campaigns/:id/regenerate", authenticate, requireMarketingPermission("content.write"), (req:AuthenticatedRequest,res)=>{
+  try{
+    const data=z.object({expectedSkillDigest:z.string().regex(/^[a-f0-9]{64}$/)}).strict().parse(req.body);
+    const actor=req.user!, skill=snapshotOwnSkill(db,actor);
+    if(skill.digest!==data.expectedSkillDigest)return res.status(409).json({error:'Personal skill changed; review the current version'});
+    const result=db.transaction(()=>{
+      readCampaignSkillPin(db,actor,req.params.id); // creator-only, with integrity check
+      const old=db.prepare('SELECT * FROM campaigns WHERE id=? AND business_id=?')
+        .get(req.params.id,actor.businessId) as any;
+      if(!old)throw Error('Campaign not available');
+      const id='campaign-'+crypto.randomUUID(),now=new Date().toISOString();
+      db.prepare(`INSERT INTO campaigns
+        (id,business_id,name,objective,start_date,end_date,status,steps_json,ai_plan_generated,created_at)
+        VALUES (?,?,?,?,?,?,'PLANNED','[]',0,?)`)
+        .run(id,actor.businessId,old.name+' (new draft)',old.objective,old.start_date,old.end_date,now);
+      const pin=pinCampaignSkill(db,actor,id);
+      return {id,businessId:actor.businessId,name:old.name+' (new draft)',objective:old.objective,
+        startDate:old.start_date,endDate:old.end_date,status:'PLANNED',steps:[],
+        aiPlanGenerated:false,createdAt:now,skillPin:pin,regeneratedFrom:old.id};
+    }).immediate();
+    return res.status(201).json({campaign:result,requiresNewCreative:true,requiresFreshPublishingApproval:true});
+  }catch{return res.status(409).json({error:'Only the original campaign creator can regenerate a verified, pinned campaign'});}
+});
+
 app.get("/api/social-providers", authenticate, requireMarketingPermission("social.read"), (_req, res) => {
   res.json({ providers:providerStatus() });
 });
