@@ -326,6 +326,8 @@ export interface Campaign {
   steps: CampaignStep[];
   aiPlanGenerated: boolean;
   createdAt: string;
+  skillDigest?: string;
+  skillPin?: {creatorUserId:string;skillVersion:number;skillDigest:string};
 }
 
 export interface GeneratedImage {
