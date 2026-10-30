@@ -12,6 +12,7 @@ type GeneratedCampaign = {
   objective: string;
   steps: CampaignStep[];
   source?: string;
+  skillDigest?: string;
 };
 
 export const OneIdeaCampaignView: React.FC<OneIdeaCampaignViewProps> = ({ business, onCreateCampaign }) => {
@@ -47,7 +48,7 @@ export const OneIdeaCampaignView: React.FC<OneIdeaCampaignViewProps> = ({ busine
         suggestedTime:step.suggestedTime || '10:00 AM',
         completed:false,
       }));
-      setGeneratedCampaign({name:campaignName,objective,steps,source:body.source});
+      setGeneratedCampaign({name:campaignName,objective,steps,source:body.source,skillDigest:body.skillDigest});
     } catch (err:any) {
       setError(err?.message || 'Could not generate the campaign.');
     } finally {
@@ -71,6 +72,7 @@ export const OneIdeaCampaignView: React.FC<OneIdeaCampaignViewProps> = ({ busine
         status:'ACTIVE',
         steps:generatedCampaign.steps,
         aiPlanGenerated:true,
+        skillDigest:generatedCampaign.skillDigest,
         createdAt:now.toISOString(),
       });
       setApprovedSuccess(true);
