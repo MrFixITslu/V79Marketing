@@ -62,7 +62,7 @@ export function createMaterials(brand:ProductionBrand, plan:ProductionPlan, fact
       url.searchParams.set('utm_medium',channel==='newsletter'?'email':'organic_social');
       url.searchParams.set('utm_campaign',campaignId);
     }
-    const link=url.toString();
+    const link=brand.linkTracking==='utm' && url.hostname!=='v79sl.com' ? url.toString() : brand.website;
     const hook = creative.hook;
     const detail = channel === 'linkedin' ? `${creative.tip}\n\n${fact.statement}` : `${fact.statement}\n\n${creative.tip}`;
     const title = `${fact.service}: ${hook}`.slice(0,95);
