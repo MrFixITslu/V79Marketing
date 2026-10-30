@@ -31,6 +31,12 @@ describe('authenticated BYOK routes',()=>{
     if(masterBefore===undefined)delete process.env.V79_MEDIA_CREDENTIALS_MASTER_KEY;
     else process.env.V79_MEDIA_CREDENTIALS_MASTER_KEY=masterBefore;
   });
+  it('repeat initialisation preserves user foreign keys instead of recreating legacy user table',()=>{
+    initDb();initDb();
+    const fk=db.pragma('foreign_key_list(media_provider_keys)') as {table:string}[];
+    expect(fk.some(row=>row.table==='users')).toBe(true);
+    expect(fk.some(row=>row.table==='users_global_email_legacy')).toBe(false);
+  });
   it('refuses unauthenticated access and caller-supplied tenant or user identifiers',async()=>{
     expect((await request(app).get('/api/media-provider-keys')).status).toBe(401);
     const r=await request(app).put('/api/media-provider-keys').set('Authorization',bearer(memberA))
