@@ -1001,7 +1001,7 @@ app.post("/api/posts", authenticate, requireMarketingPermission("content.write")
         content: data.content,
         mediaUrls: data.mediaUrls || [],
         scheduledFor: data.scheduledFor,
-        status: "SCHEDULED",
+        status: data.campaignId ? "DRAFT":"SCHEDULED",
         campaignId: data.campaignId,
         createdAt: now,
       },
