@@ -16,7 +16,11 @@ const plan:ProductionPlan={automaticDrafts:false,cadenceDays:7,channels:['linked
 const actor={businessId:'biz-a',localUserId:'local-owner',hubUserId:'synthetic-hub-owner',organizationId:'synthetic-org-a'};
 const creative={hook:'Make business technology practical',tip:'Choose one recurring problem and review the next step with your team.'};
 function fixture(overrides:Partial<ProductionDependencies>={}){
-  const db=new Database(':memory:');db.exec('PRAGMA foreign_keys=ON; CREATE TABLE businesses (id TEXT PRIMARY KEY); INSERT INTO businesses VALUES (\'biz-a\');');
+  const db=new Database(':memory:');db.exec(`PRAGMA foreign_keys=ON;
+    CREATE TABLE businesses (id TEXT PRIMARY KEY);
+    CREATE TABLE users (id TEXT PRIMARY KEY,business_id TEXT NOT NULL);
+    INSERT INTO businesses VALUES ('biz-a');
+    INSERT INTO users VALUES ('local-owner','biz-a');`);
   let now=Date.parse('2026-10-14T19:00:00Z');const dispatch=vi.fn(async()=>({providerPostId:'synthetic-provider-post',publishedAt:new Date(now).toISOString()}));
   const deps:ProductionDependencies={now:()=>now,authorized:async()=>true,generate:async()=>({source:'brand-template',creative}),render:async()=>[],
     verifyAssets:async()=>{},destinationUnchanged:async()=>true,dispatch,
@@ -32,6 +36,32 @@ describe('Marketing production red-team controls',()=>{
     const f=fixture();try{const j=await produce(f);expect(j.status).toBe('awaiting_owner');expect(j.bundle?.materials).toHaveLength(3);
       expect(j.bundle?.materials.find(m=>m.channel==='newsletter')?.newsletterHtml).toContain('RESEND_UNSUBSCRIBE_URL');
       expect(j.bundle?.review.blockers).toEqual([]);expect(f.dispatch).not.toHaveBeenCalled();f.advance(7200000);await f.w.tick(actor);expect(f.dispatch).not.toHaveBeenCalled();
+    }finally{f.db.close();}
+  });
+  it('pins a creator skill, leaves queued and approved jobs immutable, and requires explicit regeneration',async()=>{
+    const f=fixture();try{
+      const first=await produce(f);
+      expect(first.skillPin?.userId).toBe('local-owner');
+      expect(first.skillPin?.version).toBe(0);
+      const pinned=first.skillPin!.digest;
+      // Personal changes may be saved later, but do not rewrite running jobs.
+      const {saveSkillDraft,publishOwnSkill}=await import('../src/lib/personalMarketingSkills.js');
+      const updated={...first.skillPin!.content,voiceLanguage:'Use concise professional UK English.'};
+      saveSkillDraft(f.db,{id:'local-owner',businessId:'biz-a'},0,updated);
+      publishOwnSkill(f.db,{id:'local-owner',businessId:'biz-a'},0);
+      expect(f.w.store.read(actor.businessId).jobs[0].skillPin!.digest).toBe(pinned);
+      const preview=f.w.status(actor).approvalBatch;
+      expect(preview.deliveries.length).toBeGreaterThan(0);
+      f.w.approveBatch(actor,preview.batchDigest!);
+      expect(f.w.store.read(actor.businessId).jobs[0].skillPin!.digest).toBe(pinned);
+      const next=f.w.regenerate(actor,first.id,'synthetic_skill_regenerate_0001');
+      expect(next.skillPin?.version).toBe(1);
+      expect(next.skillPin?.digest).not.toBe(pinned);
+      const old=f.w.store.read(actor.businessId).jobs.find(j=>j.id===first.id)!;
+      expect(old.status).toBe('cancelled');
+      expect(old.deliveries.every(d=>d.status==='cancelled')).toBe(true);
+      expect(next.deliveries).toHaveLength(0);
+      expect(()=>f.w.regenerate({...actor,localUserId:'another'},next.id,'another_skill_regen_key_0002')).toThrow();
     }finally{f.db.close();}
   });
   it('approves an entire exact batch once, atomically, without any standing permission',async()=>{
