@@ -59,6 +59,22 @@ describe('Marketing production red-team controls',()=>{
       expect(f.dispatch).toHaveBeenCalledTimes(2);
     }finally{f.db.close();}
   });
+  it('keeps TikTok individual-consent publications outside the bulk approval shortcut',async()=>{
+    const f=fixture({destinations:async()=>[
+      {channel:'linkedin',accountId:'page',providerAccountId:'p1',accountFingerprint:digest('p1'),
+        scheduledAt:'2026-10-14T20:00:00.000Z',payload:{caption:'Reviewed LinkedIn'}},
+      {channel:'tiktok',accountId:'creator',providerAccountId:'t1',accountFingerprint:digest('t1'),
+        scheduledAt:'2026-10-14T21:00:00.000Z',payload:{caption:'Creator approval needed',tiktok:{privacyLevel:'SELF_ONLY'}}},
+    ]});
+    try{
+      await produce(f);
+      const preview=f.w.status(actor).approvalBatch;
+      expect(preview.deliveries.map(d=>d.channel)).toEqual(['linkedin']);
+      f.w.approveBatch(actor,preview.batchDigest!);
+      const job=f.w.store.read(actor.businessId).jobs[0];
+      expect(job.deliveries.map(d=>d.status)).toEqual(['approved','awaiting_owner']);
+    }finally{f.db.close();}
+  });
   it('rejects the entire batch when a reviewed account or scheduled instant changes',async()=>{
     const f=fixture({destinations:async()=>[
       {channel:'linkedin',accountId:'one',providerAccountId:'p1',accountFingerprint:digest('p1'),
