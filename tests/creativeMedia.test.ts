@@ -74,6 +74,27 @@ describe('personal image adapter security and capability truthfulness',()=>{
       expect(listOwnMediaKeys(db,alice)[0].credentialGeneration).not.toBe(firstKey);
     }finally{db.close();}
   });
+  it('prevents a revoked or replaced personal key from reaching the model after reservation',async()=>{
+    const db=fixture();try{
+      saveOwnMediaKey(db,alice,'gemini','synthetic-original-user-key-111111');
+      let calls=0;
+      await expect(requestGeminiImage(db,alice,input,{
+        enabled:true,hubAuthorised:true,
+        revalidate:async()=>{
+          saveOwnMediaKey(db,alice,'gemini','synthetic-replaced-user-key-222222');
+          return true;
+        },
+        generate:async()=>{calls++;return {mimeType:'image/png',bytes};},
+      })).rejects.toThrow(/blocked before provider dispatch/);
+      expect(calls).toBe(0);
+      expect((db.prepare('SELECT status FROM personal_media_generation_attempts').get() as any).status).toBe('BLOCKED');
+      await expect(requestGeminiImage(db,alice,input,{
+        enabled:true,hubAuthorised:true,revalidate:async()=>false,
+        generate:async()=>{calls++;return {mimeType:'image/png',bytes};},
+      })).rejects.toThrow(/blocked before provider dispatch/);
+      expect(calls).toBe(0);
+    }finally{db.close();}
+  });
   it('records unknown outcomes without revealing provider error and blocks concurrent/manual overuse',async()=>{
     const db=fixture();try{
       saveOwnMediaKey(db,alice,'gemini','synthetic-own-gemini-key-12345');
