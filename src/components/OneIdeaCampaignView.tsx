@@ -110,7 +110,7 @@ export const OneIdeaCampaignView: React.FC<OneIdeaCampaignViewProps> = ({ busine
           <input type="checkbox" checked={useOwnCloudKey} onChange={e=>setUseOwnCloudKey(e.target.checked)} />
           <span>Allow my own saved Gemini key as a fallback if local AI is unavailable. Cloud provider charges may apply. Off by default.</span>
         </label>
-        {error && <p className="text-xs font-medium text-red-600">{error}</p>
+        {error && <p className="text-xs font-medium text-red-600">{error}</p>}
       </form>
 
       {generatedCampaign ? (
