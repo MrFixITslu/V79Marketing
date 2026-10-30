@@ -1,7 +1,7 @@
 import type { ViewType } from "../App";
 
 const allowed = new Set<ViewType>([
-  "landing","dashboard","customers","one-idea-campaign","ai_brain","ai-assistant","ai-image",
+  "landing","dashboard","customers","one-idea-campaign","ai_brain","my-marketing-skill","ai-assistant","ai-image",
   "reviews","competitors","brand_kit","profile-builder","public_storefront","calendar",
   "campaigns","agent-drafts","social-channels","analytics","billing","admin-portal","admin",
 ]);
