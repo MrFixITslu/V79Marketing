@@ -74,8 +74,7 @@ export function ensurePersonalSkillTables(db:Database.Database){
     skill_version INTEGER NOT NULL,template_version TEXT NOT NULL,
     snapshot_json TEXT NOT NULL,snapshot_digest TEXT NOT NULL,created_at TEXT NOT NULL,
     FOREIGN KEY(campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE,
-    FOREIGN KEY(business_id) REFERENCES businesses(id) ON DELETE CASCADE,
-    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE RESTRICT
+    FOREIGN KEY(business_id) REFERENCES businesses(id) ON DELETE CASCADE
   );`);
 }
 type VersionRow={version:number;template_version:string;template_json:string;content_json:string;digest:string;kind:string;created_at:string};
