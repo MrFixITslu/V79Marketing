@@ -3,12 +3,14 @@ import type Database from 'better-sqlite3';
 import {z} from 'zod';
 import {authenticate,requireMarketingPermission,type AuthenticatedRequest} from './auth.js';
 import {
-  getSkillWorkspace,personalSkillSchema,saveSkillDraft,publishOwnSkill,resetOwnSkill,
+  getSkillWorkspace,personalSkillSchema,saveSkillDraft,publishOwnSkill,discardOwnDraft,resetOwnSkill,
   deleteOwnSkill,restoreOwnSkill,skillVersion,skillPreview,templateUpdatePreview,acceptTemplateUpdate,
 } from './personalMarketingSkills.js';
 
 const number=z.number().int().min(0).max(1000000);
-const draftSchema=z.object({expectedVersion:number,content:personalSkillSchema}).strict();
+const draftSchema=z.object({expectedVersion:number,expectedDraftRevision:number,content:personalSkillSchema}).strict();
+const commitSchema=z.object({expectedVersion:number,expectedDraftRevision:number.min(1),expectedDigest:z.string().regex(/^[a-f0-9]{64}$/)}).strict();
+const discardSchema=z.object({expectedDraftRevision:number.min(1)}).strict();
 const saveSchema=z.object({expectedVersion:number}).strict();
 const restoreSchema=z.object({expectedVersion:number,version:number.min(1)}).strict();
 const acceptSchema=z.object({expectedVersion:number,proposalDigest:z.string().regex(/^[a-f0-9]{64}$/)}).strict();
@@ -16,7 +18,7 @@ const secure=(res:express.Response)=>res.setHeader('Cache-Control','no-store');
 // Errors never echo user-provided skill data, URLs, hidden model instructions or credential strings.
 function failure(res:express.Response,err:unknown){
   const reason=err instanceof Error?err.message:'';
-  const conflict=/version changed|proposal changed|draft first|unavailable/.test(reason);
+  const conflict=/version changed|proposal changed|draft first|unavailable|draft exists|draft changed|reviewed draft/i.test(reason);
   return res.status(conflict?409:400).json({error:conflict?'Skill changed. Reload and compare your edits.':
     'Skill request rejected. Review protected rules and your personal skill version.'});
 }
@@ -44,15 +46,20 @@ export function installPersonalSkillRoutes(app:express.Express,db:Database.Datab
   app.put('/api/my-marketing-skill/draft',...middleware,(req:AuthenticatedRequest,res)=>{
     secure(res);const input=draftSchema.safeParse(req.body);
     if(!input.success)return res.status(400).json({error:'Invalid skill draft'});
-    try{return res.json(saveSkillDraft(db,req.user!,input.data.expectedVersion,input.data.content));}
+    try{return res.json(saveSkillDraft(db,req.user!,input.data.expectedVersion,input.data.content,input.data.expectedDraftRevision));}
     catch(e){return failure(res,e);}
   });
   app.post('/api/my-marketing-skill/save',...middleware,(req:AuthenticatedRequest,res)=>{
-    secure(res);const input=saveSchema.safeParse(req.body);if(!input.success)return res.status(400).json({error:'Invalid save request'});
-    try{return res.json({skill:publishOwnSkill(db,req.user!,input.data.expectedVersion)});}
+    secure(res);const input=commitSchema.safeParse(req.body);if(!input.success)return res.status(400).json({error:'Invalid save request'});
+    try{return res.json({skill:publishOwnSkill(db,req.user!,input.data.expectedVersion,input.data.expectedDraftRevision,input.data.expectedDigest)});}
     catch(e){return failure(res,e);}
   });
-  app.post('/api/my-marketing-skill/reset',...middleware,(req:AuthenticatedRequest,res)=>{
+  app.post('/api/my-marketing-skill/discard-draft',...middleware,(req:AuthenticatedRequest,res)=>{
+    secure(res);const input=discardSchema.safeParse(req.body);if(!input.success)return res.status(400).json({error:'Invalid draft discard request'});
+    try{return res.json(discardOwnDraft(db,req.user!,input.data.expectedDraftRevision));}
+    catch(e){return failure(res,e);}
+  });
+    app.post('/api/my-marketing-skill/reset',...middleware,(req:AuthenticatedRequest,res)=>{
     secure(res);const input=saveSchema.safeParse(req.body);if(!input.success)return res.status(400).json({error:'Invalid reset request'});
     try{return res.json({skill:resetOwnSkill(db,req.user!,input.data.expectedVersion)});}
     catch(e){return failure(res,e);}
