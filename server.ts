@@ -31,6 +31,8 @@ import { deprovisionHubTeamIdentity, provisionHubIdentity } from "./src/lib/hubP
 import { queueMarketingEvent, startPlatformEventPump } from "./src/lib/platformEvents.js";
 import { decryptToken, encryptToken } from "./src/lib/tokenVault.js";
 import {installMediaCredentialRoutes} from "./src/lib/mediaProviderRoutes.js";
+import {installPersonalSkillRoutes} from "./src/lib/personalMarketingSkillRoutes.js";
+import {pinCampaignSkill,readCampaignSkillPin,snapshotOwnSkill} from "./src/lib/personalMarketingSkills.js";
 import {readOwnMediaKey} from "./src/lib/mediaProviderVault.js";
 import { buildAuthorizationUrl, exchangeOAuthCode, providerStatus, queryTikTokCreatorInfo, refreshProviderAccess, revokeProviderAuthorization, type ProviderAccountRecord, type ProviderPlatform } from "./src/lib/socialProviders.js";
 
@@ -113,6 +115,7 @@ const aiGenerationLimiter = rateLimit({
 
 app.use("/api/", globalApiLimiter);
 installMediaCredentialRoutes(app,db);
+installPersonalSkillRoutes(app,db);
 
 // AI Client Initialization
 function getGenAI(actor:AuthenticatedRequest['user'],explicitUserConsent:boolean) {
@@ -1133,6 +1136,9 @@ app.get("/api/campaigns", authenticate, requireMarketingPermission("content.read
       steps: JSON.parse(row.steps_json || "[]"),
       aiPlanGenerated: Boolean(row.ai_plan_generated),
       createdAt: row.created_at,
+      // Only the original creator receives their immutable skill metadata.
+      skillPin:(db.prepare('SELECT user_id,skill_version,snapshot_digest FROM campaign_skill_pins WHERE campaign_id=? AND business_id=? AND user_id=?')
+        .get(row.id,req.user!.businessId,req.user!.id) as any)||undefined,
     })),
   });
 });
@@ -1143,17 +1149,23 @@ app.post("/api/campaigns", authenticate, requireMarketingPermission("content.wri
     const businessId = req.user!.businessId;
     const id = `campaign-${crypto.randomUUID()}`;
     const now = new Date().toISOString();
-    db.prepare(`
-      INSERT INTO campaigns(id,business_id,name,objective,start_date,end_date,status,steps_json,ai_plan_generated,created_at)
-      VALUES(?,?,?,?,?,?,?,?,?,?)
-    `).run(id,businessId,data.name,data.objective,data.startDate,data.endDate,data.status,JSON.stringify(data.steps),data.aiPlanGenerated?1:0,now);
+    // Both the campaign and its creator-owned immutable skill snapshot must
+    // succeed in one SQLite transaction; no partial/unpinned campaigns.
+    const pinned = db.transaction(()=>{
+      db.prepare(`
+        INSERT INTO campaigns(id,business_id,name,objective,start_date,end_date,status,steps_json,ai_plan_generated,created_at)
+        VALUES(?,?,?,?,?,?,?,?,?,?)
+      `).run(id,businessId,data.name,data.objective,data.startDate,data.endDate,data.status,
+        JSON.stringify(data.steps),data.aiPlanGenerated?1:0,now);
+      return pinCampaignSkill(db,req.user!,id);
+    }).immediate();
     queueMarketingEvent({
       businessId,
       type:"marketing.campaign_created",
       subjectId:id,
       payload:{ status:data.status, stepCount:data.steps.length, aiPlanGenerated:data.aiPlanGenerated },
     });
-    res.status(201).json({ campaign:{ id,businessId,...data,createdAt:now } });
+    res.status(201).json({ campaign:{ id,businessId,...data,createdAt:now,skillPin:pinned } });
   } catch (error:any) {
     res.status(400).json({ error:error?.message || "Invalid campaign." });
   }
