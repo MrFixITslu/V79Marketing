@@ -30,7 +30,8 @@ const model='gemini-2.5-flash-image';
 export type ProviderImage={mimeType:'image/png'|'image/jpeg';bytes:Buffer};
 export async function requestGeminiImage(db:Database.Database,actor:MediaKeyActor,input:CloudImageInput,
   options:{enabled:boolean;hubAuthorised:boolean;generate?:(
-    apiKey:string,prompt:string,aspectRatio:'1:1'|'4:5'|'9:16')=>Promise<ProviderImage>}){
+    apiKey:string,prompt:string,aspectRatio:'1:1'|'4:5'|'9:16')=>Promise<ProviderImage>;
+    revalidate?:()=>Promise<boolean>}){
   const req=cloudImageInput.parse(input);
   if(!options.enabled||!options.hubAuthorised)throw Error('Cloud image generation disabled pending policy and live entitlement');
   ensureCloudImageAttempts(db);
@@ -58,7 +59,14 @@ export async function requestGeminiImage(db:Database.Database,actor:MediaKeyActo
       VALUES (?,?,?,?,?,?,?,'DISPATCHING',?)`).run(id,actor.businessId,actor.id,'gemini',
         credential.generationId,model,createHash('sha256').update(prompt).digest('hex'),created);
   }).immediate();
+  let dispatched=false;
   try{
+    // Block a queued request if its exact personal key has been revoked or
+    // rotated since reservation. Never borrow a replacement/approver key.
+    if(options.revalidate&&!await options.revalidate())throw Error('Live Hub entitlement revoked');
+    const current=readOwnMediaCredential(db,actor,'gemini');
+    if(!current||current.generationId!==credential.generationId)
+      throw Error('Personal credential generation changed');
     // The default adapter uses the official SDK. Tests substitute an inert
     // generator; no paid calls are ever made by CI.
     const generator=options.generate||(async(key:string,requestPrompt:string,aspect:'1:1'|'4:5'|'9:16')=>{
@@ -72,7 +80,8 @@ export async function requestGeminiImage(db:Database.Database,actor:MediaKeyActo
       if(mimeType!=='image/png'&&mimeType!=='image/jpeg')throw Error('Unsupported image');
       return {mimeType,bytes:Buffer.from(part.inlineData.data,'base64')} as ProviderImage;
     });
-    const image=await generator(credential.value,prompt,req.aspectRatio);
+    dispatched=true;
+    const image=await generator(current.value,prompt,req.aspectRatio);
     const bytes=image.bytes;
     const png=image.mimeType==='image/png'&&bytes.subarray(0,8).toString('hex')==='89504e470d0a1a0a';
     const jpeg=image.mimeType==='image/jpeg'&&bytes.subarray(0,3).toString('hex')==='ffd8ff';
@@ -87,8 +96,9 @@ export async function requestGeminiImage(db:Database.Database,actor:MediaKeyActo
   }catch{
     // Unknown provider outcome could still incur charges. No auto-retry, no
     // blind duplicate, no raw provider error/URL/headers/keys in logs or API.
-    db.prepare("UPDATE personal_media_generation_attempts SET status='UNKNOWN',finished_at=? WHERE id=?")
-      .run(new Date().toISOString(),id);
-    throw Error('Image outcome uncertain; check your provider account before another request');
+    db.prepare("UPDATE personal_media_generation_attempts SET status=?,finished_at=? WHERE id=?")
+      .run(dispatched?'UNKNOWN':'BLOCKED',new Date().toISOString(),id);
+    throw Error(dispatched?'Image outcome uncertain; check your provider account before another request':
+      'Image request blocked before provider dispatch due to changed permission or personal credential');
   }
 }
