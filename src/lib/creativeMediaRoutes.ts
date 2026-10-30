@@ -67,7 +67,11 @@ export function installCreativeMediaRoutes(app:express.Express,db:Database.Datab
         !await verifyMarketingBackgroundEntitlement({
           organizationId:identity.org,scopedUserId:identity.hub}))
         return res.status(403).json({error:'Current personal Hub entitlement required'});
-      const result=await requestGeminiImage(db,req.user!,parsed.data,{enabled:true,hubAuthorised:true});
+      const result=await requestGeminiImage(db,req.user!,parsed.data,{
+        enabled:true,hubAuthorised:true,
+        revalidate:()=>verifyMarketingBackgroundEntitlement!({
+          organizationId:identity.org!,scopedUserId:identity.hub!}),
+      });
       return res.json(result);
     }catch{
       // Never relay the provider SDK error. It may contain raw headers, signed
