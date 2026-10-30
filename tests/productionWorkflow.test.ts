@@ -155,6 +155,10 @@ describe('Marketing production red-team controls',()=>{
     const root=await fs.mkdtemp(path.join(os.tmpdir(),'v79-production-render-')),jobId=randomUUID();
     try{const assets=await renderProductionAssets(jobId,brand,createMaterials(brand,plan,'ict',creative),{root,width:360,height:640});
       expect(assets.map(a=>a.name)).toContain('short.mp4');expect(assets.map(a=>a.name)).toContain('subtitles.srt');
+      const feed=await fs.readFile(assetPath(jobId,'poster-feed.png',root));
+      expect(feed.subarray(0,8).toString('hex')).toBe('89504e470d0a1a0a');
+      expect(feed.readUInt32BE(16)).toBe(360);
+      expect(feed.readUInt32BE(20)).toBe(450); // 4:5; 1080x1350 in production.
       for(const asset of assets)await verifyAsset(jobId,asset,root);
       const png=assets.find(a=>a.name==='poster-square.png')!;await fs.writeFile(assetPath(jobId,png.name,root),'replaced');await expect(verifyAsset(jobId,png,root)).rejects.toThrow();
       expect(()=>assetPath('../escape','copy.json',root)).toThrow();expect(()=>assetPath(jobId,'../secret',root)).toThrow();
