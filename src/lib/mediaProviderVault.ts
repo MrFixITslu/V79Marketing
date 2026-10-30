@@ -53,22 +53,26 @@ export function ensureMediaKeyTable(db:Database.Database) {
     provider TEXT NOT NULL CHECK(provider IN ('gemini','openai','fal','replicate','runway','mcp')),
     ciphertext TEXT NOT NULL,
     revision INTEGER NOT NULL DEFAULT 1,
+    credential_generation TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     PRIMARY KEY(business_id,user_id,provider),
     FOREIGN KEY(business_id) REFERENCES businesses(id) ON DELETE CASCADE,
     FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
   );`);
+  const cols=db.pragma('table_info(media_provider_keys)') as {name:string}[];
+  if(!cols.some(v=>v.name==='credential_generation'))
+    db.exec("ALTER TABLE media_provider_keys ADD COLUMN credential_generation TEXT NOT NULL DEFAULT ''");
 }
 function checkedProvider(provider:string):MediaKeyProvider {
   if(!isProvider(provider))throw Error('Unsupported media provider');
   return provider;
 }
 export function listOwnMediaKeys(db:Database.Database,actor:MediaKeyActor) {
-  const rows=db.prepare(`SELECT provider,revision,created_at,updated_at FROM media_provider_keys
+  const rows=db.prepare(`SELECT provider,revision,credential_generation,created_at,updated_at FROM media_provider_keys
     WHERE business_id=? AND user_id=? ORDER BY provider`).all(actor.businessId,actor.id) as
-    {provider:string;revision:number;created_at:string;updated_at:string}[];
-  return rows.map(row=>({provider:row.provider,configured:true,revision:row.revision,
+    {provider:string;revision:number;credential_generation:string;created_at:string;updated_at:string}[];
+  return rows.map(row=>({provider:row.provider,configured:true,revision:row.revision,credentialGeneration:row.credential_generation||null,
     createdAt:row.created_at,updatedAt:row.updated_at}));
 }
 export function saveOwnMediaKey(db:Database.Database,actor:MediaKeyActor,providerName:string,apiKey:string) {
@@ -76,18 +80,18 @@ export function saveOwnMediaKey(db:Database.Database,actor:MediaKeyActor,provide
   if(typeof apiKey!=='string'||apiKey.length<12||apiKey.length>4096||apiKey.trim()!==apiKey||
     /[\u0000-\u001f\u007f]/.test(apiKey))throw Error('Invalid API key format');
   // Encrypt before any DB write. If vault key is absent no plaintext persists.
-  const encrypted=encrypt(apiKey,actor,provider),now=new Date().toISOString();
+  const encrypted=encrypt(apiKey,actor,provider),now=new Date().toISOString(),generation=crypto.randomUUID();
   return db.transaction(()=>{
     // A DB user ID alone is not sufficient. Verify its business ownership too.
     const identity=db.prepare('SELECT 1 FROM users WHERE id=? AND business_id=?')
       .get(actor.id,actor.businessId);
     if(!identity)throw Error('Media credential owner unavailable');
     db.prepare(`INSERT INTO media_provider_keys
-      (business_id,user_id,provider,ciphertext,revision,created_at,updated_at)
-      VALUES (?,?,?,?,1,?,?)
+      (business_id,user_id,provider,ciphertext,revision,credential_generation,created_at,updated_at)
+      VALUES (?,?,?,?,1,?,?,?)
       ON CONFLICT(business_id,user_id,provider) DO UPDATE SET
-        ciphertext=excluded.ciphertext,revision=revision+1,updated_at=excluded.updated_at`)
-      .run(actor.businessId,actor.id,provider,encrypted,now,now);
+        ciphertext=excluded.ciphertext,revision=revision+1,credential_generation=excluded.credential_generation,updated_at=excluded.updated_at`)
+      .run(actor.businessId,actor.id,provider,encrypted,generation,now,now);
     return {provider,configured:true}; // Never echo the key or ciphertext.
   })();
 }
@@ -101,6 +105,17 @@ export function readOwnMediaKey(db:Database.Database,actor:MediaKeyActor,provide
       (SELECT 1 FROM users WHERE id=? AND business_id=?)`)
     .get(actor.businessId,actor.id,provider,actor.id,actor.businessId) as {ciphertext:string}|undefined;
   return row?decrypt(row.ciphertext,actor,provider):null;
+}
+export function readOwnMediaCredential(db:Database.Database,actor:MediaKeyActor,providerName:string){
+  const provider=checkedProvider(providerName);
+  const row=db.prepare(`SELECT ciphertext,credential_generation FROM media_provider_keys
+    WHERE business_id=? AND user_id=? AND provider=? AND EXISTS
+      (SELECT 1 FROM users WHERE id=? AND business_id=?)`)
+    .get(actor.businessId,actor.id,provider,actor.id,actor.businessId) as
+    {ciphertext:string;credential_generation:string}|undefined;
+  if(!row)return null;
+  if(!/^[0-9a-f-]{36}$/.test(row.credential_generation))throw Error('Reconnect this personal credential for generation');
+  return {value:decrypt(row.ciphertext,actor,provider),generationId:row.credential_generation};
 }
 export function deleteOwnMediaKey(db:Database.Database,actor:MediaKeyActor,providerName:string) {
   const provider=checkedProvider(providerName);
