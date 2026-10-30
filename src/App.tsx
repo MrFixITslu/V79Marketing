@@ -90,6 +90,7 @@ export type ViewType =
   | 'admin';
 
 export default function App() {
+  const [skillHasUnsavedEdits,setSkillHasUnsavedEdits]=useState(false);
   const [currentView, setCurrentView] = useState<ViewType>(() =>
     typeof window === 'undefined' ? 'dashboard' : readMarketingView(window.location.search)
   );
@@ -499,7 +500,11 @@ export default function App() {
         currentBusiness={currentBusiness}
         creditBalance={creditBalance}
         activeTab={currentView}
-        setActiveTab={(tab) => setCurrentView(tab as ViewType)}
+        setActiveTab={(tab) => {
+          if(currentView==='my-marketing-skill'&&skillHasUnsavedEdits&&
+            !window.confirm('You have unsaved personal skill edits. Leave without saving?'))return;
+          setCurrentView(tab as ViewType);
+        }}
         currency={currency}
         setCurrency={setCurrency}
         onOpenAuth={() => window.location.assign('/api/platform/hub')}
@@ -583,7 +588,7 @@ export default function App() {
           />
         )}
 
-        {currentView === 'my-marketing-skill' && <MyMarketingSkillView />}
+        {currentView === 'my-marketing-skill' && <MyMarketingSkillView onUnsavedChange={setSkillHasUnsavedEdits} />}
         {currentView === 'studio' && <CampaignStudioView business={currentBusiness} onCreateCampaign={handleCreateCampaign} />}
 
         {currentView === 'ai_brain' && (
