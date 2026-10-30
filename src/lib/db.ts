@@ -330,7 +330,10 @@ function ensureColumn(table: string, column: string, definition: string) {
 function migrateHubManagedUserEmailScope() {
   const indexes = db.prepare("PRAGMA index_list(users)").all() as any[];
   const hasGlobalEmailUnique = indexes.some(index => {
-    if (!index?.unique || !index?.name) return false;
+    // idx_users_legacy_email is intentionally PARTIAL (WHERE hub_user_id IS NULL).
+    // It is not the old global UNIQUE(email) constraint. Migrating it on a
+    // second initDb() would rename users and corrupt existing foreign keys.
+    if (!index?.unique || !index?.name || Number(index.partial || 0)!==0) return false;
     const safeName = String(index.name).replace(/"/g, '""');
     const columns = db.prepare(`PRAGMA index_info("${safeName}")`).all() as any[];
     return columns.length === 1 && columns[0]?.name === "email";
