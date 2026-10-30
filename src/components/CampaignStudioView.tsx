@@ -66,7 +66,7 @@ export function CampaignStudioView({business,onCreateCampaign}:{
       const url=generationMode==='local'?'/api/ai/generate-image':'/api/creative/personal-image';
       if(generationMode==='gemini'&&!cloudConsent)throw Error('Explicit personal cloud consent required');
       const payload=generationMode==='local'?
-        {prompt:brief.slice(0,200)+' — '+text.slice(0,180),dimension:format==='9:16'?'1080x1920':'1080x1080',
+        {prompt:brief.slice(0,200)+' — '+text.slice(0,180),dimension:format==='9:16'?'1080x1920':format==='4:5'?'1080x1350':'1080x1080',
           businessName:business.name,primaryColor:business.brandProfile?.primaryColor||'#0e8f88'}:
         {prompt:brief.slice(0,250)+' — '+text.slice(0,450),aspectRatio:format,
           useMyKey:true,acknowledgeCost:true,acknowledgeExternalProcessing:true};
@@ -162,6 +162,10 @@ export function CampaignStudioView({business,onCreateCampaign}:{
                 <p className="font-semibold">No image generated yet</p><p className="mt-2 text-sm">Choose a format and generate a private preview.</p>
               </div>}
           </div>
+          {asset&&<a href={asset.imageUrl} download={'v79-campaign-draft.'+(asset.imageUrl.startsWith('data:image/svg')?'svg':asset.imageUrl.startsWith('data:image/jpeg')?'jpg':'png')}
+            className="mt-3 inline-flex min-h-11 items-center rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-[#0b1f33]">
+            Save this preview image to your device
+          </a>}
           {asset&&<p className="mt-2 text-xs text-slate-600">Source: {asset.source==='brand-template'?'Basic local layout — not an AI photo':asset.source==='cloud-ai-image'?'External AI image — requires human review':asset.source}. Images remain drafts until reviewed.</p>}
           <div className="mt-5 flex flex-wrap items-center gap-3">
             <label className="text-sm font-semibold" htmlFor="studio-format">Format</label>
@@ -212,6 +216,7 @@ export function CampaignStudioView({business,onCreateCampaign}:{
         {step>=2&&<section className="rounded-2xl border border-slate-200 bg-white p-5">
           <h2 className="flex items-center gap-2 font-bold"><ShieldCheck size={18}/> Review your draft</h2>
           <p className="mt-2 text-sm leading-6 text-slate-600">Check every claim, screenshot, contact route and platform restriction. This review does not authorise publication.</p>
+          <p className="mt-2 rounded-xl bg-amber-50 p-3 text-xs text-amber-900">This is a private visual preview. Image-to-campaign media pinning and the final publishing approval workflow are still under development. Do not treat this as a publishable package.</p>
           <label className="mt-4 flex items-start gap-2 text-sm">
             <input type="checkbox" checked={assetApproved} disabled={!asset||running}
               onChange={e=>setAssetApproved(e.target.checked)} className="mt-1"/>
@@ -221,7 +226,7 @@ export function CampaignStudioView({business,onCreateCampaign}:{
             onClick={()=>void saveDraft()} className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#0e8f88] px-4 py-3 text-sm font-bold text-white disabled:opacity-40">
             {running?<RefreshCw size={17} className="animate-spin"/>:<Check size={17}/>} Save private campaign draft
           </button>
-          {saved&&<p role="status" className="mt-3 text-sm text-teal-800">Saved campaign {saved.name}. Publishing still requires exact platform approval and a verified destination.</p>}
+          {saved&&<p role="status" className="mt-3 text-sm text-teal-800">Saved campaign plan {saved.name}. The preview image is NOT yet attached to the server-side campaign package; save it locally. Publishing still requires exact platform approval and a verified destination.</p>}
         </section>}
         <section className="rounded-2xl border border-slate-200 bg-[#faf8f4] p-5">
           <h2 className="text-sm font-bold">Connections and production truth</h2>
