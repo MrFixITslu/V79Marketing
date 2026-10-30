@@ -16,7 +16,7 @@ const requestSchema=z.discriminatedUnion('action',[
   z.object({action:z.literal('approve_batch'),batchDigest:z.string().regex(/^[a-f0-9]{64}$/)}).strict(),
   z.object({action:z.literal('pause'),paused:z.boolean()}).strict(),
   z.object({action:z.literal('cancel'),jobId:id}).strict(),
-  z.object({action:z.literal('asset'),jobId:id,name:z.enum(['poster-square.png','poster-wide.png','short.mp4','subtitles.srt','newsletter.html','copy.json'])}).strict(),
+  z.object({action:z.literal('asset'),jobId:id,name:z.enum(['poster-square.png','poster-feed.png','poster-wide.png','short.mp4','subtitles.srt','newsletter.html','copy.json'])}).strict(),
 ]);
 export function installProductionRoutes(app:express.Express,db:Database.Database,options:{deps?:ProductionDependencies;env?:NodeJS.ProcessEnv}={}) {
   const env=options.env||process.env;
@@ -90,7 +90,7 @@ export function installProductionRoutes(app:express.Express,db:Database.Database
       const identity=actor(env.V79_MARKETING_PRODUCTION_OWNER_ORG_ID||'');if(!identity)throw Error('Scope unavailable');
       const w=ready(),state=w.store.read(identity.businessId),job=state.jobs.find(j=>j.id===req.params.jobId);
       // Drafts and newsletter HTML never have public serving URLs.
-      if(!job||job.bundleDigest!==req.params.digest||!['poster-square.png','poster-wide.png','short.mp4'].includes(req.params.name))throw Error('Private draft');
+      if(!job||job.bundleDigest!==req.params.digest||!['poster-square.png','poster-feed.png','poster-wide.png','short.mp4'].includes(req.params.name))throw Error('Private draft');
       const hasPublicApproval=job.deliveries.some(d=>['running','succeeded','uncertain'].includes(d.status)&&Date.now()<Date.parse(d.result?.at||d.scheduledAt)+3600000&&
         d.approval?.digest===d.digest&&Array.isArray(d.payload.mediaUrls)&&
         d.payload.mediaUrls.some((u:unknown)=>typeof u==='string'&&u.endsWith('/'+req.params.name)));
