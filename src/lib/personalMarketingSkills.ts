@@ -25,27 +25,35 @@ export type SkillSnapshot={businessId:string;userId:string;version:number;templa
 const hash=(v:unknown)=>createHash('sha256').update(JSON.stringify(v)).digest('hex');
 export const MASTER_SKILL_DIGEST=hash({version:MASTER_SKILL_VERSION,content:MASTER_SKILL});
 
-// Conflict scans are defense in depth; the actual worker must enforce
-// permissions, verified claims, key scope, provider policy and approval in code.
-const forbidden=[
-  /\b(?:api[ _-]?key|access[ _-]?token|refresh[ _-]?token|password|client[ _-]?secret|bearer[ _-]?token|private[ _-]?key)\b/i,
+// Secrets must be rejected even from a PRIVATE draft. Never include matched
+// substrings in errors, audit events, responses or telemetry.
+const secrets=[
+  /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/i,
+  /(?:sk-(?:proj-)?|gh[opusr]_|xox[baprs]-|AIza)[A-Za-z0-9_-]{18,}/,
+  /\b(?:bearer|api[_ -]?key|client[_ -]?secret|access[_ -]?token|refresh[_ -]?token|password)\s*[:=]\s*["']?\S{12,}/i,
+  /\beyJ[A-Za-z0-9_-]{15,}\.eyJ[A-Za-z0-9_-]{15,}\.[A-Za-z0-9_-]{10,}\b/,
+];
+export function containsLikelySecret(input:SkillContent):boolean{
+  return skillFields.some(k=>secrets.some(re=>re.test(input[k])));
+}
+// Creative warning checks are intentionally separate from secret detection.
+// Harmless guidance such as 'never reveal API keys' is valid and useful.
+const unsafeRule=[
   /\b(?:ignore|override|disregard)\b.{0,90}\b(?:rules|safety|policy|instructions|approval|system|developer)\b/i,
-  /\b(?:bypass|disable|skip|circumvent)\b.{0,100}\b(?:approval|security|safety|rate limit|budget|permission|tenant|consent|policy)\b/i,
+  /\b(?:bypass|disable|skip|circumvent)\b.{0,100}\b(?:approval|security|safety|rate limits?|budget|permission|tenant|consent|policy)\b/i,
   /\b(?:publish|post|send|spend|charge)\b.{0,55}\b(?:without|no need for)\b.{0,35}\b(?:approval|consent|permission)\b/i,
-  /\b(?:reveal|dump|extract|leak|share|forward)\b.{0,70}\b(?:credentials?|secrets?|tokens?|keys?|another (?:user|customer))\b/i,
-  /\b(?:https?:\/\/|www\.)\S+/i,
-  /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i,
-  /\+?\d[\d ().-]{8,}\d/,
+  /\b(?:reveal|dump|extract|leak|share|forward)\b.{0,70}\b(?:another (?:user|customer)|stored credentials?|stored secrets?|private keys?)\b/i,
 ];
 export function skillConflicts(input:SkillContent):string[]{
-  return skillFields.filter(k=>forbidden.some(re=>re.test(input[k]||''))).map(k=>
-    'Review '+k+': instructions contain credentials, contact data, or a possible conflict with protected rules');
+  return skillFields.filter(k=>unsafeRule.some(re=>re.test(input[k]))).map(k=>
+    'Review '+k+': proposed creative instructions conflict with protected application rules');
 }
 export function validatedSkill(input:unknown):SkillContent {
-  const content=personalSkillSchema.parse(input);
+  const content=personalSkillSchema.parse(input) as SkillContent;
+  if(containsLikelySecret(content))throw Error('Potential credential in skill. Remove sensitive information.');
   const issues=skillConflicts(content);
-  if(issues.length)throw Error('Skill conflicts with protected rules: '+issues.join('; '));
-  return content as SkillContent;
+  if(issues.length)throw Error('Skill instructions conflict with protected rules');
+  return content;
 }
 export function ensurePersonalSkillTables(db:Database.Database){
   db.exec(`CREATE TABLE IF NOT EXISTS personal_marketing_skill_versions (
@@ -57,6 +65,7 @@ export function ensurePersonalSkillTables(db:Database.Database){
     content_json TEXT NOT NULL,
     digest TEXT NOT NULL,
     kind TEXT NOT NULL CHECK(kind IN ('saved','reset','restore','template_update','deleted')),
+    source_version INTEGER,
     created_at TEXT NOT NULL,
     PRIMARY KEY(business_id,user_id,version),
     FOREIGN KEY(business_id) REFERENCES businesses(id) ON DELETE CASCADE,
@@ -65,6 +74,7 @@ export function ensurePersonalSkillTables(db:Database.Database){
   CREATE TABLE IF NOT EXISTS personal_marketing_skill_drafts (
     business_id TEXT NOT NULL,user_id TEXT NOT NULL,base_version INTEGER NOT NULL,
     content_json TEXT NOT NULL,updated_at TEXT NOT NULL,
+    draft_revision INTEGER NOT NULL DEFAULT 1,
     PRIMARY KEY(business_id,user_id),
     FOREIGN KEY(business_id) REFERENCES businesses(id) ON DELETE CASCADE,
     FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -75,9 +85,45 @@ export function ensurePersonalSkillTables(db:Database.Database){
     snapshot_json TEXT NOT NULL,snapshot_digest TEXT NOT NULL,created_at TEXT NOT NULL,
     FOREIGN KEY(campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE,
     FOREIGN KEY(business_id) REFERENCES businesses(id) ON DELETE CASCADE
+  );
+  CREATE TABLE IF NOT EXISTS personal_marketing_skill_templates (
+    version TEXT PRIMARY KEY,content_json TEXT NOT NULL,digest TEXT NOT NULL,
+    active INTEGER NOT NULL DEFAULT 0 CHECK(active IN (0,1))
   );`);
+  // Non-destructive migrations for previously created development databases.
+  const cols=(table:string)=>db.pragma('table_info('+table+')') as {name:string}[];
+  if(!cols('personal_marketing_skill_versions').some(v=>v.name==='source_version'))
+    db.exec('ALTER TABLE personal_marketing_skill_versions ADD COLUMN source_version INTEGER');
+  if(!cols('personal_marketing_skill_drafts').some(v=>v.name==='draft_revision'))
+    db.exec('ALTER TABLE personal_marketing_skill_drafts ADD COLUMN draft_revision INTEGER NOT NULL DEFAULT 1');
+  db.prepare(`INSERT OR IGNORE INTO personal_marketing_skill_templates
+    (version,content_json,digest,active) VALUES (?,?,?,1)`)
+    .run(MASTER_SKILL_VERSION,JSON.stringify(MASTER_SKILL),MASTER_SKILL_DIGEST);
 }
-type VersionRow={version:number;template_version:string;template_json:string;content_json:string;digest:string;kind:string;created_at:string};
+type Master={version:string;content:SkillContent;digest:string};
+export function activeMasterTemplate(db:Database.Database):Master{
+  const row=db.prepare('SELECT version,content_json,digest FROM personal_marketing_skill_templates WHERE active=1 ORDER BY version DESC LIMIT 1')
+    .get() as {version:string;content_json:string;digest:string}|undefined;
+  return row?{version:row.version,content:personalSkillSchema.parse(JSON.parse(row.content_json)) as SkillContent,digest:row.digest}
+    :{version:MASTER_SKILL_VERSION,content:{...MASTER_SKILL},digest:MASTER_SKILL_DIGEST};
+}
+// ONLY server-side migration scripts call this; no HTTP route exposes it.
+// Existing versions are immutable. A new release must use a new ID.
+export function activateMasterTemplate(db:Database.Database,version:string,content:SkillContent){
+  const parsed=validatedSkill(content),digest=hash({version,content:parsed});
+  if(!/^[0-9A-Za-z.-]{4,50}$/.test(version))throw Error('Invalid template release ID');
+  return db.transaction(()=>{
+    const prior=db.prepare('SELECT digest FROM personal_marketing_skill_templates WHERE version=?')
+      .get(version) as {digest:string}|undefined;
+    if(prior&&prior.digest!==digest)throw Error('Template version already exists with different content');
+    db.prepare('INSERT OR IGNORE INTO personal_marketing_skill_templates(version,content_json,digest,active) VALUES (?,?,?,0)')
+      .run(version,JSON.stringify(parsed),digest);
+    db.prepare('UPDATE personal_marketing_skill_templates SET active=0 WHERE active=1').run();
+    db.prepare('UPDATE personal_marketing_skill_templates SET active=1 WHERE version=?').run(version);
+    return {version,digest};
+  }).immediate();
+}
+type VersionRow={version:number;template_version:string;template_json:string;content_json:string;digest:string;kind:string;created_at:string;source_version:number|null};
 function latest(db:Database.Database,actor:SkillActor):VersionRow|undefined {
   return db.prepare(`SELECT * FROM personal_marketing_skill_versions
     WHERE business_id=? AND user_id=? ORDER BY version DESC LIMIT 1`)
@@ -90,85 +136,131 @@ function own(db:Database.Database,actor:SkillActor){
 export function currentSkill(db:Database.Database,actor:SkillActor):SkillSnapshot {
   own(db,actor);
   const row=latest(db,actor);
-  const content=row&&row.kind!=='deleted'?personalSkillSchema.parse(JSON.parse(row.content_json)) as SkillContent:
-    {...MASTER_SKILL};
-  const version=row?.version||0,templateVersion=row?.template_version||MASTER_SKILL_VERSION;
+  const active=activeMasterTemplate(db);
+  // Deleted personal preferences remain pinned to the tombstone's exact
+  // template snapshot until the owner accepts an update; never silently adopt.
+  const content=row?personalSkillSchema.parse(JSON.parse(row.content_json)) as SkillContent:
+    {...active.content};
+  const version=row?.version||0,templateVersion=row?.template_version||active.version;
   return {businessId:actor.businessId,userId:actor.id,version,templateVersion,content,
     digest:hash({businessId:actor.businessId,userId:actor.id,version,templateVersion,content})};
 }
 export function getSkillWorkspace(db:Database.Database,actor:SkillActor){
   const current=currentSkill(db,actor),head=latest(db,actor);
-  const draft=db.prepare(`SELECT base_version,content_json,updated_at FROM personal_marketing_skill_drafts
+  const draft=db.prepare(`SELECT base_version,content_json,updated_at,draft_revision FROM personal_marketing_skill_drafts
     WHERE business_id=? AND user_id=?`).get(actor.businessId,actor.id) as
-    {base_version:number;content_json:string;updated_at:string}|undefined;
+    {base_version:number;content_json:string;updated_at:string;draft_revision:number}|undefined;
   const history=db.prepare(`SELECT version,template_version,digest,kind,created_at FROM personal_marketing_skill_versions
     WHERE business_id=? AND user_id=? ORDER BY version DESC LIMIT 80`)
     .all(actor.businessId,actor.id) as Record<string,unknown>[];
-  return {current,master:{version:MASTER_SKILL_VERSION,digest:MASTER_SKILL_DIGEST,content:MASTER_SKILL},
-    draft:draft?{baseVersion:draft.base_version,content:JSON.parse(draft.content_json),updatedAt:draft.updated_at}:null,
-    history,templateUpdateAvailable:!!head&&head.kind!=='deleted'&&head.template_version!==MASTER_SKILL_VERSION};
+  const master=activeMasterTemplate(db);
+  return {current,master,
+    draft:draft?{baseVersion:draft.base_version,revision:draft.draft_revision,
+      digest:hash(JSON.parse(draft.content_json)),content:JSON.parse(draft.content_json),updatedAt:draft.updated_at}:null,
+    history,templateUpdateAvailable:current.templateVersion!==master.version};
 }
-export function saveSkillDraft(db:Database.Database,actor:SkillActor,baseVersion:number,content:unknown){
-  const input=personalSkillSchema.parse(content);
-  const current=currentSkill(db,actor);
-  if(current.version!==baseVersion)throw Error('Skill version changed; reload before editing');
-  const now=new Date().toISOString();
-  db.prepare(`INSERT INTO personal_marketing_skill_drafts
-    (business_id,user_id,base_version,content_json,updated_at) VALUES (?,?,?,?,?)
-    ON CONFLICT(business_id,user_id) DO UPDATE SET
-      base_version=excluded.base_version,content_json=excluded.content_json,updated_at=excluded.updated_at`)
-    .run(actor.businessId,actor.id,baseVersion,JSON.stringify(input),now);
-  return {baseVersion,content:input,conflicts:skillConflicts(input),updatedAt:now};
+export function saveSkillDraft(db:Database.Database,actor:SkillActor,baseVersion:number,content:unknown,expectedDraftRevision=0){
+  const input=personalSkillSchema.parse(content) as SkillContent;
+  if(containsLikelySecret(input))throw Error('Potential credential in draft; remove sensitive information');
+  return db.transaction(()=>{
+    const current=currentSkill(db,actor);
+    if(current.version!==baseVersion)throw Error('Skill version changed; reload before editing');
+    const previous=db.prepare(`SELECT base_version,draft_revision FROM personal_marketing_skill_drafts
+      WHERE business_id=? AND user_id=?`).get(actor.businessId,actor.id) as
+      {base_version:number;draft_revision:number}|undefined;
+    const revision=previous?.draft_revision||0;
+    if(revision!==expectedDraftRevision||previous&&previous.base_version!==baseVersion)
+      throw Error('Draft version changed; keep your unsaved edits and compare before retrying');
+    const now=new Date().toISOString();
+    db.prepare(`INSERT INTO personal_marketing_skill_drafts
+      (business_id,user_id,base_version,content_json,updated_at,draft_revision) VALUES (?,?,?,?,?,?)
+      ON CONFLICT(business_id,user_id) DO UPDATE SET
+        base_version=excluded.base_version,content_json=excluded.content_json,
+        updated_at=excluded.updated_at,draft_revision=excluded.draft_revision`)
+      .run(actor.businessId,actor.id,baseVersion,JSON.stringify(input),now,revision+1);
+    return {baseVersion,revision:revision+1,digest:hash(input),
+      conflicts:skillConflicts(input),updatedAt:now};
+  }).immediate();
+}
+export function requireNoUnpublishedDraft(db:Database.Database,actor:SkillActor,expectedDraftRevision=0){
+  own(db,actor);
+  const d=db.prepare('SELECT draft_revision FROM personal_marketing_skill_drafts WHERE business_id=? AND user_id=?')
+    .get(actor.businessId,actor.id) as {draft_revision:number}|undefined;
+  if(d&&d.draft_revision!==expectedDraftRevision)
+    throw Error('An unpublished draft exists. Preserve it or explicitly discard before changing the active skill');
+  if(d&&expectedDraftRevision===0)throw Error('An unpublished draft exists. Preserve or discard it');
+}
+export function discardOwnDraft(db:Database.Database,actor:SkillActor,expectedDraftRevision:number){
+  return db.transaction(()=>{
+    own(db,actor);
+    const row=db.prepare('SELECT draft_revision FROM personal_marketing_skill_drafts WHERE business_id=? AND user_id=?')
+      .get(actor.businessId,actor.id) as {draft_revision:number}|undefined;
+    if(!row||row.draft_revision!==expectedDraftRevision)throw Error('Draft version changed');
+    db.prepare('DELETE FROM personal_marketing_skill_drafts WHERE business_id=? AND user_id=?')
+      .run(actor.businessId,actor.id);
+    return {discarded:true};
+  }).immediate();
 }
 function writeVersion(db:Database.Database,actor:SkillActor,expected:number,content:SkillContent,
- kind:'saved'|'reset'|'restore'|'template_update'|'deleted',templateVersion:string,baseTemplate:SkillContent) {
+ kind:'saved'|'reset'|'restore'|'template_update'|'deleted',templateVersion:string,baseTemplate:SkillContent,sourceVersion:number|null=null) {
   return db.transaction(()=>{
     const current=currentSkill(db,actor);
     if(current.version!==expected)throw Error('Skill version changed; reload before saving');
+    if(kind!=='saved')requireNoUnpublishedDraft(db,actor);
     if(kind!=='deleted')validatedSkill(content);
     const version=expected+1,createdAt=new Date().toISOString();
     const item={businessId:actor.businessId,userId:actor.id,version,templateVersion,content};
     const digest=hash(item);
     db.prepare(`INSERT INTO personal_marketing_skill_versions
-      (business_id,user_id,version,template_version,template_json,content_json,digest,kind,created_at)
-      VALUES (?,?,?,?,?,?,?,?,?)`)
+      (business_id,user_id,version,template_version,template_json,content_json,digest,kind,source_version,created_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?)`)
       .run(actor.businessId,actor.id,version,templateVersion,JSON.stringify(baseTemplate),
-        JSON.stringify(content),digest,kind,createdAt);
+        JSON.stringify(content),digest,kind,sourceVersion,createdAt);
     db.prepare('DELETE FROM personal_marketing_skill_drafts WHERE business_id=? AND user_id=?')
       .run(actor.businessId,actor.id);
     return {...item,digest};
   }).immediate();
 }
-export function publishOwnSkill(db:Database.Database,actor:SkillActor,expected:number){
-  const draft=db.prepare(`SELECT * FROM personal_marketing_skill_drafts
-    WHERE business_id=? AND user_id=?`).get(actor.businessId,actor.id) as
-    {base_version:number;content_json:string}|undefined;
-  if(!draft||draft.base_version!==expected)throw Error('Save a current draft first');
-  const head=latest(db,actor),template=head&&head.kind!=='deleted'?head.template_version:MASTER_SKILL_VERSION;
-  const base=head&&head.kind!=='deleted'?personalSkillSchema.parse(JSON.parse(head.template_json)) as SkillContent:{...MASTER_SKILL};
-  return writeVersion(db,actor,expected,validatedSkill(JSON.parse(draft.content_json)),'saved',template,base);
+export function publishOwnSkill(db:Database.Database,actor:SkillActor,expected:number,
+ expectedDraftRevision?:number,expectedDigest?:string){
+  if(!Number.isInteger(expectedDraftRevision)||!expectedDigest)throw Error('Exact reviewed draft revision required');
+  return db.transaction(()=>{
+    const draft=db.prepare(`SELECT * FROM personal_marketing_skill_drafts
+      WHERE business_id=? AND user_id=?`).get(actor.businessId,actor.id) as
+      {base_version:number;draft_revision:number;content_json:string}|undefined;
+    if(!draft||draft.base_version!==expected||draft.draft_revision!==expectedDraftRevision)
+      throw Error('Draft version changed; reload and compare');
+    const parsed=validatedSkill(JSON.parse(draft.content_json));
+    if(hash(parsed)!==expectedDigest)throw Error('Reviewed draft changed; reload and compare');
+    const head=latest(db,actor),master=activeMasterTemplate(db);
+    const template=head?.template_version||master.version;
+    const base=head?personalSkillSchema.parse(JSON.parse(head.template_json)) as SkillContent:master.content;
+    return writeVersion(db,actor,expected,parsed,'saved',template,base);
+  }).immediate();
 }
 export function resetOwnSkill(db:Database.Database,actor:SkillActor,expected:number){
-  return writeVersion(db,actor,expected,{...MASTER_SKILL},'reset',MASTER_SKILL_VERSION,{...MASTER_SKILL});
+  const m=activeMasterTemplate(db);
+  return writeVersion(db,actor,expected,{...m.content},'reset',m.version,m.content);
 }
 export function deleteOwnSkill(db:Database.Database,actor:SkillActor,expected:number){
-  // Tombstone preserves historical revision references and pinned jobs.
-  return writeVersion(db,actor,expected,{...MASTER_SKILL},'deleted',MASTER_SKILL_VERSION,{...MASTER_SKILL});
+  const m=activeMasterTemplate(db);
+  return writeVersion(db,actor,expected,{...m.content},'deleted',m.version,m.content);
 }
 export function skillVersion(db:Database.Database,actor:SkillActor,version:number){
   own(db,actor);
   const row=db.prepare(`SELECT * FROM personal_marketing_skill_versions
     WHERE business_id=? AND user_id=? AND version=?`).get(actor.businessId,actor.id,version) as VersionRow|undefined;
   if(!row)throw Error('Skill version not found');
-  return {version:row.version,templateVersion:row.template_version,kind:row.kind,
-    content:personalSkillSchema.parse(JSON.parse(row.content_json)),createdAt:row.created_at,digest:row.digest};
+  return {version:row.version,templateVersion:row.template_version,kind:row.kind,sourceVersion:row.source_version,
+    template:personalSkillSchema.parse(JSON.parse(row.template_json)) as SkillContent,
+    content:personalSkillSchema.parse(JSON.parse(row.content_json)) as SkillContent,
+    createdAt:row.created_at,digest:row.digest};
 }
 export function restoreOwnSkill(db:Database.Database,actor:SkillActor,expected:number,version:number){
-  const row=skillVersion(db,actor,version);
-  if(row.kind==='deleted')throw Error('Cannot restore a tombstone');
-  const base=latest(db,actor);
-  return writeVersion(db,actor,expected,row.content,'restore',row.templateVersion,
-    base&&base.kind!=='deleted'?personalSkillSchema.parse(JSON.parse(base.template_json)) as SkillContent:{...MASTER_SKILL});
+  const historical=skillVersion(db,actor,version);
+  if(historical.kind==='deleted')throw Error('Cannot restore a tombstone');
+  return writeVersion(db,actor,expected,historical.content,'restore',historical.templateVersion,
+    historical.template,version);
 }
 export function mergeTemplateFields(current:SkillContent,oldMaster:SkillContent,newMaster:SkillContent):SkillContent{
   // Three-way field merge: only fields still equal to the old template are
@@ -177,21 +269,22 @@ export function mergeTemplateFields(current:SkillContent,oldMaster:SkillContent,
     [k,current[k]===oldMaster[k]?newMaster[k]:current[k]])) as SkillContent;
 }
 export function templateUpdatePreview(db:Database.Database,actor:SkillActor){
-  const current=currentSkill(db,actor),head=latest(db,actor);
-  const oldBase=head&&head.kind!=='deleted'?personalSkillSchema.parse(JSON.parse(head.template_json)) as SkillContent:
-    {...MASTER_SKILL};
-  const proposed=mergeTemplateFields(current.content,oldBase,MASTER_SKILL);
+  const current=currentSkill(db,actor),head=latest(db,actor),master=activeMasterTemplate(db);
+  const oldBase=head?personalSkillSchema.parse(JSON.parse(head.template_json)) as SkillContent:
+    {...master.content};
+  const proposed=mergeTemplateFields(current.content,oldBase,master.content);
   const changed=skillFields.filter(k=>current.content[k]!==proposed[k]);
   const digest=hash({userId:actor.id,businessId:actor.businessId,expected:current.version,
-    from:current.templateVersion,to:MASTER_SKILL_VERSION,proposed});
-  return {from:current.templateVersion,to:MASTER_SKILL_VERSION,expectedVersion:current.version,
-    current:current.content,proposed,changed,digest,available:current.templateVersion!==MASTER_SKILL_VERSION};
+    from:current.templateVersion,to:master.version,proposed});
+  return {from:current.templateVersion,to:master.version,expectedVersion:current.version,
+    current:current.content,proposed,changed,digest,available:current.templateVersion!==master.version};
 }
 export function acceptTemplateUpdate(db:Database.Database,actor:SkillActor,expected:number,proposalDigest:string){
   const preview=templateUpdatePreview(db,actor);
   if(!preview.available||preview.expectedVersion!==expected||preview.digest!==proposalDigest)
     throw Error('Template update proposal changed or unavailable');
-  return writeVersion(db,actor,expected,preview.proposed,'template_update',MASTER_SKILL_VERSION,{...MASTER_SKILL});
+  const master=activeMasterTemplate(db);
+  return writeVersion(db,actor,expected,preview.proposed,'template_update',master.version,master.content);
 }
 export function skillPreview(content:unknown){
   const data=personalSkillSchema.parse(content),conflicts=skillConflicts(data);
