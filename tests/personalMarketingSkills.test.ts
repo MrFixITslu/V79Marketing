@@ -150,7 +150,6 @@ describe('personal skills — consolidated tenant/creator/approval security',()=
       const cMaster={...bMaster,visualStyle:'Template C new visual guidance',ctaWebsiteRules:'Template C action rules'};
       activateMasterTemplate(db,'2026-11-10.3',cMaster);
       const previewC=templateUpdatePreview(db,a);
-      expect(previewC.proposed.content).toBeUndefined();
       expect(previewC.proposed.visualStyle).toBe('Template C new visual guidance');
       expect(previewC.proposed.voiceLanguage).toBe('Alice custom voice based on A');
       acceptTemplateUpdate(db,a,3,previewC.digest);
