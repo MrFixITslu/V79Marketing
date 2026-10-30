@@ -31,6 +31,7 @@ import { deprovisionHubTeamIdentity, provisionHubIdentity } from "./src/lib/hubP
 import { queueMarketingEvent, startPlatformEventPump } from "./src/lib/platformEvents.js";
 import { decryptToken, encryptToken } from "./src/lib/tokenVault.js";
 import {installMediaCredentialRoutes} from "./src/lib/mediaProviderRoutes.js";
+import {installCreativeMediaRoutes} from "./src/lib/creativeMediaRoutes.js";
 import {installPersonalSkillRoutes} from "./src/lib/personalMarketingSkillRoutes.js";
 import {pinCampaignSkill,readCampaignSkillPin,snapshotOwnSkill} from "./src/lib/personalMarketingSkills.js";
 import {readOwnMediaKey} from "./src/lib/mediaProviderVault.js";
@@ -115,6 +116,7 @@ const aiGenerationLimiter = rateLimit({
 
 app.use("/api/", globalApiLimiter);
 installMediaCredentialRoutes(app,db);
+installCreativeMediaRoutes(app,db);
 installPersonalSkillRoutes(app,db);
 
 // AI Client Initialization
