@@ -34,7 +34,7 @@ describe('personal image adapter security and capability truthfulness',()=>{
       expect(normal.find(x=>x.provider==='gemini'&&x.type==='image')).toMatchObject({
         credentialSaved:true,connectionVerified:false,generationImplemented:true,generationEnabled:false});
       expect(normal.find(x=>x.provider==='runway')?.generationImplemented).toBe(false);
-      expect(normal.find(x=>x.provider==='local-ffmpeg-composition')?.description).toContain('generated footage not claimed'.replace('generated','generated').slice(0,1))===false?true:true; // local composition is explicitly described
+      expect(normal.find(x=>x.provider==='local-ffmpeg-composition')?.description).toContain('Captioned MP4');
       expect(creativeCapabilities(db,bob,{} as NodeJS.ProcessEnv).providers.find(x=>x.provider==='gemini'&&x.type==='image')?.credentialSaved).toBe(false);
     }finally{db.close();}
   });
