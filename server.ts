@@ -292,14 +292,14 @@ const competitorSchema = z.object({
 
 const generatedAssetSchema = z.object({
   prompt: z.string().min(1).max(800),
-  dimension: z.enum(["1080x1080", "1080x1920", "1200x630", "1200x627"]),
+  dimension: z.enum(["1080x1080", "1080x1350", "1080x1920", "1200x630", "1200x627"]),
   platformTarget: z.string().min(1).max(120),
   imageUrl: z.string().min(1).max(1500000).refine(value => value.startsWith("data:image/svg+xml;base64,"), "Only V79-generated SVG assets can be stored."),
 });
 
 const visualTemplateSchema = z.object({
   prompt: z.string().min(1).max(800),
-  dimension: z.enum(["1080x1080", "1080x1920", "1200x630", "1200x627"]).default("1080x1080"),
+  dimension: z.enum(["1080x1080", "1080x1350", "1080x1920", "1200x630", "1200x627"]).default("1080x1080"),
 });
 
 const businessBrainSchema = z.object({
@@ -1707,6 +1707,7 @@ app.post("/api/ai/generate-image", authenticate, requireMarketingPermission("ai.
 
     let width = 1080;
     let height = 1080;
+    if (data.dimension === "1080x1350") { width = 1080; height = 1350; }
     if (data.dimension === "1080x1920") { width = 1080; height = 1920; }
     else if (data.dimension === "1200x630" || data.dimension === "1200x627") {
       width = 1200;
