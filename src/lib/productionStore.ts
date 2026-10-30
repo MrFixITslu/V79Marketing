@@ -61,6 +61,36 @@ export function deliveryDigest(job:ProductionJob,d:Destination) {
     accountId:d.accountId,providerAccountId:d.providerAccountId,accountFingerprint:d.accountFingerprint,
     scheduledAt:d.scheduledAt,payload:d.payload,audienceFingerprint:d.audienceFingerprint||null,audienceCount:d.audienceCount||null});
 }
+// The whole review batch is a deterministic snapshot of every currently
+// approvable delivery. Each digest already commits to exact media, text, account,
+// destination, scheduled instant and configuration. No implicit future consent.
+export function previewApprovalBatch(s:ProductionState,now=Date.now()) {
+  const deliveries=s.paused?[]:s.jobs.flatMap(j=>
+    j.status==='awaiting_owner' && j.configRevision===s.configRevision && j.bundle &&
+    !j.bundle.review.blockers.length && digest(j.bundle)===j.bundleDigest
+    ? j.deliveries.filter(d=>d.status==='awaiting_owner' && d.digest===deliveryDigest(j,d) &&
+        Number.isFinite(Date.parse(d.scheduledAt)) && Date.parse(d.scheduledAt)>now &&
+        Date.parse(d.scheduledAt)-now<=14*86400000)
+      .map(d=>({jobId:j.id,deliveryId:d.id,digest:d.digest,channel:d.channel,
+        accountId:d.accountId,providerAccountId:d.providerAccountId,scheduledAt:d.scheduledAt,
+        payload:d.payload,assets:j.bundle!.assets.map(a=>({name:a.name,sha256:a.sha256,mime:a.mime})),
+        material:j.bundle!.materials.find(m=>m.channel===d.channel)||null}))
+    : []).sort((a,b)=>a.scheduledAt.localeCompare(b.scheduledAt)||a.deliveryId.localeCompare(b.deliveryId));
+  return {deliveries,batchDigest:deliveries.length?digest({configRevision:s.configRevision,
+    approvals:deliveries.map(d=>({jobId:d.jobId,deliveryId:d.deliveryId,digest:d.digest}))}):null};
+}
+
+export function approveDeliveryBatch(s:ProductionState,batchDigest:string,actor:string,now=Date.now()) {
+  const preview=previewApprovalBatch(s,now);
+  if(!preview.batchDigest || preview.batchDigest!==batchDigest)throw Error('Exact approval batch changed');
+  // Caller performs this within a single signed-ledger SQLite transaction.
+  // Any invalid entry causes a rollback, never a partially-approved week.
+  for(const delivery of preview.deliveries)
+    decideDelivery(s,delivery.jobId,delivery.deliveryId,'approve',delivery.digest,actor,now);
+  productionEvent(s,'owner_approved_exact_batch',actor,null,null,now);
+  return {approved:preview.deliveries.length,batchDigest};
+}
+
 export function decideDelivery(s:ProductionState,jobId:string,id:string,choice:'approve'|'reject',hash:string,actor:string,now=Date.now()) {
   const j=s.jobs.find(j=>j.id===jobId), d=j?.deliveries.find(d=>d.id===id);
   if (!j || !d || j.configRevision!==s.configRevision || s.paused || j.status!=='awaiting_owner' ||
