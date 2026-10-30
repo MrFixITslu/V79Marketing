@@ -171,12 +171,17 @@ export function restoreOwnSkill(db:Database.Database,actor:SkillActor,expected:n
   return writeVersion(db,actor,expected,row.content,'restore',row.templateVersion,
     base&&base.kind!=='deleted'?personalSkillSchema.parse(JSON.parse(base.template_json)) as SkillContent:{...MASTER_SKILL});
 }
+export function mergeTemplateFields(current:SkillContent,oldMaster:SkillContent,newMaster:SkillContent):SkillContent{
+  // Three-way field merge: only fields still equal to the old template are
+  // refreshed; explicit personal changes must survive master updates.
+  return Object.fromEntries(skillFields.map(k=>
+    [k,current[k]===oldMaster[k]?newMaster[k]:current[k]])) as SkillContent;
+}
 export function templateUpdatePreview(db:Database.Database,actor:SkillActor){
   const current=currentSkill(db,actor),head=latest(db,actor);
   const oldBase=head&&head.kind!=='deleted'?personalSkillSchema.parse(JSON.parse(head.template_json)) as SkillContent:
     {...MASTER_SKILL};
-  const proposed=Object.fromEntries(skillFields.map(k=>
-    [k,current.content[k]===oldBase[k]?MASTER_SKILL[k]:current.content[k]])) as SkillContent;
+  const proposed=mergeTemplateFields(current.content,oldBase,MASTER_SKILL);
   const changed=skillFields.filter(k=>current.content[k]!==proposed[k]);
   const digest=hash({userId:actor.id,businessId:actor.businessId,expected:current.version,
     from:current.templateVersion,to:MASTER_SKILL_VERSION,proposed});
