@@ -47,8 +47,8 @@ describe('Marketing production red-team controls',()=>{
       // Personal changes may be saved later, but do not rewrite running jobs.
       const {saveSkillDraft,publishOwnSkill}=await import('../src/lib/personalMarketingSkills.js');
       const updated={...first.skillPin!.content,voiceLanguage:'Use concise professional UK English.'};
-      saveSkillDraft(f.db,{id:'local-owner',businessId:'biz-a'},0,updated);
-      publishOwnSkill(f.db,{id:'local-owner',businessId:'biz-a'},0);
+      const saved=saveSkillDraft(f.db,{id:'local-owner',businessId:'biz-a'},0,updated);
+      publishOwnSkill(f.db,{id:'local-owner',businessId:'biz-a'},0,saved.revision,saved.digest);
       expect(f.w.store.read(actor.businessId).jobs[0].skillPin!.digest).toBe(pinned);
       const preview=f.w.status(actor).approvalBatch;
       expect(preview.deliveries.length).toBeGreaterThan(0);
