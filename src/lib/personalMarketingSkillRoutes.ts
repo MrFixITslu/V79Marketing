@@ -2,6 +2,7 @@ import type express from 'express';
 import type Database from 'better-sqlite3';
 import {z} from 'zod';
 import {authenticate,requireMarketingPermission,type AuthenticatedRequest} from './auth.js';
+import {productionStore} from './productionStore.js';
 import {
   getSkillWorkspace,personalSkillSchema,saveSkillDraft,publishOwnSkill,discardOwnDraft,resetOwnSkill,
   deleteOwnSkill,restoreOwnSkill,skillVersion,skillPreview,templateUpdatePreview,acceptTemplateUpdate,mergeUnpublishedDraft,
@@ -41,7 +42,19 @@ export function installPersonalSkillRoutes(app:express.Express,db:Database.Datab
   app.post('/api/my-marketing-skill/preview',...middleware,(req:AuthenticatedRequest,res)=>{
     secure(res);const parsed=personalSkillSchema.safeParse(req.body?.content);
     if(!parsed.success)return res.status(400).json({error:'Invalid skill preferences'});
-    return res.json(skillPreview(parsed.data));
+    let approved:null|{businessName:string;services:{service:string;statement:string}[]}=null;
+    const auditKey=process.env.V79_MARKETING_PRODUCTION_AUDIT_KEY||'';
+    if(auditKey.length>=32){
+      try{
+        const signed=productionStore(db,auditKey).read(req.user!.businessId);
+        if(signed.brand?.facts?.length && signed.ownerLocalUserId){
+          approved={businessName:signed.brand.name,
+            services:signed.brand.facts.map(f=>({service:f.service,statement:f.statement}))};
+        }
+      }catch{ /* Missing/tampered approval ledger: never infer unverified facts */ }
+    }
+    try{return res.json(skillPreview(parsed.data,approved));}
+    catch{return res.status(400).json({error:'Preview rejected. Remove credentials or invalid instructions.'});}
   });
   app.put('/api/my-marketing-skill/draft',...middleware,(req:AuthenticatedRequest,res)=>{
     secure(res);const input=draftSchema.safeParse(req.body);
