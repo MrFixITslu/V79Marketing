@@ -37,6 +37,8 @@ function statusClasses(status:PostDelivery['status']) {
     case 'AWAITING_CONNECTION': return 'border-amber-500/30 bg-amber-500/10 text-amber-300';
     case 'NEEDS_ACTION': return 'border-orange-500/30 bg-orange-500/10 text-orange-300';
     case 'FAILED': return 'border-red-500/30 bg-red-500/10 text-red-300';
+    case 'OUTCOME_UNKNOWN': return 'border-red-500/40 bg-red-500/10 text-red-200';
+    case 'DISPATCHING': return 'border-sky-500/30 bg-sky-500/10 text-sky-200';
     default: return 'border-sky-500/30 bg-sky-500/10 text-sky-300';
   }
 }
@@ -44,7 +46,7 @@ function statusClasses(status:PostDelivery['status']) {
 function statusIcon(status:PostDelivery['status']) {
   if (status === 'PUBLISHED') return <CheckCircle2 className="h-3.5 w-3.5" />;
   if (status === 'AWAITING_CONNECTION') return <Link2Off className="h-3.5 w-3.5" />;
-  if (status === 'FAILED' || status === 'NEEDS_ACTION') return <AlertTriangle className="h-3.5 w-3.5" />;
+  if (status === 'FAILED' || status === 'NEEDS_ACTION' || status === 'OUTCOME_UNKNOWN') return <AlertTriangle className="h-3.5 w-3.5" />;
   return <Clock3 className="h-3.5 w-3.5" />;
 }
 
@@ -163,6 +165,7 @@ export const ContentCalendar: React.FC<ContentCalendarProps> = ({
                     </div>
                     {delivery.production&&<p className="mt-2 text-xs text-cyan-300">Owner-approved production · Recorded in Marketing</p>}
                     {delivery.platform==='youtube'&&delivery.status==='PUBLISHED'&&delivery.providerUrl&&/^https:\/\/www\.youtube\.com\/watch\?v=[A-Za-z0-9_-]{11}$/.test(delivery.providerUrl)&&<a href={delivery.providerUrl} target="_blank" rel="noopener noreferrer" className="mt-2 block break-all text-sm text-cyan-300 underline">{delivery.providerUrl}</a>}
+                    {delivery.status==='OUTCOME_UNKNOWN' && <p className="mt-2 text-xs font-semibold text-red-200">Check the provider directly before creating another post. Automatic and manual retry are disabled.</p>}
                     {delivery.lastError && (
                       <p className="mt-2 max-w-4xl text-sm leading-5 text-amber-200">{delivery.lastError}</p>
                     )}
