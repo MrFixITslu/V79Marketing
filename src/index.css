@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Public+Sans:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Sora:wght@400;500;600;700&family=Outfit:wght@400;500;600;700&family=Public+Sans:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
 
 @theme {
@@ -117,8 +117,28 @@
 }
 
 
+/* Dedicated light Studio/Settings surfaces. Legacy dark selectors must not
+   override these controls with !important or invert accessible contrast. */
+.v79-marketing-app.v79-light-workspace {
+  --v79-canvas:#faf8f4;
+  --v79-ink:#0b1f33;
+  --v79-muted:#475569;
+  --v79-accent:#0e8f88;
+  background:#faf8f4;
+  color:#0b1f33;
+  color-scheme:light;
+  font-family:"Inter",ui-sans-serif,system-ui,sans-serif;
+}
+.v79-marketing-app.v79-light-workspace h1,
+.v79-marketing-app.v79-light-workspace h2,
+.v79-marketing-app.v79-light-workspace h3 {
+  font-family:"Sora",ui-sans-serif,system-ui,sans-serif;
+}
+.v79-marketing-app.v79-light-workspace :where(button,a,input,select,textarea,[tabindex]):focus-visible {
+  outline:3px solid #0e8f88;outline-offset:3px;
+}
 /* V79 Digital Marketing premium workspace theme */
-.v79-marketing-app {
+.v79-marketing-app:not(.v79-light-workspace) {
   --v79-bg:#07111f;
   --v79-panel:#091728;
   --v79-panel-2:#0b1a2c;
@@ -130,82 +150,82 @@
   color:#e8eef7;
   color-scheme:dark;
 }
-.v79-marketing-app .bg-white { background-color:var(--v79-panel)!important; }
-.v79-marketing-app .bg-slate-50,
-.v79-marketing-app .bg-slate-100 { background-color:var(--v79-panel-2)!important; }
-.v79-marketing-app .border-slate-100,
-.v79-marketing-app .border-slate-200,
-.v79-marketing-app .border-slate-300 { border-color:var(--v79-border-dark)!important; }
-.v79-marketing-app .text-slate-950,
-.v79-marketing-app .text-slate-900,
-.v79-marketing-app .text-slate-800 { color:#f8fafc!important; }
-.v79-marketing-app .text-slate-700 { color:#d5deea!important; }
-.v79-marketing-app .text-slate-600 { color:#94a3b8!important; }
-.v79-marketing-app .text-slate-500 { color:#718096!important; }
-.v79-marketing-app .text-slate-400 { color:#64748b!important; }
-.v79-marketing-app .bg-blue-50 { background-color:rgba(10,134,255,.10)!important; }
-.v79-marketing-app .bg-blue-100 { background-color:rgba(10,134,255,.14)!important; }
-.v79-marketing-app .border-blue-100,
-.v79-marketing-app .border-blue-200,
-.v79-marketing-app .border-blue-300 { border-color:rgba(10,134,255,.28)!important; }
-.v79-marketing-app .text-blue-700,
-.v79-marketing-app .text-blue-600 { color:#66caff!important; }
-.v79-marketing-app .bg-purple-50 { background-color:rgba(124,58,237,.10)!important; }
-.v79-marketing-app .bg-purple-100 { background-color:rgba(124,58,237,.14)!important; }
-.v79-marketing-app .border-purple-200,
-.v79-marketing-app .border-purple-300 { border-color:rgba(124,58,237,.28)!important; }
-.v79-marketing-app .text-purple-700,
-.v79-marketing-app .text-purple-600 { color:#b39aff!important; }
-.v79-marketing-app .bg-orange-50 { background-color:rgba(255,122,0,.10)!important; }
-.v79-marketing-app .bg-orange-100 { background-color:rgba(255,122,0,.14)!important; }
-.v79-marketing-app .border-orange-200,
-.v79-marketing-app .border-orange-300 { border-color:rgba(255,122,0,.28)!important; }
-.v79-marketing-app .text-orange-700,
-.v79-marketing-app .text-orange-600,
-.v79-marketing-app .text-orange-500 { color:#ff9a3d!important; }
-.v79-marketing-app .bg-emerald-50 { background-color:rgba(16,185,129,.10)!important; }
-.v79-marketing-app .bg-emerald-100 { background-color:rgba(16,185,129,.14)!important; }
-.v79-marketing-app .border-emerald-200,
-.v79-marketing-app .border-emerald-300 { border-color:rgba(16,185,129,.28)!important; }
-.v79-marketing-app .text-emerald-900,
-.v79-marketing-app .text-emerald-800,
-.v79-marketing-app .text-emerald-700,
-.v79-marketing-app .text-emerald-600 { color:#52e6c2!important; }
-.v79-marketing-app .bg-amber-50 { background-color:rgba(245,158,11,.10)!important; }
-.v79-marketing-app .bg-amber-100 { background-color:rgba(245,158,11,.14)!important; }
-.v79-marketing-app .border-amber-200,
-.v79-marketing-app .border-amber-300 { border-color:rgba(245,158,11,.28)!important; }
-.v79-marketing-app .text-amber-900,
-.v79-marketing-app .text-amber-800,
-.v79-marketing-app .text-amber-700,
-.v79-marketing-app .text-amber-600 { color:#fbbf24!important; }
-.v79-marketing-app .glass-panel {
+.v79-marketing-app:not(.v79-light-workspace) .bg-white { background-color:var(--v79-panel)!important; }
+.v79-marketing-app:not(.v79-light-workspace) .bg-slate-50,
+.v79-marketing-app:not(.v79-light-workspace) .bg-slate-100 { background-color:var(--v79-panel-2)!important; }
+.v79-marketing-app:not(.v79-light-workspace) .border-slate-100,
+.v79-marketing-app:not(.v79-light-workspace) .border-slate-200,
+.v79-marketing-app:not(.v79-light-workspace) .border-slate-300 { border-color:var(--v79-border-dark)!important; }
+.v79-marketing-app:not(.v79-light-workspace) .text-slate-950,
+.v79-marketing-app:not(.v79-light-workspace) .text-slate-900,
+.v79-marketing-app:not(.v79-light-workspace) .text-slate-800 { color:#f8fafc!important; }
+.v79-marketing-app:not(.v79-light-workspace) .text-slate-700 { color:#d5deea!important; }
+.v79-marketing-app:not(.v79-light-workspace) .text-slate-600 { color:#94a3b8!important; }
+.v79-marketing-app:not(.v79-light-workspace) .text-slate-500 { color:#718096!important; }
+.v79-marketing-app:not(.v79-light-workspace) .text-slate-400 { color:#64748b!important; }
+.v79-marketing-app:not(.v79-light-workspace) .bg-blue-50 { background-color:rgba(10,134,255,.10)!important; }
+.v79-marketing-app:not(.v79-light-workspace) .bg-blue-100 { background-color:rgba(10,134,255,.14)!important; }
+.v79-marketing-app:not(.v79-light-workspace) .border-blue-100,
+.v79-marketing-app:not(.v79-light-workspace) .border-blue-200,
+.v79-marketing-app:not(.v79-light-workspace) .border-blue-300 { border-color:rgba(10,134,255,.28)!important; }
+.v79-marketing-app:not(.v79-light-workspace) .text-blue-700,
+.v79-marketing-app:not(.v79-light-workspace) .text-blue-600 { color:#66caff!important; }
+.v79-marketing-app:not(.v79-light-workspace) .bg-purple-50 { background-color:rgba(124,58,237,.10)!important; }
+.v79-marketing-app:not(.v79-light-workspace) .bg-purple-100 { background-color:rgba(124,58,237,.14)!important; }
+.v79-marketing-app:not(.v79-light-workspace) .border-purple-200,
+.v79-marketing-app:not(.v79-light-workspace) .border-purple-300 { border-color:rgba(124,58,237,.28)!important; }
+.v79-marketing-app:not(.v79-light-workspace) .text-purple-700,
+.v79-marketing-app:not(.v79-light-workspace) .text-purple-600 { color:#b39aff!important; }
+.v79-marketing-app:not(.v79-light-workspace) .bg-orange-50 { background-color:rgba(255,122,0,.10)!important; }
+.v79-marketing-app:not(.v79-light-workspace) .bg-orange-100 { background-color:rgba(255,122,0,.14)!important; }
+.v79-marketing-app:not(.v79-light-workspace) .border-orange-200,
+.v79-marketing-app:not(.v79-light-workspace) .border-orange-300 { border-color:rgba(255,122,0,.28)!important; }
+.v79-marketing-app:not(.v79-light-workspace) .text-orange-700,
+.v79-marketing-app:not(.v79-light-workspace) .text-orange-600,
+.v79-marketing-app:not(.v79-light-workspace) .text-orange-500 { color:#ff9a3d!important; }
+.v79-marketing-app:not(.v79-light-workspace) .bg-emerald-50 { background-color:rgba(16,185,129,.10)!important; }
+.v79-marketing-app:not(.v79-light-workspace) .bg-emerald-100 { background-color:rgba(16,185,129,.14)!important; }
+.v79-marketing-app:not(.v79-light-workspace) .border-emerald-200,
+.v79-marketing-app:not(.v79-light-workspace) .border-emerald-300 { border-color:rgba(16,185,129,.28)!important; }
+.v79-marketing-app:not(.v79-light-workspace) .text-emerald-900,
+.v79-marketing-app:not(.v79-light-workspace) .text-emerald-800,
+.v79-marketing-app:not(.v79-light-workspace) .text-emerald-700,
+.v79-marketing-app:not(.v79-light-workspace) .text-emerald-600 { color:#52e6c2!important; }
+.v79-marketing-app:not(.v79-light-workspace) .bg-amber-50 { background-color:rgba(245,158,11,.10)!important; }
+.v79-marketing-app:not(.v79-light-workspace) .bg-amber-100 { background-color:rgba(245,158,11,.14)!important; }
+.v79-marketing-app:not(.v79-light-workspace) .border-amber-200,
+.v79-marketing-app:not(.v79-light-workspace) .border-amber-300 { border-color:rgba(245,158,11,.28)!important; }
+.v79-marketing-app:not(.v79-light-workspace) .text-amber-900,
+.v79-marketing-app:not(.v79-light-workspace) .text-amber-800,
+.v79-marketing-app:not(.v79-light-workspace) .text-amber-700,
+.v79-marketing-app:not(.v79-light-workspace) .text-amber-600 { color:#fbbf24!important; }
+.v79-marketing-app:not(.v79-light-workspace) .glass-panel {
   background:rgba(9,23,40,.94);
   border-color:var(--v79-border-dark);
   box-shadow:0 18px 48px rgba(0,0,0,.15);
 }
-.v79-marketing-app input,
-.v79-marketing-app select,
-.v79-marketing-app textarea {
+.v79-marketing-app:not(.v79-light-workspace) input,
+.v79-marketing-app:not(.v79-light-workspace) select,
+.v79-marketing-app:not(.v79-light-workspace) textarea {
   background-color:#07121f!important;
   border-color:#244560!important;
   color:#e8eef7!important;
 }
-.v79-marketing-app input::placeholder,
-.v79-marketing-app textarea::placeholder { color:#526276!important; }
-.v79-marketing-app input:focus,
-.v79-marketing-app select:focus,
-.v79-marketing-app textarea:focus {
+.v79-marketing-app:not(.v79-light-workspace) input::placeholder,
+.v79-marketing-app:not(.v79-light-workspace) textarea::placeholder { color:#526276!important; }
+.v79-marketing-app:not(.v79-light-workspace) input:focus,
+.v79-marketing-app:not(.v79-light-workspace) select:focus,
+.v79-marketing-app:not(.v79-light-workspace) textarea:focus {
   border-color:rgba(255,122,0,.58)!important;
   box-shadow:0 0 0 3px rgba(255,122,0,.10)!important;
 }
-.v79-marketing-app table,
-.v79-marketing-app tr { border-color:#18324b!important; }
-.v79-marketing-app .hover-lift:hover {
+.v79-marketing-app:not(.v79-light-workspace) table,
+.v79-marketing-app:not(.v79-light-workspace) tr { border-color:#18324b!important; }
+.v79-marketing-app:not(.v79-light-workspace) .hover-lift:hover {
   box-shadow:0 20px 48px rgba(0,0,0,.20);
 }
-.v79-marketing-app ::-webkit-scrollbar-thumb { background:#1d3d59; }
-.v79-marketing-app ::-webkit-scrollbar-thumb:hover { background:#2c5677; }
-.v79-marketing-app :where(button,a,input,select,textarea,[tabindex]):focus-visible {
+.v79-marketing-app:not(.v79-light-workspace) ::-webkit-scrollbar-thumb { background:#1d3d59; }
+.v79-marketing-app:not(.v79-light-workspace) ::-webkit-scrollbar-thumb:hover { background:#2c5677; }
+.v79-marketing-app:not(.v79-light-workspace) :where(button,a,input,select,textarea,[tabindex]):focus-visible {
   outline-color:#ff7a00;
 }
