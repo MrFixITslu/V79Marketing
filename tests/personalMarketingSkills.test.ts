@@ -223,7 +223,7 @@ describe('personal skills — consolidated tenant/creator/approval security',()=
       for(const sentence of candidates){
         const content={...MASTER_SKILL,advancedInstructions:sentence};
         expect(skillConflicts(content).length).toBeGreaterThan(0);
-        saveSkillDraft(db,a,0,content);
+        saveSkillDraft(db,a,0,content,getSkillWorkspace(db,a).draft?.revision||0);
         const d=getSkillWorkspace(db,a).draft!;
         expect(()=>publishOwnSkill(db,a,0,d.revision,d.digest)).toThrow();
       }
