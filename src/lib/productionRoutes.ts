@@ -12,6 +12,7 @@ const requestSchema=z.discriminatedUnion('action',[
   z.object({action:z.literal('list')}).strict(),
   z.object({action:z.literal('configure'),config:z.unknown()}).strict(),
   z.object({action:z.literal('queue'),request:z.unknown()}).strict(),
+  z.object({action:z.literal('regenerate'),jobId:id,idempotencyKey:z.string().regex(/^[A-Za-z0-9_-]{16,96}$/)}).strict(),
   z.object({action:z.literal('decision'),jobId:id,deliveryId:id,decision:z.enum(['approve','reject']),digest:z.string().regex(/^[a-f0-9]{64}$/)}).strict(),
   z.object({action:z.literal('approve_batch'),batchDigest:z.string().regex(/^[a-f0-9]{64}$/)}).strict(),
   z.object({action:z.literal('pause'),paused:z.boolean()}).strict(),
@@ -72,6 +73,7 @@ export function installProductionRoutes(app:express.Express,db:Database.Database
       }
       if(request.action==='configure')return res.json(w.configure(identity,request.config));
       if(request.action==='queue')return res.status(201).json({job:w.queue(identity,request.request)});
+      if(request.action==='regenerate')return res.status(201).json({job:w.regenerate(identity,request.jobId,request.idempotencyKey)});
       if((request.action==='decision'&&request.decision==='approve'||request.action==='approve_batch')&&env.V79_MARKETING_PRODUCTION_PUBLISH_ENABLED!=='1')return res.status(503).json({error:'Provider publication disabled'});
        if(request.action==='approve_batch')return res.json(w.approveBatch(identity,request.batchDigest));
       if(request.action==='decision')return res.json({delivery:w.decision(identity,request)});
