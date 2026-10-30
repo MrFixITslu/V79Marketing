@@ -11,7 +11,7 @@ const https = z.string().url().max(500).refine(v => {
 }, 'HTTPS URL required');
 export const brandSchema = z.object({
   name: text(80), tagline: text(100), audience: text(180), tone: text(160),
-  website: https, cta: text(100), primaryColor: z.string().regex(/^#[a-f0-9]{6}$/i),
+  website: https, cta: text(100), linkTracking:z.enum(['plain','utm']).optional(), primaryColor: z.string().regex(/^#[a-f0-9]{6}$/i),
   accentColor: z.string().regex(/^#[a-f0-9]{6}$/i),
   logoPng: z.string().max(1400000).regex(/^data:image\/png;base64,[A-Za-z0-9+/=]+$/).nullable(),
   mailingAddress: text(300).nullable(),
@@ -53,9 +53,15 @@ export function createMaterials(brand:ProductionBrand, plan:ProductionPlan, fact
   const fact = brand.facts.find(f => f.id === factId);
   if (!fact) throw Error('Owner-approved fact required');
   return plan.channels.map(channel => {
+    // Plain CTA is the safe default: V79's explicitly approved public website
+    // is https://v79sl.com, without campaign parameters or /faq.
+    // Other customer brands may explicitly opt in to UTMs in their brand plan.
     const url = new URL(brand.website);
-    url.searchParams.set('utm_source',channel);url.searchParams.set('utm_medium',channel==='newsletter'?'email':'organic_social');
-    url.searchParams.set('utm_campaign',campaignId);
+    if (brand.linkTracking==='utm' && url.hostname!=='v79sl.com') {
+      url.searchParams.set('utm_source',channel);
+      url.searchParams.set('utm_medium',channel==='newsletter'?'email':'organic_social');
+      url.searchParams.set('utm_campaign',campaignId);
+    }
     const link=url.toString();
     const hook = creative.hook;
     const detail = channel === 'linkedin' ? `${creative.tip}\n\n${fact.statement}` : `${fact.statement}\n\n${creative.tip}`;
