@@ -1,4 +1,5 @@
 import React,{useEffect,useMemo,useRef,useState} from 'react';
+import {reconcileSkillEditorSnapshot} from '../lib/personalSkillEditorState';
 import {BookOpen,Save,RefreshCw,Eye,RotateCcw,History,ShieldCheck,Trash2,GitCompare,AlertTriangle,Check} from 'lucide-react';
 
 const fields=[
@@ -60,28 +61,22 @@ export function MyMarketingSkillView({onUnsavedChange}:{onUnsavedChange?:(dirty:
   },[]);
   const refresh=async(editAtStart=editCounter.current)=>{
     const data=await api('') as Workspace;
-    const edited=data.draft?.baseVersion===data.current.version?data.draft.content:data.current.content;
+    const remote=data.draft?.baseVersion===data.current.version?data.draft.content:data.current.content;
+    const reconciled=reconcileSkillEditorSnapshot({...remote},formRef.current,editAtStart,editCounter.current);
     setWorkspace(data);versionRef.current=data.current.version;
-    // Never replace edits made while a network response was pending.
-    if(editCounter.current===editAtStart){
-      formRef.current={...edited};setForm({...edited});
-      setBaseline(JSON.stringify(edited));
-    }else{
-      // Keep newer typing visible as an unsaved draft against the newly
-      // loaded active version, never silently regard it as saved.
-      setBaseline(JSON.stringify(edited));
-    }
+    formRef.current={...reconciled.form};setForm({...reconciled.form});
+    setBaseline(JSON.stringify(reconciled.baseline));
   };
   useEffect(()=>{
     let alive=true;
     const initialEdit=editCounter.current;
     api('').then((data:Workspace)=>{
       if(!alive)return;
-      const edited=data.draft?.baseVersion===data.current.version?data.draft.content:data.current.content;
+      const remote=data.draft?.baseVersion===data.current.version?data.draft.content:data.current.content;
+      const reconciled=reconcileSkillEditorSnapshot({...remote},formRef.current,initialEdit,editCounter.current);
       setWorkspace(data);versionRef.current=data.current.version;
-      if(editCounter.current===initialEdit){
-        formRef.current={...edited};setForm({...edited});setBaseline(JSON.stringify(edited));
-      }
+      formRef.current={...reconciled.form};setForm({...reconciled.form});
+      setBaseline(JSON.stringify(reconciled.baseline));
     }).catch(e=>{if(alive)setError(e.message);}).finally(()=>{if(alive)setLoading(false);});
     return()=>{alive=false;};
   },[]);
