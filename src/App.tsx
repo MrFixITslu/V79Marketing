@@ -62,6 +62,7 @@ import { MobileBottomNav } from './components/MobileBottomNav';
 import { CustomerPipelineView } from './components/CustomerPipelineView';
 import { OneIdeaCampaignView } from './components/OneIdeaCampaignView';
 import { MyMarketingSkillView } from './components/MyMarketingSkillView';
+import { CampaignStudioView } from './components/CampaignStudioView';
 import { CustomerInquiry } from './types';
 
 export type ViewType =
@@ -71,6 +72,7 @@ export type ViewType =
   | 'one-idea-campaign'
   | 'ai_brain'
   | 'my-marketing-skill'
+  | 'studio'
   | 'ai-assistant'
   | 'ai-image'
   | 'reviews'
@@ -488,7 +490,7 @@ export default function App() {
   }
 
   return (
-    <div className="v79-marketing-app min-h-screen bg-[#07111f] text-slate-100 font-sans flex flex-col">
+    <div className={`v79-marketing-app min-h-screen font-sans flex flex-col ${currentView==='studio'||currentView==='my-marketing-skill'?'v79-light-workspace':'bg-[#07111f] text-slate-100'}`}>
       {/* Primary Top Navigation */}
       <Navbar
         currentUser={currentUser}
@@ -582,6 +584,7 @@ export default function App() {
         )}
 
         {currentView === 'my-marketing-skill' && <MyMarketingSkillView />}
+        {currentView === 'studio' && <CampaignStudioView business={currentBusiness} onCreateCampaign={handleCreateCampaign} />}
 
         {currentView === 'ai_brain' && (
           <AiBrainView
