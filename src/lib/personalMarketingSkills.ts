@@ -319,12 +319,39 @@ export function mergeUnpublishedDraft(db:Database.Database,actor:SkillActor,expe
       templateVersion,base,sourceVersion);
   }).immediate();
 }
-export function skillPreview(content:unknown){
-  const data=personalSkillSchema.parse(content),conflicts=skillConflicts(data);
-  // Fixed illustrative example; never a fictional customer or user brand.
-  return {conflicts,headline:'A simpler way to manage recurring work',
-    sampleCaption:'Busy teams need dependable processes. Identify one repeated task, document its steps, and review how technology could reduce friction. Learn more through your verified business contact route.',
-    note:'Illustrative only. Final claims, branding, offer and CTA are supplied by your own authorised business profile.',
+export type SkillPreviewFacts={businessName:string;services:{service:string;statement:string}[]};
+// Fully deterministic local COPY and LAYOUT example. No model calls, billed
+// inference or invented claims. Caller may supply ONLY facts from a verified
+// owner-approved production record, not arbitrary user-submitted JSON.
+export function skillPreview(content:unknown,verified:SkillPreviewFacts|null=null){
+  const data=personalSkillSchema.parse(content) as SkillContent;
+  if(containsLikelySecret(data))throw Error('Potential credential in preview request');
+  const conflicts=skillConflicts(data);
+  const scope=data.audienceMarkets.toLowerCase();
+  const voice=data.voiceLanguage.toLowerCase();
+  const region=/saint lucia|st[.]? lucia|caribbean|oecs/.test(scope)?'Caribbean':'local';
+  const tone=/friendly|warm|conversational|casual/.test(voice)?'friendly':
+    /formal|professional|corporate/.test(voice)?'professional':'clear';
+  const language=/french|français/.test(voice)?'French':/spanish|español/.test(voice)?'Spanish':
+    /creole|kwéyòl/.test(voice)?'Creole-inclusive':'English';
+  const topic=verified?.services?.[0];
+  const noun=region==='Caribbean'?'Caribbean teams':'Teams';
+  const headline=tone==='friendly'? `Make everyday work easier, ${noun.toLowerCase()}.`:
+    tone==='professional'? `Practical improvements for ${noun.toLowerCase()}`:
+    `Simpler workflows for ${noun.toLowerCase()}`;
+  const opening=tone==='friendly'?'Looking for a practical next step?':
+    tone==='professional'?'Explore a considered approach to everyday business challenges.':
+    'Start with one repeated task and identify the next improvement.';
+  const claim=topic?.statement?.trim()||'No verified service claims have been approved for this preview.';
+  const caption=`${opening} ${claim} ${topic?'Contact '+verified!.businessName+' through its verified business profile for details.':
+    'Add approved business facts to preview a specific service or product.'}`;
+  const format=/vertical|reel|9:16|video/.test(data.visualStyle.toLowerCase())?'9:16 portrait':
+    /square|1:1/.test(data.visualStyle.toLowerCase())?'1:1 square':'4:5 feed';
+  return {kind:'local_text_and_layout_example',mediaGenerated:false,
+    headline,sampleCaption:caption,format,language,tone,region,verifiedClaims:!!topic,
+    conflicts,
+    note:topic?'Uses a verified service statement from this business’s approved production profile. Local layout/text example only; no media generated.':
+      'Creative preferences are demonstrated locally. No approved business claims were available. Layout example only; no media generated.',
     preferences:{markets:data.audienceMarkets,voice:data.voiceLanguage,visuals:data.visualStyle}};
 }
 export function snapshotOwnSkill(db:Database.Database,actor:SkillActor):SkillSnapshot {
