@@ -2139,7 +2139,7 @@ description, productsAndServices, brandVoiceAndTone, targetAudience, customerDem
     if (charged) {
       refundCredits(businessId, req.user!.id, req.user!.name, CREDIT_COSTS.brainOptimize, "AI Business Brain optimisation failed", ip);
     }
-    res.status(503).json({ error:error?.message || "Business Brain optimisation failed" });
+    res.status(503).json({ error:"Business Brain optimisation unavailable. Check your local AI service or personal provider connection." });
   }
 });
 
