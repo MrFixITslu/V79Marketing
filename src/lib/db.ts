@@ -1,6 +1,7 @@
 import Database from "better-sqlite3";
 import { installProductionTracking } from "./productionTracking.js";
 import { ensureAgentCampaignDraftTable } from "./agentCampaignDrafts.js";
+import { ensureMediaKeyTable } from "./mediaProviderVault.js";
 import path from "path";
 import fs from "fs";
 import bcrypt from "bcryptjs";
@@ -294,6 +295,7 @@ export function initDb() {
   `);
 
   ensureAgentCampaignDraftTable(db);
+  ensureMediaKeyTable(db);
   installProductionTracking(db);
   ensureColumn("businesses", "hub_organization_id", "TEXT");
   ensureColumn("users", "hub_user_id", "TEXT");
