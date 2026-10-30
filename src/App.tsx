@@ -61,6 +61,7 @@ import { AiBrandKitView } from './components/AiBrandKitView';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { CustomerPipelineView } from './components/CustomerPipelineView';
 import { OneIdeaCampaignView } from './components/OneIdeaCampaignView';
+import { MyMarketingSkillView } from './components/MyMarketingSkillView';
 import { CustomerInquiry } from './types';
 
 export type ViewType =
@@ -69,6 +70,7 @@ export type ViewType =
   | 'customers'
   | 'one-idea-campaign'
   | 'ai_brain'
+  | 'my-marketing-skill'
   | 'ai-assistant'
   | 'ai-image'
   | 'reviews'
@@ -577,6 +579,8 @@ export default function App() {
             onCreateCampaign={handleCreateCampaign}
           />
         )}
+
+        {currentView === 'my-marketing-skill' && <MyMarketingSkillView />}
 
         {currentView === 'ai_brain' && (
           <AiBrainView
