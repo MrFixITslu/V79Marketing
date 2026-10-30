@@ -18,6 +18,7 @@ export const OneIdeaCampaignView: React.FC<OneIdeaCampaignViewProps> = ({ busine
   const [ideaPrompt, setIdeaPrompt] = useState('');
   const [generatedCampaign, setGeneratedCampaign] = useState<GeneratedCampaign | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [useOwnCloudKey,setUseOwnCloudKey]=useState(false);
   const [approvedSuccess, setApprovedSuccess] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
@@ -33,7 +34,7 @@ export const OneIdeaCampaignView: React.FC<OneIdeaCampaignViewProps> = ({ busine
       const response = await fetch('/api/ai/generate-campaign-plan', {
         method: 'POST',
         headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({ campaignName, objective, businessName:business.name, industry:business.industry }),
+        body: JSON.stringify({ campaignName, objective, businessName:business.name, industry:business.industry, useOwnCloudKey }),
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok || !Array.isArray(body.steps)) throw new Error(body.error || 'Campaign generation failed.');
@@ -105,7 +106,11 @@ export const OneIdeaCampaignView: React.FC<OneIdeaCampaignViewProps> = ({ busine
             <span>{isGenerating ? 'Generating…' : 'Build campaign'}</span>
           </button>
         </div>
-        {error && <p className="text-xs font-medium text-red-600">{error}</p>}
+        <label className="flex items-start gap-2 rounded-lg bg-slate-50 p-3 text-xs text-slate-700">
+          <input type="checkbox" checked={useOwnCloudKey} onChange={e=>setUseOwnCloudKey(e.target.checked)} />
+          <span>Allow my own saved Gemini key as a fallback if local AI is unavailable. Cloud provider charges may apply. Off by default.</span>
+        </label>
+        {error && <p className="text-xs font-medium text-red-600">{error}</p>
       </form>
 
       {generatedCampaign ? (
