@@ -4,6 +4,9 @@ import {authenticate,requireMarketingPermission,verifyMarketingBackgroundEntitle
   type AuthenticatedRequest} from './auth.js';
 import {creativeCapabilities} from './creativeCapabilityRegistry.js';
 import {cloudImageInput,requestGeminiImage} from './personalGeminiImage.js';
+import {productionStore} from './productionStore.js';
+import {composeLocalMotionVideo} from './localMotionVideo.js';
+import {z} from 'zod';
 
 export function installCreativeMediaRoutes(app:express.Express,db:Database.Database){
   const gate=[authenticate,requireMarketingPermission('ai.use')] as const;
@@ -11,6 +14,38 @@ export function installCreativeMediaRoutes(app:express.Express,db:Database.Datab
     res.setHeader('Cache-Control','no-store');
     try{return res.json(creativeCapabilities(db,req.user!));}
     catch{return res.status(503).json({error:'Creative providers currently unavailable'});}
+  });
+  function approvedBrief(businessId:string){
+    const auditKey=process.env.V79_MARKETING_PRODUCTION_AUDIT_KEY||'';
+    if(auditKey.length<32)throw Error('Approved production profile unavailable');
+    const state=productionStore(db,auditKey).read(businessId);
+    if(!state.brand||!state.ownerLocalUserId||!state.brand.facts.length)
+      throw Error('No owner-approved business facts');
+    return state.brand;
+  }
+  app.get('/api/creative/verified-brief',...gate,(req:AuthenticatedRequest,res)=>{
+    res.setHeader('Cache-Control','no-store');
+    try{
+      const brand=approvedBrief(req.user!.businessId);
+      return res.json({approved:true,businessName:brand.name,
+        facts:brand.facts.map(x=>({id:x.id,service:x.service,statement:x.statement})),
+        website:brand.website});
+    }catch{return res.json({approved:false,facts:[],message:'Business facts require owner approval before local video composition'});}
+  });
+  let localVideoBusy=false;
+  app.post('/api/creative/local-video',...gate,async(req:AuthenticatedRequest,res)=>{
+    res.setHeader('Cache-Control','no-store');
+    const parsed=z.object({sourceImageData:z.string().min(150).max(1500000),factId:z.string().min(1).max(40)}).strict().safeParse(req.body);
+    if(!parsed.success)return res.status(400).json({error:'Choose a permitted local photo and approved service fact'});
+    if(localVideoBusy)return res.status(429).json({error:'Local video renderer is busy; no work was queued'});
+    localVideoBusy=true;
+    try{
+      const brand=approvedBrief(req.user!.businessId);
+      const result=await composeLocalMotionVideo({imageData:parsed.data.sourceImageData,
+        brand,factId:parsed.data.factId});
+      return res.json(result);
+    }catch{return res.status(422).json({error:'Local video unavailable. Verify an approved business profile, input image format and renderer capacity.'});}
+    finally{localVideoBusy=false;}
   });
   app.post('/api/creative/personal-image',...gate,async(req:AuthenticatedRequest,res)=>{
     res.setHeader('Cache-Control','no-store');
