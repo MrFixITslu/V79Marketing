@@ -17,6 +17,7 @@ import {
   KeyRound,
   Settings,
   BookOpen,
+  Clapperboard,
   ExternalLink,
   Brain,
   Video,
@@ -163,6 +164,7 @@ export const Navbar: React.FC<NavbarProps> = ({
       icon: Sparkles,
       badge: '1-Click',
       items: [
+        { id: 'studio', label: 'Campaign Studio', icon: Clapperboard, badge: 'New', desc: 'Visual brief, concepts and private asset review' },
         { id: 'one-idea-campaign', label: 'One Idea → Campaign', icon: Layers, badge: 'Popular', desc: 'Single prompt to full campaign' },
         { id: 'ai-assistant', label: 'Zero-Prompt Creator', icon: Sparkles, desc: 'Guided post & promo captions' },
         { id: 'ai-image', label: 'Graphic Studio', icon: ImageIcon, desc: 'Social posters & banners' },
