@@ -295,7 +295,6 @@ export function initDb() {
   `);
 
   ensureAgentCampaignDraftTable(db);
-  ensureMediaKeyTable(db);
   installProductionTracking(db);
   ensureColumn("businesses", "hub_organization_id", "TEXT");
   ensureColumn("users", "hub_user_id", "TEXT");
@@ -307,6 +306,9 @@ export function initDb() {
   ensureColumn("social_oauth_states", "legal_version", "TEXT");
   ensureColumn("social_oauth_states", "consented_at", "TEXT");
   migrateHubManagedUserEmailScope();
+  // Creating the BYOK FK before this legacy users-table rename would bind it
+  // to users_global_email_legacy and break both cleanup and account deletion.
+  ensureMediaKeyTable(db);
   db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_businesses_hub_org ON businesses(hub_organization_id) WHERE hub_organization_id IS NOT NULL;");
   db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_legacy_email ON users(email) WHERE hub_user_id IS NULL;");
   db.exec("DROP INDEX IF EXISTS idx_users_hub_user;");
