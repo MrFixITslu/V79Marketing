@@ -30,6 +30,8 @@ import { consumeHubLaunchTicket, verifyHubProvisionRequest, verifyHubSummaryRequ
 import { deprovisionHubTeamIdentity, provisionHubIdentity } from "./src/lib/hubProvisioning.js";
 import { queueMarketingEvent, startPlatformEventPump } from "./src/lib/platformEvents.js";
 import { decryptToken, encryptToken } from "./src/lib/tokenVault.js";
+import {installMediaCredentialRoutes} from "./src/lib/mediaProviderRoutes.js";
+import {readOwnMediaKey} from "./src/lib/mediaProviderVault.js";
 import { buildAuthorizationUrl, exchangeOAuthCode, providerStatus, queryTikTokCreatorInfo, refreshProviderAccess, revokeProviderAuthorization, type ProviderAccountRecord, type ProviderPlatform } from "./src/lib/socialProviders.js";
 
 const app = express();
@@ -110,21 +112,18 @@ const aiGenerationLimiter = rateLimit({
 });
 
 app.use("/api/", globalApiLimiter);
+installMediaCredentialRoutes(app,db);
 
 // AI Client Initialization
-function getGenAI() {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey || apiKey === "MY_GEMINI_API_KEY") {
-    return null;
-  }
-  return new GoogleGenAI({
-    apiKey,
-    httpOptions: {
-      headers: {
-        "User-Agent": "aistudio-build",
-      },
-    },
-  });
+function getGenAI(actor:AuthenticatedRequest['user'],explicitUserConsent:boolean) {
+  // Never charge an organisation-owned fallback key for customer work.
+  // Cloud calls require this signed-in user's saved key AND this request's
+  // explicit opt-in. Local Ollama and no-charge templates remain the default.
+  if(!actor || !explicitUserConsent)return null;
+  try{
+    const apiKey=readOwnMediaKey(db,actor,'gemini');
+    return apiKey?new GoogleGenAI({apiKey}):null;
+  }catch{return null;} // Missing/wrong master key: fail closed, no cloud calls.
 }
 
 async function tryOllamaJson(prompt: string) {
@@ -1578,7 +1577,7 @@ Return only JSON with this exact shape:
     }
 
     if (!generated) {
-      const ai = getGenAI();
+      const ai = getGenAI(req.user,req.body?.useOwnCloudKey===true);
       if (ai) {
         try {
           const response = await ai.models.generateContent({
@@ -1594,7 +1593,7 @@ Return only JSON with this exact shape:
             }
           }
         } catch (error:any) {
-          console.warn("[V79 Marketing] Gemini content generation unavailable:", error?.message || error);
+          console.warn("[V79 Marketing] User-scoped Gemini content generation unavailable.");
         }
       }
     }
@@ -1760,7 +1759,7 @@ Return JSON only:
     if (steps) source = "ollama";
 
     if (!steps) {
-      const ai = getGenAI();
+      const ai = getGenAI(req.user,req.body?.useOwnCloudKey===true);
       if (ai) {
         try {
           const response = await ai.models.generateContent({
@@ -1773,7 +1772,7 @@ Return JSON only:
             if (steps) source = "gemini";
           }
         } catch (error:any) {
-          console.warn("[V79 Marketing] Gemini campaign generation unavailable:", error?.message || error);
+          console.warn("[V79 Marketing] User-scoped Gemini campaign generation unavailable.");
         }
       }
     }
@@ -2116,7 +2115,7 @@ description, productsAndServices, brandVoiceAndTone, targetAudience, customerDem
 
     let candidate:any = await tryOllamaJson(prompt);
     if (!candidate) {
-      const ai = getGenAI();
+      const ai = getGenAI(req.user,req.body?.useOwnCloudKey===true);
       if (ai) {
         const response = await ai.models.generateContent({
           model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
