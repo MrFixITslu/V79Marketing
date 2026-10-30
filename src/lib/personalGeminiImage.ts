@@ -61,7 +61,7 @@ export async function requestGeminiImage(db:Database.Database,actor:MediaKeyActo
   try{
     // The default adapter uses the official SDK. Tests substitute an inert
     // generator; no paid calls are ever made by CI.
-    const generator=options.generate||async(key:string,requestPrompt:string,aspect:'1:1'|'4:5'|'9:16')=>{
+    const generator=options.generate||(async(key:string,requestPrompt:string,aspect:'1:1'|'4:5'|'9:16')=>{
       const client=new GoogleGenAI({apiKey:key});
       const response=await client.models.generateContent({
         model,contents:requestPrompt,config:{imageConfig:{aspectRatio:aspect}},
@@ -71,7 +71,7 @@ export async function requestGeminiImage(db:Database.Database,actor:MediaKeyActo
       const mimeType=part.inlineData.mimeType;
       if(mimeType!=='image/png'&&mimeType!=='image/jpeg')throw Error('Unsupported image');
       return {mimeType,bytes:Buffer.from(part.inlineData.data,'base64')} as ProviderImage;
-    };
+    });
     const image=await generator(credential.value,prompt,req.aspectRatio);
     const bytes=image.bytes;
     const png=image.mimeType==='image/png'&&bytes.subarray(0,8).toString('hex')==='89504e470d0a1a0a';
