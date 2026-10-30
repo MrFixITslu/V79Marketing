@@ -67,6 +67,7 @@ export const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
           status: 'ACTIVE',
           steps: formattedSteps,
           aiPlanGenerated: true,
+          skillDigest:data.skillDigest,
           createdAt: new Date().toISOString(),
         };
         onCreateCampaign(newCamp);
