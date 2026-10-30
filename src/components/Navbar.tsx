@@ -15,6 +15,8 @@ import {
   Share2,
   Megaphone,
   KeyRound,
+  Settings,
+  BookOpen,
   ExternalLink,
   Brain,
   Video,
@@ -198,6 +200,15 @@ export const Navbar: React.FC<NavbarProps> = ({
         { id: 'competitors', label: 'Market Benchmarks', icon: TrendingUp, desc: 'Competitor opportunity gaps' },
         { id: 'campaigns', label: '30-Day Growth Plans', icon: Layers, desc: 'Multi-week growth roadmaps' },
         { id: 'agent-drafts', label: 'Internal Agent Drafts', icon: Megaphone, desc: 'Private review briefs, no publishing' },
+      ],
+    },
+    {
+      id: 'settings_hub',
+      label: 'Settings',
+      icon: Settings,
+      items: [
+        { id: 'my-marketing-skill', label: 'My marketing skill', icon: BookOpen, desc: 'Your private instructions, drafts and versions' },
+        { id: 'social-channels', label: 'Connections', icon: Share2, desc: 'Provider accounts and authorisations' },
       ],
     },
     {
