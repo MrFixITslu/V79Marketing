@@ -28,7 +28,7 @@ async function api(path:string,method='GET',data?:unknown){
   if(!result.ok)throw Error(json.error||'Skill settings could not be updated.');
   return json;
 }
-export function MyMarketingSkillView(){
+export function MyMarketingSkillView({onUnsavedChange}:{onUnsavedChange?:(dirty:boolean)=>void}={}){
   const [workspace,setWorkspace]=useState<Workspace|null>(null);
   const [form,setForm]=useState<Content|null>(null);
   const [baseline,setBaseline]=useState('');
@@ -49,6 +49,7 @@ export function MyMarketingSkillView(){
 
   const unsaved=useMemo(()=>!!form&&JSON.stringify(form)!==baseline,[form,baseline]);
   hasUnsavedRef.current=unsaved;
+  useEffect(()=>{onUnsavedChange?.(unsaved);return()=>onUnsavedChange?.(false);},[unsaved,onUnsavedChange]);
   useEffect(()=>{
     const guard=(event:BeforeUnloadEvent)=>{
       if(!hasUnsavedRef.current)return;
