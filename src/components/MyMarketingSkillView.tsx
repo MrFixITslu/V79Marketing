@@ -57,8 +57,7 @@ export function MyMarketingSkillView(){
     window.addEventListener('beforeunload',guard);
     return()=>window.removeEventListener('beforeunload',guard);
   },[]);
-  const refresh=async()=>{
-    const editAtStart=editCounter.current;
+  const refresh=async(editAtStart=editCounter.current)=>{
     const data=await api('') as Workspace;
     const edited=data.draft?.baseVersion===data.current.version?data.draft.content:data.current.content;
     setWorkspace(data);versionRef.current=data.current.version;
@@ -97,7 +96,7 @@ export function MyMarketingSkillView(){
     const response=await api('/draft','PUT',{
       expectedVersion:workspace.current.version,expectedDraftRevision:workspace.draft?.revision||0,content:snapshot});
     if(editCounter.current===editAtStart)setBaseline(JSON.stringify(snapshot));
-    await refresh();
+    await refresh(editAtStart);
     setNotice(response.conflicts?.length?'Private draft saved. Review creative-rule warnings before activation.':
       'Private draft saved. The active version and existing campaigns are unchanged.');
   }
@@ -112,7 +111,7 @@ export function MyMarketingSkillView(){
     await api('/save','POST',{expectedVersion:workspace.current.version,
       expectedDraftRevision:p.revision,expectedDigest:p.digest});
     if(editCounter.current===changedAtStart)setBaseline(JSON.stringify(snapshot));
-    await refresh();setPreview(null);
+    await refresh(changedAtStart);setPreview(null);
     setNotice('New active version saved. Only NEW campaigns use these instructions; existing campaigns retain their pinned skill.');
   }
   async function doPreview(){
