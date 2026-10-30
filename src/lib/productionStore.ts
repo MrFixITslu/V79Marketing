@@ -65,10 +65,12 @@ export function deliveryDigest(job:ProductionJob,d:Destination) {
 // approvable delivery. Each digest already commits to exact media, text, account,
 // destination, scheduled instant and configuration. No implicit future consent.
 export function previewApprovalBatch(s:ProductionState,now=Date.now()) {
+  // TikTok requires a distinct post-specific privacy/commercial-content confirmation.
+  // Keep those destinations on the existing individual approval path.
   const deliveries=s.paused?[]:s.jobs.flatMap(j=>
     j.status==='awaiting_owner' && j.configRevision===s.configRevision && j.bundle &&
     !j.bundle.review.blockers.length && digest(j.bundle)===j.bundleDigest
-    ? j.deliveries.filter(d=>d.status==='awaiting_owner' && d.digest===deliveryDigest(j,d) &&
+    ? j.deliveries.filter(d=>d.channel!=='tiktok' && d.status==='awaiting_owner' && d.digest===deliveryDigest(j,d) &&
         Number.isFinite(Date.parse(d.scheduledAt)) && Date.parse(d.scheduledAt)>now &&
         Date.parse(d.scheduledAt)-now<=14*86400000)
       .map(d=>({jobId:j.id,deliveryId:d.id,digest:d.digest,channel:d.channel,
