@@ -156,7 +156,7 @@ export async function processScheduledPosts(): Promise<PublishResult[]> {
 
     if (simulationEnabled()) {
       for (const platform of platforms) {
-        ensureDelivery(post, platform, now);
+        if (!deliveryBackoffReady(ensureDelivery(post, platform, now))) continue;
         db.prepare(`
           UPDATE post_deliveries SET status='PUBLISHED', attempts=attempts+1, published_at=?, updated_at=?,
           provider_post_id=?, last_error=NULL WHERE post_id=? AND platform=?
