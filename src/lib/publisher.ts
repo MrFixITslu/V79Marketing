@@ -7,7 +7,7 @@ import { publishWithProvider, refreshProviderAccess, type ProviderAccountRecord,
 export interface PublishResult {
   postId: string;
   platform: string;
-  status: "PUBLISHED" | "FAILED" | "QUEUED" | "AWAITING_CONNECTION" | "NEEDS_ACTION";
+  status: "PUBLISHED" | "FAILED" | "QUEUED" | "AWAITING_CONNECTION" | "NEEDS_ACTION" | "OUTCOME_UNKNOWN";
   publishedAt?: string;
   error?: string;
   providerPostId?: string;
@@ -21,7 +21,7 @@ function simulationEnabled() {
 
 function deliveryBackoffReady(delivery:any) {
   if (!delivery || delivery.status === "QUEUED" || delivery.status === "AWAITING_CONNECTION") return true;
-  if (delivery.status === "PUBLISHED" || delivery.status === "NEEDS_ACTION") return false;
+  if (["PUBLISHED", "NEEDS_ACTION", "DISPATCHING", "OUTCOME_UNKNOWN"].includes(delivery.status)) return false;
   const attempts = Number(delivery.attempts || 0);
   if (attempts >= 3) return false;
   const updated = Date.parse(delivery.updated_at || "") || 0;
@@ -56,6 +56,10 @@ function updatePostAggregateStatus(postId:string, platforms:string[]) {
     `SELECT platform,status,attempts FROM post_deliveries WHERE post_id=? AND platform IN (${platforms.map(() => "?").join(",")})`
   ).all(postId, ...platforms) as any[];
   if (rows.length !== platforms.length) return;
+  if (rows.some(row => ["DISPATCHING", "OUTCOME_UNKNOWN"].includes(row.status))) {
+    db.prepare("UPDATE posts SET status='FAILED' WHERE id=?").run(postId);
+    return;
+  }
   if (rows.every(row => row.status === "PUBLISHED")) {
     db.prepare("UPDATE posts SET status='PUBLISHED' WHERE id=?").run(postId);
     return;
@@ -119,6 +123,11 @@ async function publicationAuthorized(post: {business_id: string; author_id: stri
 
 export async function processScheduledPosts(): Promise<PublishResult[]> {
   const now = new Date().toISOString();
+  // A crashed worker could have sent a provider request before recording its
+  // receipt. Mark such jobs for manual reconciliation, never blind retry.
+  db.prepare(`UPDATE post_deliveries SET status='OUTCOME_UNKNOWN',updated_at=?,
+    last_error='Provider outcome unknown after dispatch interruption. Verify the social account before any new post.'
+    WHERE status='DISPATCHING'`).run(now);
   const duePosts = db.prepare(`SELECT p.* FROM posts p WHERE p.status IN ('SCHEDULED','FAILED') AND p.scheduled_for <= ?
     AND p.id NOT LIKE 'production-%' AND NOT EXISTS(SELECT 1 FROM production_post_links l WHERE l.post_id=p.id)
     ORDER BY p.scheduled_for LIMIT 50`)
@@ -182,7 +191,7 @@ export async function processScheduledPosts(): Promise<PublishResult[]> {
 
         const platformContent = content[platform] || {};
         db.prepare(`
-          UPDATE post_deliveries SET social_account_id=?, status='QUEUED', attempts=attempts+1, last_error=NULL, updated_at=?
+          UPDATE post_deliveries SET social_account_id=?, status='QUEUED', last_error=NULL, updated_at=?
           WHERE post_id=? AND platform=?
         `).run(connection.row.id, now, post.id, platform);
 
@@ -193,6 +202,12 @@ export async function processScheduledPosts(): Promise<PublishResult[]> {
             error:"Publishing paused before provider delivery."});
           continue;
         }
+        // Durable boundary before any irreversible provider request. A timeout
+        // or process crash from this point requires reconciliation, not retry.
+        db.prepare(`
+          UPDATE post_deliveries SET status='DISPATCHING', attempts=attempts+1, updated_at=?
+          WHERE post_id=? AND platform=? AND status='QUEUED'
+        `).run(new Date().toISOString(),post.id,platform);
         const published = await publishWithProvider(connection.account, {
           caption:String(platformContent.caption || post.title || ""),
           hashtags:Array.isArray(platformContent.hashtags) ? platformContent.hashtags : [],
@@ -213,14 +228,14 @@ export async function processScheduledPosts(): Promise<PublishResult[]> {
           providerPostId:published.providerPostId,
         });
       } catch (error:any) {
-        delivery = db.prepare("SELECT attempts FROM post_deliveries WHERE post_id=? AND platform=?").get(post.id, platform) as any;
-        const status = needsAction(error) ? "NEEDS_ACTION" : "FAILED";
+        delivery = db.prepare("SELECT status,attempts FROM post_deliveries WHERE post_id=? AND platform=?").get(post.id, platform) as any;
+        const status = delivery?.status==="DISPATCHING" ? "OUTCOME_UNKNOWN" : needsAction(error) ? "NEEDS_ACTION" : "FAILED";
         db.prepare(`
           UPDATE post_deliveries SET status=?, last_error=?, updated_at=?
           WHERE post_id=? AND platform=?
         `).run(status, String(error?.message || error || "Provider publishing failed").slice(0,2000), new Date().toISOString(), post.id, platform);
         results.push({ postId:post.id, platform, status, error:error?.message || "Provider publishing failed" });
-        console.warn(`[Publisher Queue] ${platform} post ${post.id} failed:`, error?.message || error);
+        console.warn(`[Publisher Queue] ${platform} post ${post.id} requires review:`, error?.message || error);
       }
     }
 
