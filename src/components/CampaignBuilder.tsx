@@ -15,7 +15,7 @@ import {
 interface CampaignBuilderProps {
   business: Business;
   campaigns: Campaign[];
-  onCreateCampaign: (campaign: Campaign) => void;
+  onCreateCampaign: (campaign: Campaign) => Promise<Campaign>;
   onRegeneratedCampaign?: (campaign:Campaign)=>void;
 }
 
@@ -92,8 +92,8 @@ export const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
           skillDigest:data.skillDigest,
           createdAt: new Date().toISOString(),
         };
-        onCreateCampaign(newCamp);
-        setActiveCampaign(newCamp);
+        const saved=await onCreateCampaign(newCamp);
+        setActiveCampaign(saved);
       }
     } catch (err) {
       console.error('Error generating campaign plan:', err);
