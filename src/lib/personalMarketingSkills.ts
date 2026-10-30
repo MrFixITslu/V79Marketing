@@ -207,11 +207,11 @@ export function discardOwnDraft(db:Database.Database,actor:SkillActor,expectedDr
   }).immediate();
 }
 function writeVersion(db:Database.Database,actor:SkillActor,expected:number,content:SkillContent,
- kind:'saved'|'reset'|'restore'|'template_update'|'deleted',templateVersion:string,baseTemplate:SkillContent,sourceVersion:number|null=null) {
+ kind:'saved'|'reset'|'restore'|'template_update'|'deleted',templateVersion:string,baseTemplate:SkillContent,sourceVersion:number|null=null,mergedDraft=false) {
   return db.transaction(()=>{
     const current=currentSkill(db,actor);
     if(current.version!==expected)throw Error('Skill version changed; reload before saving');
-    if(kind!=='saved')requireNoUnpublishedDraft(db,actor);
+    if(kind!=='saved'&&!mergedDraft)requireNoUnpublishedDraft(db,actor);
     if(kind!=='deleted')validatedSkill(content);
     const version=expected+1,createdAt=new Date().toISOString();
     const item={businessId:actor.businessId,userId:actor.id,version,templateVersion,content};
@@ -321,7 +321,7 @@ export function mergeUnpublishedDraft(db:Database.Database,actor:SkillActor,expe
     }
     const merged=mergeTemplateFields(target,active.content,draft);
     return writeVersion(db,actor,expected,merged,action==='reset'?'reset':action==='restore'?'restore':'template_update',
-      templateVersion,base,sourceVersion);
+      templateVersion,base,sourceVersion,true);
   }).immediate();
 }
 export type SkillPreviewFacts={businessName:string;services:{service:string;statement:string}[]};
