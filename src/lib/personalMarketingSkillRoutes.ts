@@ -4,7 +4,7 @@ import {z} from 'zod';
 import {authenticate,requireMarketingPermission,type AuthenticatedRequest} from './auth.js';
 import {
   getSkillWorkspace,personalSkillSchema,saveSkillDraft,publishOwnSkill,discardOwnDraft,resetOwnSkill,
-  deleteOwnSkill,restoreOwnSkill,skillVersion,skillPreview,templateUpdatePreview,acceptTemplateUpdate,
+  deleteOwnSkill,restoreOwnSkill,skillVersion,skillPreview,templateUpdatePreview,acceptTemplateUpdate,mergeUnpublishedDraft,
 } from './personalMarketingSkills.js';
 
 const number=z.number().int().min(0).max(1000000);
@@ -67,6 +67,17 @@ export function installPersonalSkillRoutes(app:express.Express,db:Database.Datab
   app.post('/api/my-marketing-skill/restore',...middleware,(req:AuthenticatedRequest,res)=>{
     secure(res);const input=restoreSchema.safeParse(req.body);if(!input.success)return res.status(400).json({error:'Invalid restore request'});
     try{return res.json({skill:restoreOwnSkill(db,req.user!,input.data.expectedVersion,input.data.version)});}
+    catch(e){return failure(res,e);}
+  });
+  app.post('/api/my-marketing-skill/merge-draft',...middleware,(req:AuthenticatedRequest,res)=>{
+    secure(res);const input=z.object({
+      expectedVersion:number,expectedDraftRevision:number.min(1),
+      action:z.enum(['reset','restore','template_update']),version:number.min(1).optional(),
+      proposalDigest:z.string().regex(/^[a-f0-9]{64}$/).optional(),
+    }).strict().safeParse(req.body);
+    if(!input.success)return res.status(400).json({error:'Invalid merge request'});
+    try{return res.json({skill:mergeUnpublishedDraft(db,req.user!,input.data.expectedVersion,
+      input.data.expectedDraftRevision,input.data.action,input.data.version,input.data.proposalDigest)});}
     catch(e){return failure(res,e);}
   });
   app.post('/api/my-marketing-skill/accept-template',...middleware,(req:AuthenticatedRequest,res)=>{
