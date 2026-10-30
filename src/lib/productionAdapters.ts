@@ -116,7 +116,8 @@ export function productionAdapters(db:Database.Database):ProductionDependencies 
           }catch{blocker='TikTok creator verification unavailable';}
         }
         const payload:ProviderPublishPayload={caption:material.caption,hashtags:material.hashtags,website:bundle.brand.website,
-          mediaUrls:[media(job.id,digest(bundle),material.channel==='youtube'?'short.mp4':'poster-square.png')]};
+          mediaUrls:[media(job.id,digest(bundle),material.channel==='youtube'?'short.mp4':
+            ['facebook','instagram'].includes(material.channel)?'poster-feed.png':'poster-square.png')]};
         if(material.channel==='tiktok')payload.tiktok={privacyLevel:plan.tiktokPrivacy||undefined,musicUsageConfirmed:plan.tiktokMusicConfirmed,
           autoAddMusic:false,commercialDisclosure:true,brandOrganicToggle:true,brandContentToggle:false,isAigc:true};
         if(material.channel==='linkedin')payload.mediaUrls=[]; // supported LinkedIn adapter publishes text only
