@@ -4,7 +4,7 @@ import { publicationUrl } from './publicationLinks.js';
 import { configureSchema, queueSchema, creativeSchema, createMaterials, reviewMaterials, digest,
   type Creative, type ProductionBrand, type ProductionPlan, type ProductionBundle, type Asset } from './productionContract.js';
 import { productionStore, productionEvent, queueProduction, decideDelivery, claimDelivery, deliveryDigest,
-  type ProductionJob, type Destination, type Delivery } from './productionStore.js';
+  type ProductionJob, type Destination, type Delivery, previewApprovalBatch, approveDeliveryBatch } from './productionStore.js';
 
 export type ProductionActor={businessId:string;hubUserId:string;localUserId:string;organizationId:string};
 export type ProductionDependencies={
@@ -37,6 +37,7 @@ export function createProductionWorkflow(db:Database.Database,key:string,deps:Pr
   function decision(actor:ProductionActor,input:{jobId:string;deliveryId:string;decision:'approve'|'reject';digest:string}) {
     return store.transact(actor.businessId,s=>decideDelivery(s,input.jobId,input.deliveryId,input.decision,input.digest,actor.hubUserId,clock()));
   }
+  function approveBatch(actor:ProductionActor,batchDigest:string){return store.transact(actor.businessId,s=>approveDeliveryBatch(s,batchDigest,actor.hubUserId,clock()));}
   function pause(actor:ProductionActor,value:boolean){return store.transact(actor.businessId,s=>{
     s.paused=value;productionEvent(s,value?'owner_paused':'owner_resumed',actor.hubUserId,null,null,clock());return {paused:s.paused};});}
   function cancel(actor:ProductionActor,jobId:string){return store.transact(actor.businessId,s=>{
@@ -44,7 +45,7 @@ export function createProductionWorkflow(db:Database.Database,key:string,deps:Pr
     if(j.status==='generating'||j.deliveries.some(d=>['running','succeeded','uncertain'].includes(d.status)))throw Error('Started effects require operator reconciliation');
     j.status='cancelled';for(const d of j.deliveries)if(['awaiting_owner','approved','blocked'].includes(d.status))d.status='cancelled';
     productionEvent(s,'owner_cancelled_package',actor.hubUserId,jobId,null,clock());return {cancelled:true};});}
-  function status(actor:ProductionActor){const s=store.read(actor.businessId);return {...s,events:s.events.slice(-100),jobs:s.jobs.slice(-30).reverse().map(j=>({...j,
+  function status(actor:ProductionActor){const s=store.read(actor.businessId);return {...s,approvalBatch:previewApprovalBatch(s,clock()),events:s.events.slice(-100),jobs:s.jobs.slice(-30).reverse().map(j=>({...j,
     deliveries:j.deliveries.map(d=>d.status==='succeeded'&&d.result?{...d,result:{...d.result,providerUrl:publicationUrl(d.channel,d.result.providerPostId)}}:d)}))};}
   function syncPublished(actor:ProductionActor){
     if(!deps.recordPublished)return;
@@ -149,5 +150,5 @@ export function createProductionWorkflow(db:Database.Database,key:string,deps:Pr
       }
     }finally{running=false;}
   }
-  return {store,configure,queue,decision,pause,cancel,status,tick};
+  return {store,configure,queue,decision,approveBatch,pause,cancel,status,tick};
 }
