@@ -1,4 +1,4 @@
-import React,{useEffect,useMemo,useState} from 'react';
+import React,{useEffect,useMemo,useRef,useState} from 'react';
 import {BookOpen,Save,RefreshCw,Eye,RotateCcw,History,ShieldCheck,Trash2,GitCompare,AlertTriangle,Check} from 'lucide-react';
 
 const fields=[
@@ -17,7 +17,7 @@ type Workspace={
   current:{version:number;templateVersion:string;content:Content;digest:string};
   master:{version:string;content:Content;digest:string};
   history:Version[];
-  draft:{baseVersion:number;content:Content;updatedAt:string}|null;
+  draft:{baseVersion:number;revision:number;digest:string;content:Content;updatedAt:string}|null;
   templateUpdateAvailable:boolean;
 };
 const order=fields.map(v=>v.id);
@@ -40,16 +40,48 @@ export function MyMarketingSkillView(){
   const [comparison,setComparison]=useState<any>(null);
   const [historyVersion,setHistoryVersion]=useState<number|null>(null);
   const [advanced,setAdvanced]=useState(false);
+  const [pending,setPending]=useState<{action:'reset'|'restore'|'template_update'|'delete';version?:number}|null>(null);
+  const editCounter=useRef(0);
+  const formRef=useRef<Content|null>(null);
+  const versionRef=useRef<number|null>(null);
+  const hasUnsavedRef=useRef(false);
+  const track=(next:Content|null)=>{editCounter.current++;formRef.current=next;setForm(next);setPreview(null);};
+
   const unsaved=useMemo(()=>!!form&&JSON.stringify(form)!==baseline,[form,baseline]);
+  hasUnsavedRef.current=unsaved;
+  useEffect(()=>{
+    const guard=(event:BeforeUnloadEvent)=>{
+      if(!hasUnsavedRef.current)return;
+      event.preventDefault();event.returnValue='';
+    };
+    window.addEventListener('beforeunload',guard);
+    return()=>window.removeEventListener('beforeunload',guard);
+  },[]);
   const refresh=async()=>{
+    const editAtStart=editCounter.current;
     const data=await api('') as Workspace;
     const edited=data.draft?.baseVersion===data.current.version?data.draft.content:data.current.content;
-    setWorkspace(data);setForm({...edited});setBaseline(JSON.stringify(edited));
+    setWorkspace(data);versionRef.current=data.current.version;
+    // Never replace edits made while a network response was pending.
+    if(editCounter.current===editAtStart){
+      formRef.current={...edited};setForm({...edited});
+      setBaseline(JSON.stringify(edited));
+    }else{
+      // Keep newer typing visible as an unsaved draft against the newly
+      // loaded active version, never silently regard it as saved.
+      setBaseline(JSON.stringify(edited));
+    }
   };
   useEffect(()=>{
-    let alive=true;api('').then((data:Workspace)=>{if(!alive)return;
+    let alive=true;
+    const initialEdit=editCounter.current;
+    api('').then((data:Workspace)=>{
+      if(!alive)return;
       const edited=data.draft?.baseVersion===data.current.version?data.draft.content:data.current.content;
-      setWorkspace(data);setForm({...edited});setBaseline(JSON.stringify(edited));
+      setWorkspace(data);versionRef.current=data.current.version;
+      if(editCounter.current===initialEdit){
+        formRef.current={...edited};setForm({...edited});setBaseline(JSON.stringify(edited));
+      }
     }).catch(e=>{if(alive)setError(e.message);}).finally(()=>{if(alive)setLoading(false);});
     return()=>{alive=false;};
   },[]);
@@ -59,47 +91,69 @@ export function MyMarketingSkillView(){
     finally{setBusy(false);}
   }
   async function draft(){
-    if(!workspace||!form)return;
-    const response=await api('/draft','PUT',{expectedVersion:workspace.current.version,content:form});
-    setBaseline(JSON.stringify(form));setPreview(null);
-    setNotice(response.conflicts?.length?'Draft saved. Protected-rule conflicts must be resolved before publishing.':'Private draft saved. This does not change any running campaign.');
+    if(!workspace||!formRef.current)return;
+    const snapshot={...formRef.current};
+    const editAtStart=editCounter.current;
+    const response=await api('/draft','PUT',{
+      expectedVersion:workspace.current.version,expectedDraftRevision:workspace.draft?.revision||0,content:snapshot});
+    if(editCounter.current===editAtStart)setBaseline(JSON.stringify(snapshot));
     await refresh();
+    setNotice(response.conflicts?.length?'Private draft saved. Review creative-rule warnings before activation.':
+      'Private draft saved. The active version and existing campaigns are unchanged.');
   }
   async function publish(){
-    if(!workspace||!form)return;
-    // Saving is always based on the exact displayed version; the server
-    // checks this again inside its transaction.
-    const p=await api('/draft','PUT',{expectedVersion:workspace.current.version,content:form});
-    if(p.conflicts?.length){setError(p.conflicts.join(' '));return;}
-    await api('/save','POST',{expectedVersion:workspace.current.version});
-    await refresh();setPreview(null);setNotice('New personal version saved. Existing campaigns retain their pinned instructions.');
+    if(!workspace||!formRef.current)return;
+    const snapshot={...formRef.current};
+    const changedAtStart=editCounter.current;
+    // This snapshot, revision and server digest are bound together.
+    const p=await api('/draft','PUT',{expectedVersion:workspace.current.version,
+      expectedDraftRevision:workspace.draft?.revision||0,content:snapshot});
+    if(p.conflicts?.length){setError(p.conflicts.join(' '));await refresh();return;}
+    await api('/save','POST',{expectedVersion:workspace.current.version,
+      expectedDraftRevision:p.revision,expectedDigest:p.digest});
+    if(editCounter.current===changedAtStart)setBaseline(JSON.stringify(snapshot));
+    await refresh();setPreview(null);
+    setNotice('New active version saved. Only NEW campaigns use these instructions; existing campaigns retain their pinned skill.');
   }
   async function doPreview(){
-    if(!form)return;
-    setPreview(await api('/preview','POST',{content:form}));
+    if(!formRef.current)return;
+    const editAtStart=editCounter.current;
+    const result=await api('/preview','POST',{content:{...formRef.current}});
+    if(editCounter.current===editAtStart)setPreview(result);
   }
   async function compare(){
-    setComparison(await api('/template-update'));
+    const response=await api('/template-update');
+    setComparison(response);
   }
-  async function accept(){
-    if(!workspace||!comparison||!window.confirm('Apply the proposed template changes? Your customised sections remain yours.'))return;
-    await api('/accept-template','POST',{expectedVersion:workspace.current.version,proposalDigest:comparison.digest});
-    await refresh();setComparison(null);setNotice('Template update accepted as a new personal version.');
+  function stage(action:'reset'|'restore'|'template_update'|'delete',version?:number){
+    // The user decides explicitly what happens to an unpublished draft.
+    setPending({action,version});setError('');setNotice('');
   }
-  async function restore(version:number){
-    if(!workspace||!window.confirm('Restore personal version '+version+' as a new version? This will not alter existing campaigns.'))return;
-    await api('/restore','POST',{expectedVersion:workspace.current.version,version});
-    await refresh();setHistoryVersion(null);setPreview(null);setNotice('Earlier instructions restored as a new version.');
-  }
-  async function reset(){
-    if(!workspace||!window.confirm('Reset only your skill to the current master template? Historical versions remain available.'))return;
-    await api('/reset','POST',{expectedVersion:workspace.current.version});
-    await refresh();setPreview(null);setNotice('Your skill has been reset. Other users are unaffected.');
-  }
-  async function remove(){
-    if(!workspace||!window.confirm('Delete your personalised skill? Your history is retained for recovery; existing campaign pins do not change.'))return;
-    await api('','DELETE',{expectedVersion:workspace.current.version});
-    await refresh();setPreview(null);setNotice('Your personal customisation was deleted. You now use the generic master.');
+  async function executePending(choice:'preserve'|'merge'|'discard'){
+    if(!workspace||!pending)return;
+    const action=pending;
+    if(choice==='preserve'){setPending(null);setNotice('Your unpublished draft was preserved. No active skill changes were made.');return;}
+    if(unsaved)throw Error('Save your new typing as a private draft first, then choose merge or discard.');
+    if(!window.confirm('Confirm: '+choice+' your unpublished draft and '+action.action+' your active skill?'))return;
+    const currentRevision=workspace.draft?.revision||0;
+    if(choice==='merge'&&currentRevision>0&&action.action!=='delete'){
+      await api('/merge-draft','POST',{expectedVersion:workspace.current.version,
+        expectedDraftRevision:currentRevision,action:action.action,version:action.version,
+        proposalDigest:action.action==='template_update'?comparison?.digest:undefined});
+    }else{
+      if(currentRevision>0){
+        if(choice==='merge'&&action.action==='delete')
+          throw Error('A deleted skill cannot merge changes. Preserve the draft or explicitly discard it.');
+        await api('/discard-draft','POST',{expectedDraftRevision:currentRevision});
+      }
+      if(action.action==='reset')await api('/reset','POST',{expectedVersion:workspace.current.version});
+      if(action.action==='restore')await api('/restore','POST',{expectedVersion:workspace.current.version,version:action.version});
+      if(action.action==='template_update')await api('/accept-template','POST',{
+        expectedVersion:workspace.current.version,proposalDigest:comparison?.digest});
+      if(action.action==='delete')await api('','DELETE',{expectedVersion:workspace.current.version});
+    }
+    await refresh();setComparison(null);setPreview(null);setPending(null);setHistoryVersion(null);
+    setNotice('Personal skill updated as a new active version. Earlier campaigns and other users are unaffected.');
   }
   return <main className="mx-auto max-w-6xl space-y-6 pb-16 text-[#0b1f33]">
     <header className="rounded-3xl bg-[#faf8f4] px-5 py-6 shadow-sm sm:px-8 sm:py-8">
@@ -113,17 +167,31 @@ export function MyMarketingSkillView(){
     {notice&&<p role="status" className="rounded-xl border border-teal-200 bg-teal-50 p-4 text-sm text-teal-900">{notice}</p>}
     {form&&workspace&&<div className="grid gap-6 lg:grid-cols-[minmax(0,1.75fr)_minmax(280px,1fr)]">
       <div className="space-y-4">
+        {pending&&<section role="alertdialog" aria-label="Choose how to handle unpublished skill changes"
+          className="rounded-2xl border border-amber-300 bg-amber-50 p-5 text-slate-900">
+          <h2 className="text-base font-bold">Before {pending.action}: protect your private draft</h2>
+          <p className="mt-1 text-sm">You may preserve your current work, merge changed fields into the target version, or explicitly discard the draft.
+            These choices never change another user's skill or an already approved campaign.</p>
+          {unsaved&&<p className="mt-2 text-sm font-semibold text-amber-900">Unsaved typing detected. Save your private draft first; otherwise choose Preserve.</p>}
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button type="button" onClick={()=>void run(()=>executePending('preserve'))} className="min-h-11 rounded-xl border border-slate-400 bg-white px-3 py-2 text-sm">Preserve and cancel</button>
+            {pending.action!=='delete'&&<button type="button" disabled={busy||unsaved} onClick={()=>void run(()=>executePending('merge'))}
+              className="min-h-11 rounded-xl bg-[#0e8f88] px-3 py-2 text-sm font-semibold text-white disabled:opacity-40">Merge my draft</button>}
+            <button type="button" disabled={busy||unsaved} onClick={()=>void run(()=>executePending('discard'))}
+              className="min-h-11 rounded-xl border border-red-300 bg-white px-3 py-2 text-sm font-semibold text-red-800 disabled:opacity-40">Discard draft and continue</button>
+          </div>
+        </section>}
         <section className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-white p-4 shadow-sm">
           <div><h2 className="font-semibold">Your personal instructions · v{workspace.current.version||'master'}</h2>
-            <p className="text-xs text-slate-600">Based on master {workspace.current.templateVersion} {unsaved?'· Unsaved changes':'· All edits on screen saved to draft'}</p>
+            <p className="text-xs text-slate-600">Based on master {workspace.current.templateVersion} {unsaved?'· Unsaved changes':workspace.draft?'· Saved private draft (not active)':'· Active version saved'}</p>
           </div>
-          <span className={unsaved?'rounded-full bg-amber-50 px-3 py-1 text-xs text-amber-900':'rounded-full bg-teal-50 px-3 py-1 text-xs text-teal-800'}>{unsaved?'Unsaved changes':'No unsaved changes'}</span>
+          <span className={unsaved?'rounded-full bg-amber-50 px-3 py-1 text-xs text-amber-900':'rounded-full bg-teal-50 px-3 py-1 text-xs text-teal-800'}>{unsaved?'Unsaved changes':workspace.draft?'Private draft saved':'Active version'}</span>
         </section>
         {fields.filter(f=>f.id!=='advancedInstructions').map(f=><section key={f.id} className="rounded-2xl bg-[#faf8f4] p-5 shadow-sm">
           <label className="block text-sm font-bold" htmlFor={'skill-'+f.id}>{f.label}</label>
           <p className="mt-1 text-xs text-slate-600">{f.hint}</p>
           <textarea id={'skill-'+f.id} value={form[f.id]} maxLength={1600} rows={3}
-            onChange={e=>{setForm(current=>current?{...current,[f.id]:e.target.value}:current);setPreview(null);}}
+            onChange={e=>{track(formRef.current?{...formRef.current,[f.id]:e.target.value}:null);}}
             placeholder={f.example} className="mt-3 w-full rounded-xl border border-slate-300 bg-white p-3 text-sm leading-6 text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0e8f88]"/>
         </section>)}
         <section className="rounded-2xl bg-[#faf8f4] p-5 shadow-sm">
@@ -131,7 +199,7 @@ export function MyMarketingSkillView(){
             className="w-full text-left text-sm font-bold text-[#0b1f33]">{advanced?'−':'+'} Advanced instructions (optional)</button>
           {advanced&&<><p className="mt-2 text-xs text-slate-600">Creative-only instructions. Never enter API keys, personal contact details or instructions to bypass approvals.</p>
             <textarea value={form.advancedInstructions} rows={6} maxLength={1600}
-              onChange={e=>{setForm(current=>current?{...current,advancedInstructions:e.target.value}:current);setPreview(null);}}
+              onChange={e=>{track(formRef.current?{...formRef.current,advancedInstructions:e.target.value}:null);}}
               placeholder="Creative guidance only" className="mt-3 w-full rounded-xl border border-slate-300 bg-white p-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0e8f88]"/></>}
         </section>
         <div className="flex flex-wrap gap-2">
@@ -171,7 +239,7 @@ export function MyMarketingSkillView(){
               <p className="mt-1 text-slate-500">Before: {comparison.current[k]}</p>
               <p className="mt-1 text-teal-800">After: {comparison.proposed[k]}</p>
             </div>)}
-            <button type="button" disabled={busy||unsaved} onClick={()=>void run(accept)}
+            <button type="button" disabled={busy||unsaved} onClick={()=>stage('template_update')}
               className="rounded-lg bg-[#0e8f88] px-3 py-2 font-semibold text-white disabled:opacity-40">Accept template update</button>
           </div>}
         </section>
@@ -191,7 +259,7 @@ export function MyMarketingSkillView(){
                 })} className="text-teal-800 underline">Inspect</button>
               </div>
               <p className="text-slate-500">{new Date(v.created_at).toLocaleString()}</p>
-              {historyVersion===v.version&&v.kind!=='deleted'&&<button type="button" disabled={busy} onClick={()=>void run(()=>restore(v.version))}
+              {historyVersion===v.version&&v.kind!=='deleted'&&<button type="button" disabled={busy} onClick={()=>stage('restore',v.version)}
                 className="mt-2 rounded-lg border px-2 py-1 font-semibold text-slate-800">Restore as new version</button>}
             </div>)}
           </div>
@@ -199,9 +267,9 @@ export function MyMarketingSkillView(){
         <section className="rounded-2xl bg-white p-5 shadow-sm">
           <h2 className="text-sm font-bold">Personal maintenance</h2>
           <div className="mt-3 flex flex-wrap gap-2">
-            <button type="button" disabled={busy||unsaved} onClick={()=>void run(reset)}
+            <button type="button" disabled={busy||unsaved} onClick={()=>stage('reset')}
               className="inline-flex items-center gap-2 rounded-xl border border-slate-300 px-3 py-2 text-xs font-semibold disabled:opacity-40"><RotateCcw size={14}/> Reset mine</button>
-            <button type="button" disabled={busy||unsaved} onClick={()=>void run(remove)}
+            <button type="button" disabled={busy||unsaved} onClick={()=>stage('delete')}
               className="inline-flex items-center gap-2 rounded-xl border border-red-200 px-3 py-2 text-xs font-semibold text-red-700 disabled:opacity-40"><Trash2 size={14}/> Delete customisation</button>
           </div>
         </section>
