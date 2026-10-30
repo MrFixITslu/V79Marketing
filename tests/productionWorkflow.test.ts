@@ -34,6 +34,53 @@ describe('Marketing production red-team controls',()=>{
       expect(j.bundle?.review.blockers).toEqual([]);expect(f.dispatch).not.toHaveBeenCalled();f.advance(7200000);await f.w.tick(actor);expect(f.dispatch).not.toHaveBeenCalled();
     }finally{f.db.close();}
   });
+  it('approves an entire exact batch once, atomically, without any standing permission',async()=>{
+    const f=fixture({destinations:async()=>[
+      {channel:'linkedin',accountId:'business-page',providerAccountId:'p1',accountFingerprint:digest('page-1'),
+        scheduledAt:new Date(future()).toISOString(),payload:{caption:'Approved LinkedIn copy'}},
+      {channel:'youtube',accountId:'business-channel',providerAccountId:'p2',accountFingerprint:digest('page-2'),
+        scheduledAt:new Date(future()+3600000).toISOString(),payload:{caption:'Approved video copy'}},
+    ]});
+    function future(){return Date.parse('2026-10-14T20:00:00Z');}
+    try{
+      await produce(f);
+      const preview=f.w.status(actor).approvalBatch;
+      expect(preview.deliveries).toHaveLength(2);
+      expect(preview.batchDigest).toMatch(/^[a-f0-9]{64}$/);
+      expect(()=>f.w.approveBatch(actor,digest('stale batch'))).toThrow();
+      expect(f.w.store.read(actor.businessId).jobs[0].deliveries.every(d=>d.status==='awaiting_owner')).toBe(true);
+      expect(f.w.approveBatch(actor,preview.batchDigest!)).toEqual({approved:2,batchDigest:preview.batchDigest});
+      expect(f.w.store.read(actor.businessId).jobs[0].deliveries.every(d=>d.status==='approved')).toBe(true);
+      expect(()=>f.w.approveBatch(actor,preview.batchDigest!)).toThrow();
+      expect(f.dispatch).not.toHaveBeenCalled();
+      f.advance(3600001);await f.w.tick(actor);
+      expect(f.dispatch).toHaveBeenCalledTimes(1);
+      f.advance(3600000);await f.w.tick(actor);await f.w.tick(actor);
+      expect(f.dispatch).toHaveBeenCalledTimes(2);
+    }finally{f.db.close();}
+  });
+  it('rejects the entire batch when a reviewed account or scheduled instant changes',async()=>{
+    const f=fixture({destinations:async()=>[
+      {channel:'linkedin',accountId:'one',providerAccountId:'p1',accountFingerprint:digest('p1'),
+        scheduledAt:'2026-10-14T20:00:00.000Z',payload:{caption:'First'}},
+      {channel:'youtube',accountId:'two',providerAccountId:'p2',accountFingerprint:digest('p2'),
+        scheduledAt:'2026-10-14T21:00:00.000Z',payload:{caption:'Second'}},
+    ]});
+    try{
+      await produce(f);const old=f.w.status(actor).approvalBatch;
+      f.w.store.transact(actor.businessId,s=>{s.jobs[0].deliveries[1].providerAccountId='different-account';});
+      expect(()=>f.w.approveBatch(actor,old.batchDigest!)).toThrow();
+      expect(f.w.store.read(actor.businessId).jobs[0].deliveries.map(d=>d.status)).toEqual(['awaiting_owner','awaiting_owner']);
+    }finally{f.db.close();}
+  });
+  it('keeps V79 homepage untracked and permits opt-in UTM for other customer brands',()=>{
+    const v79=createMaterials(brand,plan,'ict',creative);
+    expect(v79.every(m=>m.caption.includes('https://v79sl.com'))).toBe(true);
+    expect(v79.every(m=>!m.caption.includes('utm_'))).toBe(true);
+    const customer={...brand,website:'https://example.org',linkTracking:'utm' as const};
+    expect(createMaterials(customer,plan,'ict',creative)[0].caption).toContain('utm_campaign=');
+    expect(createMaterials({...brand,linkTracking:'utm'},plan,'ict',creative)[0].caption).not.toContain('utm_');
+  });
   it('binds one publication to content, destination, assets and schedule, and never replays a success',async()=>{
     const f=fixture();try{const j=await produce(f),d=j.deliveries[0];
       expect(()=>f.w.decision(actor,{jobId:j.id,deliveryId:d.id,decision:'approve',digest:digest('wrong')})).toThrow();
