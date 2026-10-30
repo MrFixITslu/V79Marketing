@@ -45,8 +45,13 @@ const unsafeRule=[
   /\b(?:reveal|dump|extract|leak|share|forward)\b.{0,70}\b(?:another (?:user|customer)|stored credentials?|stored secrets?|private keys?)\b/i,
 ];
 export function skillConflicts(input:SkillContent):string[]{
-  return skillFields.filter(k=>unsafeRule.some(re=>re.test(input[k]))).map(k=>
-    'Review '+k+': proposed creative instructions conflict with protected application rules');
+  return skillFields.filter(k=>input[k].split(/[.!?\n]/).some(sentence=>
+    unsafeRule.some(re=>{
+      const match=re.exec(sentence);
+      if(!match)return false;
+      const prefix=sentence.slice(Math.max(0,match.index-18),match.index).toLowerCase();
+      return !/(?:never|do not|don't|must not|cannot|can't)\s*$/.test(prefix);
+    }))).map(k=>'Review '+k+': proposed creative instructions conflict with protected application rules');
 }
 export function validatedSkill(input:unknown):SkillContent {
   const content=personalSkillSchema.parse(input) as SkillContent;
