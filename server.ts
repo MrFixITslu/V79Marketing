@@ -942,6 +942,11 @@ app.post("/api/posts", authenticate, requireMarketingPermission("content.write")
     if (data.campaignId) {
       const campaign = db.prepare("SELECT id FROM campaigns WHERE id=? AND business_id=?").get(data.campaignId, data.businessId);
       if (!campaign) return res.status(400).json({ error:"Campaign does not belong to this Marketing workspace." });
+      // Never use the approver's or another member's instructions/credentials.
+      // General post creation has no immutable publication approval token.
+      // Linked campaigns therefore remain PRIVATE DRAFTS; only the signed
+      // exact-review worker may activate their publication.
+      readCampaignSkillPin(db,req.user!,data.campaignId);
     }
 
     const postId = `post-${crypto.randomUUID()}`;
@@ -949,7 +954,7 @@ app.post("/api/posts", authenticate, requireMarketingPermission("content.write")
 
     db.prepare(`
       INSERT INTO posts (id, business_id, author_id, author_name, title, content_json, media_urls_json, scheduled_for, status, campaign_id, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'SCHEDULED', ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       postId,
       data.businessId,
@@ -959,6 +964,7 @@ app.post("/api/posts", authenticate, requireMarketingPermission("content.write")
       JSON.stringify(data.content),
       JSON.stringify(data.mediaUrls || []),
       data.scheduledFor,
+      data.campaignId ? 'DRAFT':'SCHEDULED',
       data.campaignId || null,
       now
     );
@@ -969,17 +975,18 @@ app.post("/api/posts", authenticate, requireMarketingPermission("content.write")
         (post_id,business_id,platform,status,attempts,updated_at)
       VALUES (?,?,?,'QUEUED',0,?)
     `);
-    for (const platform of publishablePlatforms) {
+    if(!data.campaignId)for (const platform of publishablePlatforms) {
       insertDelivery.run(postId, data.businessId, platform, now);
     }
     queueMarketingEvent({
       businessId: data.businessId,
-      type: "marketing.post_scheduled",
+      type: data.campaignId ? "marketing.campaign_post_drafted":"marketing.post_scheduled",
       subjectId: postId,
       payload: {
-        scheduledFor: data.scheduledFor,
-        platformCount: Object.keys(data.content || {}).length,
-        campaignLinked: Boolean(data.campaignId),
+        scheduledFor:data.scheduledFor,
+        platformCount:Object.keys(data.content || {}).length,
+        campaignLinked:Boolean(data.campaignId),
+        publicationApproval: data.campaignId ? 'required' : 'existing-general-post-workflow',
       },
     });
 
