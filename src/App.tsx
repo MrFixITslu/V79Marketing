@@ -395,6 +395,7 @@ export default function App() {
         status:newCamp.status,
         steps:newCamp.steps,
         aiPlanGenerated:newCamp.aiPlanGenerated,
+        expectedSkillDigest:newCamp.skillDigest,
       }),
     });
     const body = await response.json().catch(() => ({}));
