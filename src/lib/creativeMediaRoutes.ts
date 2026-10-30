@@ -24,10 +24,10 @@ export function installCreativeMediaRoutes(app:express.Express,db:Database.Datab
     if(!verifyMarketingBackgroundEntitlement)
       return res.status(503).json({error:'Live Hub entitlement verification is required for paid generation'});
     try{
-      const identity=db.prepare(`SELECT b.hub_organization_id AS org,u.hub_user_id AS hub
+      const identity=(db.prepare(`SELECT b.hub_organization_id AS org,u.hub_user_id AS hub
         FROM users u JOIN businesses b ON b.id=u.business_id
-        WHERE u.id=? AND u.business_id=?`).get(req.user!.id,req.user!.businessId)
-        as {org:string|null;hub:string|null}|undefined;
+        WHERE u.id=? AND u.business_id=?`).get(req.user!.id,req.user!.businessId)) as
+        {org:string|null;hub:string|null}|undefined;
       if(!identity?.org||!identity.hub||
         !await verifyMarketingBackgroundEntitlement({
           organizationId:identity.org,scopedUserId:identity.hub}))
