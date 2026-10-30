@@ -661,6 +661,7 @@ export default function App() {
             business={currentBusiness}
             campaigns={campaigns}
             onCreateCampaign={handleCreateCampaign}
+            onRegeneratedCampaign={campaign=>setCampaigns(items=>[campaign,...items])}
           />
         )}
 
