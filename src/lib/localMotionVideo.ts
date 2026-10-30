@@ -36,16 +36,26 @@ export async function composeLocalMotionVideo(input:{imageData:string;brand:Prod
     await fs.chmod(temp,0o700);
     const source='source.'+image.extension;
     await fs.writeFile(path.join(temp,source),image.bytes,{mode:0o600});
+    // Decode dimensions with ffprobe before allocating a 1080x1920 encoder.
+    // Reject unsupported or oversized media rather than trusting extensions.
+    const probe=await execute('ffprobe',['-v','error','-select_streams','v:0',
+      '-show_entries','stream=width,height,codec_name','-of','json',source],
+      {cwd:temp,timeout:10000,maxBuffer:4096});
+    const stream=JSON.parse(probe.stdout).streams?.[0];
+    if(!stream||!Number.isInteger(stream.width)||!Number.isInteger(stream.height)||
+      stream.width<100||stream.height<100||stream.width>4096||stream.height>4096||
+      !['png','mjpeg'].includes(stream.codec_name))
+      throw Error('Invalid or oversized local source image');
     await fs.writeFile(path.join(temp,'hook.txt'),label+'\n'+claim,{mode:0o600});
     await fs.writeFile(path.join(temp,'end.txt'),cta+'\n'+website.hostname,{mode:0o600});
     await fs.access(font);
     const vf=[
       'scale=1080:1920:force_original_aspect_ratio=increase',
       'crop=1080:1920',
-      "zoompan=z='min(zoom+0.00065,1.13)':d=1:s=1080x1920:fps=24",
+      "zoompan=z='min(zoom+0.00065\\,1.13)':d=1:s=1080x1920:fps=24",
       'drawbox=x=0:y=1250:w=iw:h=670:color=black@0.67:t=fill',
       `drawtext=fontfile=${font}:textfile=hook.txt:expansion=none:fontcolor=white:fontsize=42:line_spacing=18:x=70:y=1370`,
-      `drawtext=fontfile=${font}:textfile=end.txt:expansion=none:fontcolor=white:fontsize=36:line_spacing=16:x=70:y=1730:enable='gte(t,6)'`,
+      `drawtext=fontfile=${font}:textfile=end.txt:expansion=none:fontcolor=white:fontsize=36:line_spacing=16:x=70:y=1730:enable='gte(t\\,6)'`,
     ].join(',');
     await execute(options.ffmpegPath||'ffmpeg',[
       '-hide_banner','-loglevel','error','-nostdin','-loop','1','-framerate','24','-i',source,
