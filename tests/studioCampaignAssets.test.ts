@@ -95,7 +95,7 @@ describe('Studio exact private media packages',()=>{
     expect(pkg.accountId).toBe('mine');
     expect(pkg.scheduledAt).toBe(when);
     expect(readOwnStudioPackage(db,a,cid,pkg.id,secret).schedulingActivated).toBe(false);
-    expect(db.prepare('SELECT count(*) n FROM posts').get()).toBeUndefined(); // Fixture has no publisher table.
+    expect(db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='post_deliveries'").get()).toBeUndefined(); // This review store does not create publisher work.
   }finally{db.close();}
  });
  it('editing creative content creates a different signed package requiring fresh exact review',()=>{
