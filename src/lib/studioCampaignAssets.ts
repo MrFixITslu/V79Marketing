@@ -78,17 +78,38 @@ function campaignOwner(db:Database.Database,actor:StudioActor,campaignId:string)
     .get(campaignId,actor.businessId))throw Error('Campaign not found');
   return pin;
 }
+// Defensive container checks, not a substitute for browser/FFprobe media
+// playback acceptance. Disallow SVG/script-capable formats and oversized pixel
+// allocations before letting a private creator stage binary data.
 function imageMime(data:Buffer):string|null{
-  if(data.subarray(0,8).toString('hex')==='89504e470d0a1a0a')return 'image/png';
-  if(data.subarray(0,3).toString('hex')==='ffd8ff')return 'image/jpeg';
+  if(data.length>=64&&data.subarray(0,8).toString('hex')==='89504e470d0a1a0a'&&
+    data.readUInt32BE(8)===13&&data.toString('ascii',12,16)==='IHDR'&&
+    data.subarray(-8,-4).toString('ascii')==='IEND'&&
+    data.readUInt32BE(16)>=1&&data.readUInt32BE(16)<=4096&&
+    data.readUInt32BE(20)>=1&&data.readUInt32BE(20)<=4096&&
+    data.readUInt32BE(16)*data.readUInt32BE(20)<=8_000_000)
+      return 'image/png';
+  if(data.length>=128&&data.subarray(0,3).toString('hex')==='ffd8ff'&&
+    data.subarray(-2).toString('hex')==='ffd9')return 'image/jpeg';
   return null;
+}
+function hasMp4Atoms(data:Buffer){
+  if(data.length<1024||data.subarray(4,8).toString('ascii')!=='ftyp')return false;
+  let offset=0,ftyp=false,moov=false,mdat=false,count=0;
+  while(offset+8<=data.length&&count++<200){
+    const size=data.readUInt32BE(offset),name=data.toString('ascii',offset+4,offset+8);
+    if(size<8||size>data.length-offset)return false;
+    if(name==='ftyp')ftyp=true;
+    if(name==='moov')moov=true;
+    if(name==='mdat')mdat=true;
+    offset+=size;
+  }
+  return offset===data.length&&ftyp&&moov&&mdat;
 }
 function mediaMime(data:Buffer,kind:StudioAssetKind):string{
   const mime=imageMime(data);
-  if(kind==='image'&&mime&&data.length>=128&&data.length<=2*1024*1024)return mime;
-  if(kind==='video'&&data.length>=1024&&data.length<=7*1024*1024&&
-    data.subarray(4,8).toString('ascii')==='ftyp'&&
-    ['isom','iso2','mp41','mp42','avc1'].includes(data.subarray(8,12).toString('ascii')))return 'video/mp4';
+  if(kind==='image'&&mime&&data.length<=2*1024*1024)return mime;
+  if(kind==='video'&&data.length<=7*1024*1024&&hasMp4Atoms(data))return 'video/mp4';
   throw Error('Invalid image/video bytes or size; SVG and external URLs cannot be pinned');
 }
 export function attachOwnStudioAsset(db:Database.Database,actor:StudioActor,
