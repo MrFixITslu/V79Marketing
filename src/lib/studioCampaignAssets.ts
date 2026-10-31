@@ -123,6 +123,14 @@ export function attachOwnStudioAsset(db:Database.Database,actor:StudioActor,
       FROM studio_campaign_assets WHERE business_id=? AND user_id=? AND campaign_id=?`)
       .get(actor.businessId,actor.id,campaignId) as {n:number;bytes:number};
     if(n.n>=8||n.bytes+data.length>24*1024*1024)throw Error('Private campaign asset limit reached');
+    const aggregate=db.prepare(`SELECT
+      COALESCE(SUM(CASE WHEN user_id=? THEN size_bytes ELSE 0 END),0) AS userBytes,
+      COALESCE(SUM(size_bytes),0) AS businessBytes
+      FROM studio_campaign_assets WHERE business_id=?`)
+      .get(actor.id,actor.businessId) as {userBytes:number;businessBytes:number};
+    if(aggregate.userBytes+data.length>128*1024*1024||
+       aggregate.businessBytes+data.length>512*1024*1024)
+      throw Error('Personal or business private-media capacity reached');
     db.prepare(`INSERT INTO studio_campaign_assets
       (id,business_id,user_id,campaign_id,kind,mime,bytes,sha256,size_bytes,created_at)
       VALUES (?,?,?,?,?,?,?,?,?,?)`)
