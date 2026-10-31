@@ -61,6 +61,9 @@ import { AiBrandKitView } from './components/AiBrandKitView';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { CustomerPipelineView } from './components/CustomerPipelineView';
 import { OneIdeaCampaignView } from './components/OneIdeaCampaignView';
+import { MyMarketingSkillView } from './components/MyMarketingSkillView';
+import { CampaignStudioView } from './components/CampaignStudioView';
+import { StudioApprovalsView } from './components/StudioApprovalsView';
 import { CustomerInquiry } from './types';
 
 export type ViewType =
@@ -69,6 +72,9 @@ export type ViewType =
   | 'customers'
   | 'one-idea-campaign'
   | 'ai_brain'
+  | 'my-marketing-skill'
+  | 'studio'
+  | 'studio-approvals'
   | 'ai-assistant'
   | 'ai-image'
   | 'reviews'
@@ -86,6 +92,7 @@ export type ViewType =
   | 'admin';
 
 export default function App() {
+  const [skillHasUnsavedEdits,setSkillHasUnsavedEdits]=useState(false);
   const [currentView, setCurrentView] = useState<ViewType>(() =>
     typeof window === 'undefined' ? 'dashboard' : readMarketingView(window.location.search)
   );
@@ -393,6 +400,7 @@ export default function App() {
         status:newCamp.status,
         steps:newCamp.steps,
         aiPlanGenerated:newCamp.aiPlanGenerated,
+        expectedSkillDigest:newCamp.skillDigest,
       }),
     });
     const body = await response.json().catch(() => ({}));
@@ -485,7 +493,7 @@ export default function App() {
   }
 
   return (
-    <div className="v79-marketing-app min-h-screen bg-[#07111f] text-slate-100 font-sans flex flex-col">
+    <div className={`v79-marketing-app min-h-screen font-sans flex flex-col ${currentView==='studio'||currentView==='studio-approvals'||currentView==='my-marketing-skill'?'v79-light-workspace':'bg-[#07111f] text-slate-100'}`}>
       {/* Primary Top Navigation */}
       <Navbar
         currentUser={currentUser}
@@ -494,7 +502,11 @@ export default function App() {
         currentBusiness={currentBusiness}
         creditBalance={creditBalance}
         activeTab={currentView}
-        setActiveTab={(tab) => setCurrentView(tab as ViewType)}
+        setActiveTab={(tab) => {
+          if(currentView==='my-marketing-skill'&&skillHasUnsavedEdits&&
+            !window.confirm('You have unsaved personal skill edits. Leave without saving?'))return;
+          setCurrentView(tab as ViewType);
+        }}
         currency={currency}
         setCurrency={setCurrency}
         onOpenAuth={() => window.location.assign('/api/platform/hub')}
@@ -578,6 +590,10 @@ export default function App() {
           />
         )}
 
+        {currentView === 'my-marketing-skill' && <MyMarketingSkillView onUnsavedChange={setSkillHasUnsavedEdits} />}
+        {currentView === 'studio' && <CampaignStudioView business={currentBusiness} onCreateCampaign={handleCreateCampaign} />}
+        {currentView === 'studio-approvals' && <StudioApprovalsView />}
+
         {currentView === 'ai_brain' && (
           <AiBrainView
             business={currentBusiness}
@@ -656,6 +672,7 @@ export default function App() {
             business={currentBusiness}
             campaigns={campaigns}
             onCreateCampaign={handleCreateCampaign}
+            onRegeneratedCampaign={campaign=>setCampaigns(items=>[campaign,...items])}
           />
         )}
 

@@ -15,6 +15,10 @@ import {
   Share2,
   Megaphone,
   KeyRound,
+  Settings,
+  BookOpen,
+  Clapperboard,
+  ShieldCheck,
   ExternalLink,
   Brain,
   Video,
@@ -161,6 +165,8 @@ export const Navbar: React.FC<NavbarProps> = ({
       icon: Sparkles,
       badge: '1-Click',
       items: [
+        { id: 'studio', label: 'Campaign Studio', icon: Clapperboard, badge: 'New', desc: 'Visual brief, concepts and private asset review' },
+        { id: 'studio-approvals', label: 'Publishing Reviews', icon: ShieldCheck, desc: 'Owner review of exact media and scheduled destinations' },
         { id: 'one-idea-campaign', label: 'One Idea → Campaign', icon: Layers, badge: 'Popular', desc: 'Single prompt to full campaign' },
         { id: 'ai-assistant', label: 'Zero-Prompt Creator', icon: Sparkles, desc: 'Guided post & promo captions' },
         { id: 'ai-image', label: 'Graphic Studio', icon: ImageIcon, desc: 'Social posters & banners' },
@@ -198,6 +204,15 @@ export const Navbar: React.FC<NavbarProps> = ({
         { id: 'competitors', label: 'Market Benchmarks', icon: TrendingUp, desc: 'Competitor opportunity gaps' },
         { id: 'campaigns', label: '30-Day Growth Plans', icon: Layers, desc: 'Multi-week growth roadmaps' },
         { id: 'agent-drafts', label: 'Internal Agent Drafts', icon: Megaphone, desc: 'Private review briefs, no publishing' },
+      ],
+    },
+    {
+      id: 'settings_hub',
+      label: 'Settings',
+      icon: Settings,
+      items: [
+        { id: 'my-marketing-skill', label: 'My marketing skill', icon: BookOpen, desc: 'Your private instructions, drafts and versions' },
+        { id: 'social-channels', label: 'Connections', icon: Share2, desc: 'Provider accounts and authorisations' },
       ],
     },
     {
@@ -581,7 +596,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* Clean, Grouped Nav Bar (No Scrollbar, Uncluttered) */}
         <div className="border-t border-slate-100 py-2 relative" ref={dropdownRef}>
-          <nav className="flex items-center justify-between sm:justify-start gap-1 sm:gap-2 no-scrollbar text-xs">
+          <nav className="flex flex-wrap items-center justify-start gap-1 sm:gap-2 no-scrollbar text-xs">
             {navGroups.map((group) => {
               const Icon = group.icon;
               const isGroupActive = activeGroup?.id === group.id;

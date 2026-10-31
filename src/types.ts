@@ -257,7 +257,7 @@ export interface TikTokCreatorInfo {
   maxVideoPostDurationSec: number;
 }
 
-export type DeliveryStatus = 'QUEUED' | 'AWAITING_CONNECTION' | 'NEEDS_ACTION' | 'FAILED' | 'PUBLISHED';
+export type DeliveryStatus = 'QUEUED' | 'AWAITING_CONNECTION' | 'NEEDS_ACTION' | 'FAILED' | 'PUBLISHED' | 'DISPATCHING' | 'OUTCOME_UNKNOWN';
 
 export interface PostDelivery {
   postId: string;
@@ -326,6 +326,8 @@ export interface Campaign {
   steps: CampaignStep[];
   aiPlanGenerated: boolean;
   createdAt: string;
+  skillDigest?: string;
+  skillPin?: {creatorUserId:string;skillVersion:number;skillDigest:string};
 }
 
 export interface GeneratedImage {

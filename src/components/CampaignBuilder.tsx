@@ -15,20 +15,42 @@ import {
 interface CampaignBuilderProps {
   business: Business;
   campaigns: Campaign[];
-  onCreateCampaign: (campaign: Campaign) => void;
+  onCreateCampaign: (campaign: Campaign) => Promise<Campaign>;
+  onRegeneratedCampaign?: (campaign:Campaign)=>void;
 }
 
 export const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
   business,
   campaigns,
   onCreateCampaign,
+  onRegeneratedCampaign,
 }) => {
   const [campaignName, setCampaignName] = useState('');
   const [objective, setObjective] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
+  const [regenerating,setRegenerating]=useState(false);
+  const [regenMessage,setRegenMessage]=useState('');
 
   const [activeCampaign, setActiveCampaign] = useState<Campaign>(campaigns[0]);
 
+  const regenerate=async()=>{
+    if(!activeCampaign?.skillPin||regenerating||!window.confirm(
+      'Create a NEW campaign draft using your latest personal marketing skill? Existing approved or published content will remain unchanged.'))return;
+    setRegenerating(true);setRegenMessage('');
+    try{
+      const r=await fetch('/api/my-marketing-skill',{credentials:'same-origin'});
+      if(!r.ok)throw Error('Personal skill unavailable');
+      const skill=await r.json();
+      const response=await fetch('/api/campaigns/'+encodeURIComponent(activeCampaign.id)+'/regenerate',{
+        method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({expectedSkillDigest:skill.current.digest})});
+      const body=await response.json().catch(()=>({}));
+      if(!response.ok||!body.campaign)throw Error(body.error||'Regeneration unavailable');
+      setActiveCampaign(body.campaign);onRegeneratedCampaign?.(body.campaign);
+      setRegenMessage('New draft created with the latest skill. Generate new content and review it before scheduling; previous approvals were not reused.');
+    }catch{setRegenMessage('Only the original creator can regenerate a saved campaign. Refresh your skill and try again.');}
+    finally{setRegenerating(false);}
+  };
   const handleGenerateAiPlan = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!campaignName || !objective) return;
@@ -67,10 +89,11 @@ export const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
           status: 'ACTIVE',
           steps: formattedSteps,
           aiPlanGenerated: true,
+          skillDigest:data.skillDigest,
           createdAt: new Date().toISOString(),
         };
-        onCreateCampaign(newCamp);
-        setActiveCampaign(newCamp);
+        const saved=await onCreateCampaign(newCamp);
+        setActiveCampaign(saved);
       }
     } catch (err) {
       console.error('Error generating campaign plan:', err);
@@ -148,13 +171,19 @@ export const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
               </span>
               <h2 className="text-lg font-bold text-slate-900 mt-2">{activeCampaign.name}</h2>
               <p className="text-xs text-slate-500 mt-0.5">{activeCampaign.objective}</p>
+              {activeCampaign.skillPin&&<p className="mt-1 text-xs text-teal-800">Creator skill v{activeCampaign.skillPin.skillVersion} · pinned for this campaign</p>}
             </div>
 
-            <div className="flex items-center gap-2 text-xs text-slate-600 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200">
+            <div className="flex flex-wrap items-center gap-2">
+              {activeCampaign.skillPin&&<button type="button" onClick={()=>void regenerate()} disabled={regenerating}
+                className="min-h-10 rounded-xl border border-teal-600 px-3 py-2 text-xs font-semibold text-teal-900 disabled:opacity-40">Regenerate with my latest skill</button>}
+                        <div className="flex items-center gap-2 text-xs text-slate-600 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200">
               <Calendar className="w-4 h-4 text-slate-500" />
               <span>{activeCampaign.startDate} to {activeCampaign.endDate}</span>
+              </div>
             </div>
           </div>
+          {regenMessage&&<p role="status" className="rounded-xl bg-teal-50 p-3 text-xs text-teal-900">{regenMessage}</p>}
 
           {/* Steps Timeline */}
           <div className="space-y-3">

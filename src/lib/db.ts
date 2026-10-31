@@ -1,6 +1,9 @@
 import Database from "better-sqlite3";
 import { installProductionTracking } from "./productionTracking.js";
 import { ensureAgentCampaignDraftTable } from "./agentCampaignDrafts.js";
+import { ensureMediaKeyTable } from "./mediaProviderVault.js";
+import { ensurePersonalSkillTables } from "./personalMarketingSkills.js";
+import { ensureScopedSocialAccountIndexes } from "./socialAccountOwnership.js";
 import path from "path";
 import fs from "fs";
 import bcrypt from "bcryptjs";
@@ -302,14 +305,19 @@ export function initDb() {
   ensureColumn("social_accounts", "token_scopes", "TEXT");
   ensureColumn("social_accounts", "legal_version", "TEXT");
   ensureColumn("social_accounts", "legal_consented_at", "TEXT");
+  ensureColumn("social_accounts", "connected_by_user_id", "TEXT");
   ensureColumn("social_oauth_states", "legal_version", "TEXT");
   ensureColumn("social_oauth_states", "consented_at", "TEXT");
   migrateHubManagedUserEmailScope();
+  // Creating the BYOK FK before this legacy users-table rename would bind it
+  // to users_global_email_legacy and break both cleanup and account deletion.
+  ensureMediaKeyTable(db);
+  ensurePersonalSkillTables(db);
   db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_businesses_hub_org ON businesses(hub_organization_id) WHERE hub_organization_id IS NOT NULL;");
   db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_legacy_email ON users(email) WHERE hub_user_id IS NULL;");
   db.exec("DROP INDEX IF EXISTS idx_users_hub_user;");
   db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_hub_user_business ON users(hub_user_id,business_id) WHERE hub_user_id IS NOT NULL;");
-  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_social_provider_account ON social_accounts(business_id,platform,provider_account_id) WHERE provider_account_id IS NOT NULL;");
+  ensureScopedSocialAccountIndexes(db);
 
   if (process.env.NODE_ENV !== "production" && process.env.V79_MARKETING_SEED_DEMO === "1") {
     seedInitialData();
@@ -326,7 +334,10 @@ function ensureColumn(table: string, column: string, definition: string) {
 function migrateHubManagedUserEmailScope() {
   const indexes = db.prepare("PRAGMA index_list(users)").all() as any[];
   const hasGlobalEmailUnique = indexes.some(index => {
-    if (!index?.unique || !index?.name) return false;
+    // idx_users_legacy_email is intentionally PARTIAL (WHERE hub_user_id IS NULL).
+    // It is not the old global UNIQUE(email) constraint. Migrating it on a
+    // second initDb() would rename users and corrupt existing foreign keys.
+    if (!index?.unique || !index?.name || Number(index.partial || 0)!==0) return false;
     const safeName = String(index.name).replace(/"/g, '""');
     const columns = db.prepare(`PRAGMA index_info("${safeName}")`).all() as any[];
     return columns.length === 1 && columns[0]?.name === "email";

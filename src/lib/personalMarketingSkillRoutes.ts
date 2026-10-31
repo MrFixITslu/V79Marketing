@@ -1,0 +1,106 @@
+import type express from 'express';
+import type Database from 'better-sqlite3';
+import {z} from 'zod';
+import {authenticate,requireMarketingPermission,type AuthenticatedRequest} from './auth.js';
+import {productionStore} from './productionStore.js';
+import {
+  getSkillWorkspace,personalSkillSchema,saveSkillDraft,publishOwnSkill,discardOwnDraft,resetOwnSkill,
+  deleteOwnSkill,restoreOwnSkill,skillVersion,skillPreview,templateUpdatePreview,acceptTemplateUpdate,mergeUnpublishedDraft,
+} from './personalMarketingSkills.js';
+
+const number=z.number().int().min(0).max(1000000);
+const draftSchema=z.object({expectedVersion:number,expectedDraftRevision:number,content:personalSkillSchema}).strict();
+const commitSchema=z.object({expectedVersion:number,expectedDraftRevision:number.min(1),expectedDigest:z.string().regex(/^[a-f0-9]{64}$/)}).strict();
+const discardSchema=z.object({expectedDraftRevision:number.min(1)}).strict();
+const saveSchema=z.object({expectedVersion:number}).strict();
+const restoreSchema=z.object({expectedVersion:number,version:number.min(1)}).strict();
+const acceptSchema=z.object({expectedVersion:number,proposalDigest:z.string().regex(/^[a-f0-9]{64}$/)}).strict();
+const secure=(res:express.Response)=>res.setHeader('Cache-Control','no-store');
+// Errors never echo user-provided skill data, URLs, hidden model instructions or credential strings.
+function failure(res:express.Response,err:unknown){
+  const reason=err instanceof Error?err.message:'';
+  const conflict=/version changed|proposal changed|draft first|unavailable|draft exists|draft changed|reviewed draft/i.test(reason);
+  return res.status(conflict?409:400).json({error:conflict?'Skill changed. Reload and compare your edits.':
+    'Skill request rejected. Review protected rules and your personal skill version.'});
+}
+export function installPersonalSkillRoutes(app:express.Express,db:Database.Database){
+  const middleware=[authenticate,requireMarketingPermission('ai.use')] as const;
+  app.get('/api/my-marketing-skill',...middleware,(req:AuthenticatedRequest,res)=>{
+    secure(res);try{return res.json(getSkillWorkspace(db,req.user!));}
+    catch{return res.status(503).json({error:'Personal skill unavailable'});}
+  });
+  app.get('/api/my-marketing-skill/template-update',...middleware,(req:AuthenticatedRequest,res)=>{
+    secure(res);try{return res.json(templateUpdatePreview(db,req.user!));}
+    catch{return res.status(503).json({error:'Template comparison unavailable'});}
+  });
+  app.get('/api/my-marketing-skill/history/:version',...middleware,(req:AuthenticatedRequest,res)=>{
+    secure(res);const version=number.min(1).safeParse(Number(req.params.version));
+    if(!version.success)return res.status(400).json({error:'Invalid skill version'});
+    try{return res.json(skillVersion(db,req.user!,version.data));}
+    catch{return res.status(404).json({error:'Personal skill version not found'});}
+  });
+  app.post('/api/my-marketing-skill/preview',...middleware,(req:AuthenticatedRequest,res)=>{
+    secure(res);const parsed=personalSkillSchema.safeParse(req.body?.content);
+    if(!parsed.success)return res.status(400).json({error:'Invalid skill preferences'});
+    let approved:null|{businessName:string;services:{service:string;statement:string}[]}=null;
+    const auditKey=process.env.V79_MARKETING_PRODUCTION_AUDIT_KEY||'';
+    if(auditKey.length>=32){
+      try{
+        const signed=productionStore(db,auditKey).read(req.user!.businessId);
+        if(signed.brand?.facts?.length && signed.ownerLocalUserId){
+          approved={businessName:signed.brand.name,
+            services:signed.brand.facts.map(f=>({service:f.service,statement:f.statement}))};
+        }
+      }catch{ /* Missing/tampered approval ledger: never infer unverified facts */ }
+    }
+    try{return res.json(skillPreview(parsed.data,approved));}
+    catch{return res.status(400).json({error:'Preview rejected. Remove credentials or invalid instructions.'});}
+  });
+  app.put('/api/my-marketing-skill/draft',...middleware,(req:AuthenticatedRequest,res)=>{
+    secure(res);const input=draftSchema.safeParse(req.body);
+    if(!input.success)return res.status(400).json({error:'Invalid skill draft'});
+    try{return res.json(saveSkillDraft(db,req.user!,input.data.expectedVersion,input.data.content,input.data.expectedDraftRevision));}
+    catch(e){return failure(res,e);}
+  });
+  app.post('/api/my-marketing-skill/save',...middleware,(req:AuthenticatedRequest,res)=>{
+    secure(res);const input=commitSchema.safeParse(req.body);if(!input.success)return res.status(400).json({error:'Invalid save request'});
+    try{return res.json({skill:publishOwnSkill(db,req.user!,input.data.expectedVersion,input.data.expectedDraftRevision,input.data.expectedDigest)});}
+    catch(e){return failure(res,e);}
+  });
+  app.post('/api/my-marketing-skill/discard-draft',...middleware,(req:AuthenticatedRequest,res)=>{
+    secure(res);const input=discardSchema.safeParse(req.body);if(!input.success)return res.status(400).json({error:'Invalid draft discard request'});
+    try{return res.json(discardOwnDraft(db,req.user!,input.data.expectedDraftRevision));}
+    catch(e){return failure(res,e);}
+  });
+    app.post('/api/my-marketing-skill/reset',...middleware,(req:AuthenticatedRequest,res)=>{
+    secure(res);const input=saveSchema.safeParse(req.body);if(!input.success)return res.status(400).json({error:'Invalid reset request'});
+    try{return res.json({skill:resetOwnSkill(db,req.user!,input.data.expectedVersion)});}
+    catch(e){return failure(res,e);}
+  });
+  app.post('/api/my-marketing-skill/restore',...middleware,(req:AuthenticatedRequest,res)=>{
+    secure(res);const input=restoreSchema.safeParse(req.body);if(!input.success)return res.status(400).json({error:'Invalid restore request'});
+    try{return res.json({skill:restoreOwnSkill(db,req.user!,input.data.expectedVersion,input.data.version)});}
+    catch(e){return failure(res,e);}
+  });
+  app.post('/api/my-marketing-skill/merge-draft',...middleware,(req:AuthenticatedRequest,res)=>{
+    secure(res);const input=z.object({
+      expectedVersion:number,expectedDraftRevision:number.min(1),
+      action:z.enum(['reset','restore','template_update']),version:number.min(1).optional(),
+      proposalDigest:z.string().regex(/^[a-f0-9]{64}$/).optional(),
+    }).strict().safeParse(req.body);
+    if(!input.success)return res.status(400).json({error:'Invalid merge request'});
+    try{return res.json({skill:mergeUnpublishedDraft(db,req.user!,input.data.expectedVersion,
+      input.data.expectedDraftRevision,input.data.action,input.data.version,input.data.proposalDigest)});}
+    catch(e){return failure(res,e);}
+  });
+  app.post('/api/my-marketing-skill/accept-template',...middleware,(req:AuthenticatedRequest,res)=>{
+    secure(res);const input=acceptSchema.safeParse(req.body);if(!input.success)return res.status(400).json({error:'Invalid comparison acceptance'});
+    try{return res.json({skill:acceptTemplateUpdate(db,req.user!,input.data.expectedVersion,input.data.proposalDigest)});}
+    catch(e){return failure(res,e);}
+  });
+  app.delete('/api/my-marketing-skill',...middleware,(req:AuthenticatedRequest,res)=>{
+    secure(res);const input=saveSchema.safeParse(req.body);if(!input.success)return res.status(400).json({error:'Invalid delete request'});
+    try{return res.json({skill:deleteOwnSkill(db,req.user!,input.data.expectedVersion)});}
+    catch(e){return failure(res,e);}
+  });
+}

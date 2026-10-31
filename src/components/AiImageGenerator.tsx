@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Business, GeneratedImage } from '../types';
+import { MediaProviderKeysPanel } from './MediaProviderKeysPanel';
 import {
   ImageIcon,
   Sparkles,
@@ -108,6 +109,8 @@ export const AiImageGenerator: React.FC<AiImageGeneratorProps> = ({
           <span>{isSaving ? 'Saving…' : savedSuccess ? 'Saved to Media Assets' : 'Save to Asset Library'}</span>
         </button>
       </div>
+
+      <MediaProviderKeysPanel />
 
       {error && (
         <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-xs font-medium text-red-300">
