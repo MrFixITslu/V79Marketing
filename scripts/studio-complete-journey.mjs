@@ -80,7 +80,25 @@ try{
   const consent=page.getByLabel(/I inspected this exact draft image/i);
   await consent.check();
   await page.getByRole('button',{name:/Pin exact private media review/}).click();
-  await page.getByRole('button',{name:/Acknowledge exact private creative review/}).waitFor({timeout:40000});
+  try{
+    await page.getByRole('button',{name:/Acknowledge exact private creative review/}).waitFor({timeout:20000});
+  }catch(e){
+    await page.screenshot({path:path.join(out,'04-review-handoff-diagnostic.png'),fullPage:true});
+    const notices=await page.locator('[role="alert"],[role="status"]').allInnerTexts();
+    const state=await page.evaluate(async()=>{
+      const list=await fetch('/api/campaigns').then(x=>x.json()).catch(()=>({}));
+      const rows=list.campaigns||[];
+      const recent=rows.find(c=>c.name==='Synthetic document workflow training for Caribbean office staff. Only approved information.')||rows[0];
+      const id=recent?.id||null;
+      const assets=id?await fetch('/api/campaigns/'+encodeURIComponent(id)+'/studio-assets').then(x=>x.json()).catch(()=>({})):{};
+      return {campaignCount:rows.length,campaignIdPresent:!!id,assetCount:assets.assets?.length||0,
+        mediaTypes:(assets.assets||[]).map(x=>x.mime)};
+    });
+    console.error('ISOLATED_REVIEW_HANDOFF_DIAGNOSTIC='+JSON.stringify({
+      notices:notices.slice(0,5).map(x=>x.slice(0,350)),state,
+    }));
+    throw e;
+  }
   await page.screenshot({path:path.join(out,'04-signed-creative-package.png'),fullPage:true});
   await page.getByRole('button',{name:/Acknowledge exact private creative review/}).click();
   await page.getByText(/Creative review recorded against exact pinned media/).waitFor();
