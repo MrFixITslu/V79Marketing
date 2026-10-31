@@ -63,6 +63,7 @@ import { CustomerPipelineView } from './components/CustomerPipelineView';
 import { OneIdeaCampaignView } from './components/OneIdeaCampaignView';
 import { MyMarketingSkillView } from './components/MyMarketingSkillView';
 import { CampaignStudioView } from './components/CampaignStudioView';
+import { StudioApprovalsView } from './components/StudioApprovalsView';
 import { CustomerInquiry } from './types';
 
 export type ViewType =
@@ -73,6 +74,7 @@ export type ViewType =
   | 'ai_brain'
   | 'my-marketing-skill'
   | 'studio'
+  | 'studio-approvals'
   | 'ai-assistant'
   | 'ai-image'
   | 'reviews'
@@ -491,7 +493,7 @@ export default function App() {
   }
 
   return (
-    <div className={`v79-marketing-app min-h-screen font-sans flex flex-col ${currentView==='studio'||currentView==='my-marketing-skill'?'v79-light-workspace':'bg-[#07111f] text-slate-100'}`}>
+    <div className={`v79-marketing-app min-h-screen font-sans flex flex-col ${currentView==='studio'||currentView==='studio-approvals'||currentView==='my-marketing-skill'?'v79-light-workspace':'bg-[#07111f] text-slate-100'}`}>
       {/* Primary Top Navigation */}
       <Navbar
         currentUser={currentUser}
@@ -590,6 +592,7 @@ export default function App() {
 
         {currentView === 'my-marketing-skill' && <MyMarketingSkillView onUnsavedChange={setSkillHasUnsavedEdits} />}
         {currentView === 'studio' && <CampaignStudioView business={currentBusiness} onCreateCampaign={handleCreateCampaign} />}
+        {currentView === 'studio-approvals' && <StudioApprovalsView />}
 
         {currentView === 'ai_brain' && (
           <AiBrainView
