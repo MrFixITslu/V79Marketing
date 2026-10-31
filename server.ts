@@ -33,6 +33,7 @@ import { decryptToken, encryptToken } from "./src/lib/tokenVault.js";
 import {installMediaCredentialRoutes} from "./src/lib/mediaProviderRoutes.js";
 import {installCreativeMediaRoutes} from "./src/lib/creativeMediaRoutes.js";
 import {installStudioCampaignRoutes} from "./src/lib/studioCampaignRoutes.js";
+import {installStudioPublishingRoutes} from "./src/lib/studioPublishingRoutes.js";
 import {installPersonalSkillRoutes} from "./src/lib/personalMarketingSkillRoutes.js";
 import {pinCampaignSkill,readCampaignSkillPin,snapshotOwnSkill} from "./src/lib/personalMarketingSkills.js";
 import {readOwnMediaKey} from "./src/lib/mediaProviderVault.js";
@@ -122,6 +123,7 @@ app.use("/api/", globalApiLimiter);
 installMediaCredentialRoutes(app,db);
 installCreativeMediaRoutes(app,db);
 installStudioCampaignRoutes(app,db);
+const studioPublisher=installStudioPublishingRoutes(app,db);
 installPersonalSkillRoutes(app,db);
 
 // AI Client Initialization
@@ -2275,6 +2277,11 @@ function assertProductionConfiguration() {
   const missing = required
     .filter(([,value]) => String(value || "").trim().length < 32)
     .map(([name]) => name);
+  if (process.env.V79_STUDIO_PUBLISH_ENABLED==='1') {
+    if(process.env.V79_ENTITLEMENT_RECHECK_ENABLED!=='1'||
+       String(process.env.V79_MARKETING_STUDIO_REVIEW_KEY||'').length<32)
+      throw Error('Studio publishing requires a separate 32+ character review key and active Hub entitlement checks');
+  }
   if (missing.length) throw new Error(`Production configuration missing strong secrets: ${missing.join(", ")}`);
   const connectedProviderTokens = Number(
     (db.prepare("SELECT COUNT(*) AS count FROM social_accounts WHERE connected=1 AND access_token_enc IS NOT NULL").get() as any)?.count || 0
@@ -2291,6 +2298,7 @@ async function startServer() {
   assertProductionConfiguration();
   startPublisherWorker(15000);
   marketingProduction.start();
+  studioPublisher.start();
   startPlatformEventPump(30000);
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
