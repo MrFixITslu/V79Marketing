@@ -19,13 +19,13 @@ function liveIdentity(db:Database.Database,row:PublicationRecord){
     u.role AS creatorRole FROM users u JOIN businesses b ON b.id=u.business_id
     WHERE u.id=? AND b.id=?`).get(row.creator_user_id,row.business_id) as
     {org:string|null;hub:string|null;creatorRole:string}|undefined;
-  const approver=db.prepare('SELECT role FROM users WHERE id=? AND business_id=?')
-    .get(row.approver_user_id,row.business_id) as {role:string}|undefined;
-  if(!creator?.org||!creator.hub||!approver||
+  const approver=db.prepare('SELECT role,hub_user_id AS hub FROM users WHERE id=? AND business_id=?')
+    .get(row.approver_user_id,row.business_id) as {role:string;hub:string|null}|undefined;
+  if(!creator?.org||!creator.hub||!approver?.hub||
      !hasMarketingPermission(creator.creatorRole,'content.write')||
      !['BUSINESS_OWNER','MARKETING_MANAGER'].includes(approver.role))
     throw Error('Creator or independent publishing approver no longer authorised');
-  return creator as {org:string;hub:string;creatorRole:string};
+  return {...creator,approverHub:approver.hub} as {org:string;hub:string;creatorRole:string;approverHub:string};
 }
 export function studioWorkerDeps():StudioWorkerDeps{
   return {
@@ -71,8 +71,12 @@ export function createStudioPublisher(db:Database.Database,secret:string,
       let dispatched=false;
       try{
         const identity=liveIdentity(db,job);
-        if(!await deps.entitled(identity.org,identity.hub))
-          throw Error('Live original creator Hub entitlement denied');
+        const [creatorEntitled,approverEntitled]=await Promise.all([
+          deps.entitled(identity.org,identity.hub),
+          deps.entitled(identity.org,identity.approverHub),
+        ]);
+        if(!creatorEntitled||!approverEntitled)
+          throw Error('Live creator or publishing approver Hub entitlement denied');
         const checked=verifyStudioDispatch(db,job,secret);
         const row=checked.account,platform=job.channel as ProviderPlatform;
         if(!['facebook','instagram','youtube'].includes(platform))
