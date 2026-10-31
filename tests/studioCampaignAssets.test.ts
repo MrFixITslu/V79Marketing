@@ -115,9 +115,11 @@ describe('Studio exact private media packages',()=>{
  });
  it('enforces cumulative per-user media capacity across campaigns, not only per-campaign limits',()=>{
   const {db}=fixture();try{
+    const anotherCampaign='campaign-'+randomUUID();
+    db.prepare('INSERT INTO campaigns(id,business_id) VALUES (?,?)').run(anotherCampaign,'b1');
     db.prepare(`INSERT INTO studio_campaign_assets
       (id,business_id,user_id,campaign_id,kind,mime,bytes,sha256,size_bytes,created_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?)`).run(randomUUID(),'b1','a',cid,'image','image/png',
+      VALUES (?,?,?,?,?,?,?,?,?,?)`).run(randomUUID(),'b1','a',anotherCampaign,'image','image/png',
       Buffer.from('synthetic capacity test'),'0'.repeat(64),128*1024*1024,new Date().toISOString());
     expect(()=>attachOwnStudioAsset(db,a,cid,'image',png)).toThrow(/capacity/);
     // The other member remains independently scoped despite the first
