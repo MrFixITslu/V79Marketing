@@ -69,6 +69,13 @@ describe('Studio exact private media packages',()=>{
   const {db,pin}=fixture();try{
     const asset=attachOwnStudioAsset(db,a,cid,'image',png);
     expect(()=>attachOwnStudioAsset(db,a,cid,'image',Buffer.from('<svg/>'))).toThrow();
+    const forgedOversizedJpeg=Buffer.alloc(150);
+    Buffer.from([0xff,0xd8,0xff,0xe0,0,4,0,0,0xff,0xc0,0,7,8,0xff,0xff,0xff,0xff])
+      .copy(forgedOversizedJpeg);
+    forgedOversizedJpeg[148]=0xff;forgedOversizedJpeg[149]=0xd9;
+    expect(()=>attachOwnStudioAsset(db,a,cid,'image',forgedOversizedJpeg)).toThrow();
+    const noFrameJpeg=Buffer.concat([Buffer.from('ffd8ff','hex'),Buffer.alloc(146),Buffer.from('ffd9','hex')]);
+    expect(()=>attachOwnStudioAsset(db,a,cid,'image',noFrameJpeg)).toThrow();
     expect(()=>attachOwnStudioAsset(db,a,cid,'image',Buffer.concat([Buffer.from('89504e470d0a1a0a','hex'),Buffer.alloc(180)]))).toThrow();
     expect(()=>createOwnStudioPackage(db,a,cid,req('a'.repeat(64),[asset.id]),secret)).toThrow();
     expect(()=>createOwnStudioPackage(db,a,cid,req(pin.skillDigest,[asset.id,asset.id]),secret)).toThrow();
