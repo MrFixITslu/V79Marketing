@@ -23,7 +23,12 @@ await context.addCookies([{name:'v79_marketing_session',value:cookie,
  url:base,httpOnly:true,sameSite:'Lax'}]);
 const page=await context.newPage();
 const consoleErrors=[];
+const uploadResponses=[];
 page.on('pageerror',e=>consoleErrors.push(e.message.slice(0,200)));
+page.on('response',r=>{
+  if(r.url().includes('/studio-asset?kind='))
+    uploadResponses.push({kind:r.url().split('kind=')[1]?.slice(0,12)||'unknown',status:r.status()});
+});
 const results=[];
 try{
   await page.goto(base+'/?view=studio',{waitUntil:'domcontentloaded',timeout:30000});
@@ -71,6 +76,20 @@ try{
     return {readyState:el.readyState,duration:Number.isFinite(el.duration)?el.duration:null,
       errorCode:el.error?.code||null,videoWidth:el.videoWidth,videoHeight:el.videoHeight};
   });
+  const videoSrc=await video.getAttribute('src');
+  if(videoSrc?.startsWith('data:video/mp4;base64,')){
+    const bytes=Buffer.from(videoSrc.split(',')[1],'base64');
+    await fs.writeFile(path.join(out,'synthetic-local-motion-debug.mp4'),bytes);
+    const boxes=[];let offset=0;
+    while(offset+8<=bytes.length&&boxes.length<30){
+      const size=bytes.readUInt32BE(offset),tag=bytes.toString('ascii',offset+4,offset+8);
+      boxes.push({tag,size});
+      if(size<8||size>bytes.length-offset)break;
+      offset+=size;
+    }
+    results.push({stage:'synthetic local MP4 container diagnostic',pass:true,bytes:bytes.length,
+      boxes,completeAtoms:offset===bytes.length});
+  }
   await page.screenshot({path:path.join(out,'03-composed-motion-video.png'),fullPage:true});
   // Firefox/Chromium builds may lack proprietary H264 codecs. The encoded
   // MP4 is validated separately with ffprobe, while the browser must at least
@@ -96,6 +115,7 @@ try{
     });
     console.error('ISOLATED_REVIEW_HANDOFF_DIAGNOSTIC='+JSON.stringify({
       notices:notices.slice(0,5).map(x=>x.slice(0,350)),state,
+      uploadResponses,playback,
     }));
     throw e;
   }
