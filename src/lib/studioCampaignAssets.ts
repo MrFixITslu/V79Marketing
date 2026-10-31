@@ -59,6 +59,22 @@ export function ensureStudioCampaignTables(db:Database.Database){
     kind TEXT NOT NULL CHECK(kind='CREATIVE_REVIEW_ONLY'),
     FOREIGN KEY(package_id) REFERENCES studio_campaign_packages(id) ON DELETE CASCADE
   );
+  CREATE TABLE IF NOT EXISTS studio_publication_deliveries(
+    id TEXT PRIMARY KEY,business_id TEXT NOT NULL,creator_user_id TEXT NOT NULL,
+    package_id TEXT NOT NULL UNIQUE,package_digest TEXT NOT NULL,
+    destination_account_id TEXT NOT NULL,account_fingerprint TEXT NOT NULL,
+    scheduled_at TEXT NOT NULL,approval_receipt_json TEXT NOT NULL,
+    state TEXT NOT NULL CHECK(state IN
+      ('APPROVED','DISPATCHING','OUTCOME_UNKNOWN','PUBLISHED','REJECTED','CANCELLED')),
+    provider_post_id TEXT,dispatch_attempt_id TEXT,
+    created_at TEXT NOT NULL,updated_at TEXT NOT NULL,
+    FOREIGN KEY(package_id) REFERENCES studio_campaign_packages(id) ON DELETE RESTRICT,
+    FOREIGN KEY(business_id) REFERENCES businesses(id) ON DELETE CASCADE
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_studio_publication_package
+    ON studio_publication_deliveries(business_id,package_id);
+  CREATE INDEX IF NOT EXISTS idx_studio_publication_due
+    ON studio_publication_deliveries(state,scheduled_at);
   CREATE TRIGGER IF NOT EXISTS studio_asset_immutable
     BEFORE UPDATE ON studio_campaign_assets BEGIN SELECT RAISE(ABORT,'Immutable Studio asset'); END;
   CREATE TRIGGER IF NOT EXISTS studio_package_immutable
