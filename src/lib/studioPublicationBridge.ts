@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3';
-import {randomUUID,createHmac,timingSafeEqual} from 'node:crypto';
+import {randomUUID,createHmac,createHash,timingSafeEqual} from 'node:crypto';
 import {z} from 'zod';
 import {readOwnStudioPackage,readOwnStudioAsset,type StudioActor} from './studioCampaignAssets.js';
 import {readCampaignSkillPin} from './personalMarketingSkills.js';
@@ -59,18 +59,12 @@ export function currentOwnedAccount(db:Database.Database,owner:StudioActor,id:st
     .get(id,owner.businessId,owner.id,channel) as Record<string,string|null>|undefined;
   if(!account||account.expires_at&&Date.parse(account.expires_at)<=Date.now())
     throw Error('Original creator personal account is not active');
-  const crypto=requireCrypto();
-  const fingerprint=crypto(JSON.stringify([account.id,account.platform,account.provider_account_id,
-    account.token_scopes,account.provider_metadata_json,account.legal_version,
-    account.legal_consented_at,account.expires_at,crypto(String(account.access_token_enc))]));
-  return {account,fingerprint};
+  return {account,fingerprint:packageFingerprint(account)};
 }
-function requireCrypto(){return (value:string)=>createHmac('sha256','studio-account-fingerprint-v1').update(value).digest('hex');}
 // Same algorithm as the immutable package's exact account fingerprint,
 // using SHA-256 of all signed fields, including encrypted token generation.
 function packageFingerprint(row:Record<string,string|null>){
-  const sha=require('node:crypto').createHash as typeof import('node:crypto').createHash;
-  const hex=(value:string)=>sha('sha256').update(value).digest('hex');
+  const hex=(value:string)=>createHash('sha256').update(value).digest('hex');
   return hex(JSON.stringify([row.id,row.platform,row.provider_account_id,
     row.token_scopes,row.provider_metadata_json,row.legal_version,row.legal_consented_at,
     row.expires_at,hex(String(row.access_token_enc))]));
