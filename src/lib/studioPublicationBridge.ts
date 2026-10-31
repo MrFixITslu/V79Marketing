@@ -68,7 +68,7 @@ export function currentOwnedAccount(db:Database.Database,owner:StudioActor,id:st
     instagram:'instagram_content_publish',
     youtube:'https://www.googleapis.com/auth/youtube.upload',
   };
-  const declared=new Set(String(account.token_scopes||'').split(/\\s+/).filter(Boolean));
+  const declared=new Set(String(account.token_scopes||'').split(/\s+/).filter(Boolean));
   if(required[channel]&&!declared.has(required[channel]))
     throw Error('Original creator connection lacks recorded publishing scope');
   return {account,fingerprint:packageFingerprint(account)};
