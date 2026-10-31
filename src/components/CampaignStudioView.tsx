@@ -165,7 +165,18 @@ export function CampaignStudioView({business,onCreateCampaign}:{
       if(!media.length)throw Error('No supported media');
       const ids:string[]=[];
       for(const item of media){
-        const blob=item.blob||await fetch(item.uri!).then(r=>r.blob());
+        // Browser CSP intentionally forbids network fetch() against data: URLs.
+        // Decode the already-generated local image/video without networking.
+        const decodeLocal=(uri:string)=>{
+          const match=/^data:(image\\/(?:png|jpeg)|video\\/mp4);base64,([A-Za-z0-9+/]+={0,2})$/.exec(uri);
+          if(!match)throw Error('Unsupported media data URI');
+          const binary=atob(match[2]);
+          if(binary.length>7*1024*1024)throw Error('Local media exceeds limit');
+          const bytes=new Uint8Array(binary.length);
+          for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);
+          return new Blob([bytes],{type:match[1]});
+        };
+        const blob=item.blob||decodeLocal(item.uri!);
         const response=await fetch('/api/campaigns/'+encodeURIComponent(campaign.id)+
           '/studio-asset?kind='+item.kind,{
           method:'POST',credentials:'same-origin',headers:{'Content-Type':blob.type},
