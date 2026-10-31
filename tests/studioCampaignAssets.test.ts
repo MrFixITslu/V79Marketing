@@ -9,7 +9,7 @@ import {ensureStudioCampaignTables,attachOwnStudioAsset,readOwnStudioAsset,
 const a={id:'a',businessId:'b1'},b={id:'b',businessId:'b1'},c={id:'c',businessId:'b2'};
 const cid='campaign-'+randomUUID();
 const secret='synthetic-v79-studio-signature-key-32-characters-long';
-const png=Buffer.concat([Buffer.from('89504e470d0a1a0a','hex'),Buffer.alloc(150,0)]);
+const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAIAAAACACAIAAABMXPacAAABL0lEQVR4nO3RQQkAIADAQDWDVQXjG+Me7hIMNvc9I87SAb9rANYArAFYA7AGYA3AGoA1AGsA1gCsAVgDsAZgDcAagDUAawDWAKwBWAOwBmANwBqANQBrANYArAFYA7AGYA3AGoA1AGsA1gCsAVgDsAZgDcAagDUAawDWAKwBWAOwBmANwBqANQBrANYArAFYA7AGYA3AGoA1AGsA1gCsAVgDsAZgDcAagDUAawDWAKwBWAOwBmANwBqANQBrANYArAFYA7AGYA3AGoA1AGsA1gCsAVgDsAZgDcAagDUAawDWAKwBWAOwBmANwBqANQBrANYArAFYA7AGYA3AGoA1AGsA1gCsAVgDsAZgDcAagDUAawDWAKwBWAOwBmANwBqANQBrANYArAFYA7AGYA3AGoA1AGsA1gCsAVgDsAZgDcAagDUAawDWAKwBWAOwBmANwBqANQBrANYArAFYA7AGYA3AHk+bAgHzxRDhAAAAAElFTkSuQmCC','base64');
 function fixture(){
   const db=new Database(':memory:');db.pragma('foreign_keys=ON');
   db.exec(`CREATE TABLE businesses(id TEXT PRIMARY KEY);
@@ -69,6 +69,7 @@ describe('Studio exact private media packages',()=>{
   const {db,pin}=fixture();try{
     const asset=attachOwnStudioAsset(db,a,cid,'image',png);
     expect(()=>attachOwnStudioAsset(db,a,cid,'image',Buffer.from('<svg/>'))).toThrow();
+    expect(()=>attachOwnStudioAsset(db,a,cid,'image',Buffer.concat([Buffer.from('89504e470d0a1a0a','hex'),Buffer.alloc(180)]))).toThrow();
     expect(()=>createOwnStudioPackage(db,a,cid,req('a'.repeat(64),[asset.id]),secret)).toThrow();
     expect(()=>createOwnStudioPackage(db,a,cid,req(pin.skillDigest,[asset.id,asset.id]),secret)).toThrow();
     const row=createOwnStudioPackage(db,a,cid,req(pin.skillDigest,[asset.id]),secret);
