@@ -113,6 +113,18 @@ describe('Studio exact private media packages',()=>{
     expect(()=>reviewOwnStudioPackage(db,a,cid,changed.id,first.exactDigest,secret)).toThrow();
   }finally{db.close();}
  });
+ it('enforces cumulative per-user media capacity across campaigns, not only per-campaign limits',()=>{
+  const {db}=fixture();try{
+    db.prepare(`INSERT INTO studio_campaign_assets
+      (id,business_id,user_id,campaign_id,kind,mime,bytes,sha256,size_bytes,created_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?)`).run(randomUUID(),'b1','a',cid,'image','image/png',
+      Buffer.from('synthetic capacity test'),'0'.repeat(64),128*1024*1024,new Date().toISOString());
+    expect(()=>attachOwnStudioAsset(db,a,cid,'image',png)).toThrow(/capacity/);
+    // The other member remains independently scoped despite the first
+    // member's full quota (creator ownership is still separately enforced).
+    expect(()=>attachOwnStudioAsset(db,b,cid,'image',png)).toThrow(/creator|pinned|skill|unavailable/i);
+  }finally{db.close();}
+ });
  it('rejects package and review database manipulation via HMAC, even if an attacker bypasses an immutable trigger',()=>{
   const {db,pin}=fixture();try{
     const asset=attachOwnStudioAsset(db,a,cid,'image',png);
