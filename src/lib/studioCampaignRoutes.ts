@@ -1,6 +1,7 @@
 import express from 'express';
 import type Database from 'better-sqlite3';
 import {z} from 'zod';
+import {ensureStudioPublicationTables} from './studioPublicationBridge.js';
 import {authenticate,requireMarketingPermission,type AuthenticatedRequest} from './auth.js';
 import {attachOwnStudioAsset,createOwnStudioPackage,readOwnStudioAsset,
   readOwnStudioPackage,reviewOwnStudioPackage,listOwnStudioAssets,
@@ -11,6 +12,7 @@ const mediaKind=z.enum(['image','video']);
 const review=z.object({exactDigest:z.string().regex(/^[a-f0-9]{64}$/)}).strict();
 export function installStudioCampaignRoutes(app:express.Express,db:Database.Database){
   ensureStudioCampaignTables(db);
+  ensureStudioPublicationTables(db);
   const gate=[authenticate,requireMarketingPermission('content.write')] as const;
   const safe=(res:express.Response)=>{
     res.setHeader('Cache-Control','no-store');
