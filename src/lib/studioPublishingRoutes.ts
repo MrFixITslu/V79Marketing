@@ -1,6 +1,8 @@
 import type express from 'express';
 import type Database from 'better-sqlite3';
 import {z} from 'zod';
+import {timingSafeEqual} from 'node:crypto';
+import {signPlatformRequest} from './platform.js';
 import {authenticate,requireRole,type AuthenticatedRequest,
   verifyMarketingBackgroundEntitlement} from './auth.js';
 import {readOwnStudioPackage,readOwnStudioAsset} from './studioCampaignAssets.js';
@@ -79,18 +81,86 @@ export function installStudioPublishingRoutes(app:express.Express,db:Database.Da
       return res.type(media.mime).send(media.bytes);
     }catch{return res.status(404).end();}
   });
-  app.post('/api/studio/publishing/approve',...guard,async(req:AuthenticatedRequest,res)=>{
+  // Browser JWTs NEVER authorise publication. The Marketing UI can display
+  // preview/inbox only. Approval requires a fresh MFA session at Hub, conveyed
+  // by the trusted Hub->Marketing signed service envelope below.
+  app.post('/api/studio/publishing/approve',...guard,(_req,res)=>{
     safe(res);
-    if(!enabled())return res.status(503).json({error:'Multi-user publishing is disabled pending release acceptance'});
-    const parsed=studioPublishApprovalSchema.safeParse(req.body);
-    if(!parsed.success)return res.status(400).json({error:'Exact publication approval and creator identifiers required'});
+    return res.status(403).json({error:'Publication approval must be confirmed in V79 Hub with fresh MFA'});
+  });
+  db.exec(`CREATE TABLE IF NOT EXISTS studio_hub_approval_nonces(
+    nonce TEXT PRIMARY KEY,business_id TEXT NOT NULL,expires_at INTEGER NOT NULL,
+    FOREIGN KEY(business_id) REFERENCES businesses(id) ON DELETE CASCADE
+  );`);
+  const envelopeSchema=z.object({
+    organizationId:z.string().min(8).max(180),
+    actorHubUserId:z.string().min(8).max(180),
+    mfaVerifiedAt:z.number().int().positive(),
+    requestNonce:z.string().uuid(),
+    request:studioPublishApprovalSchema,
+  }).strict();
+  app.post('/api/platform/studio-publishing/approve',async(req:express.Request,res)=>{
+    safe(res);
+    if(!enabled())return res.status(503).json({error:'Studio public publishing is disabled'});
+    const key=env.V79_STUDIO_HUB_SHARED_SECRET||'';
+    const ts=req.get('x-v79-timestamp')||'';
+    const supplied=req.get('x-v79-signature')||'';
+    const body=(req as express.Request&{rawBody?:Buffer}).rawBody?.toString('utf8')||'';
+    const pathname='/api/platform/studio-publishing/approve';
+    const now=Date.now();
+    if(key.length<32||req.get('x-v79-service-id')!=='v79-hub'||req.get('origin')||
+       req.get('cookie')||!/^\\d{13}$/.test(ts)||Math.abs(now-Number(ts))>300000||
+       !/^[a-f0-9]{64}$/.test(supplied)||!body)
+      return res.status(401).json({error:'Trusted MFA-verifying Hub service required'});
+    const expected=signPlatformRequest({method:'POST',pathname,timestamp:ts,body,secret:key});
+    if(!timingSafeEqual(Buffer.from(expected,'hex'),Buffer.from(supplied,'hex')))
+      return res.status(401).json({error:'Trusted MFA-verifying Hub service required'});
+    const parsed=envelopeSchema.safeParse(req.body);
+    if(!parsed.success||now-parsed.data.mfaVerifiedAt<0||now-parsed.data.mfaVerifiedAt>300000)
+      return res.status(403).json({error:'Fresh Hub MFA and exact publication review required'});
+    if(!verifyMarketingBackgroundEntitlement)
+      return res.status(503).json({error:'Live Hub entitlement verification is unavailable'});
     try{
-      if(!await onlyHubs(req))return res.status(403).json({error:'Current approving user Hub subscription required'});
-      const receipt=authoriseStudioPublication(db,{...req.user!,hubUserId:undefined},
-        parsed.data.creatorUserId,parsed.data.campaignId,parsed.data.packageId,
-        parsed.data.exactDigest,parsed.data.confirmExactPublication,secret);
+      const request=parsed.data;
+      const matches=db.prepare(`SELECT u.id,u.role,u.business_id AS businessId,u.hub_user_id AS hubUserId
+        FROM users u JOIN businesses b ON b.id=u.business_id
+        WHERE b.hub_organization_id=? AND u.hub_user_id=?
+          AND u.role IN ('BUSINESS_OWNER','MARKETING_MANAGER')`)
+        .all(request.organizationId,request.actorHubUserId) as
+        {id:string;role:string;businessId:string;hubUserId:string}[];
+      if(matches.length!==1)return res.status(403).json({error:'Scoped approving member unavailable'});
+      const actor=matches[0];
+      const creator=db.prepare(`SELECT hub_user_id AS hub FROM users
+        WHERE id=? AND business_id=?`).get(request.request.creatorUserId,actor.businessId)
+        as {hub:string|null}|undefined;
+      if(!creator?.hub)return res.status(403).json({error:'Creator Hub identity unavailable'});
+      // Both the approver and ORIGINAL campaign creator must still be
+      // entitled. No actor can lend another member's subscription or keys.
+      const [approverAllowed,creatorAllowed]=await Promise.all([
+        verifyMarketingBackgroundEntitlement({organizationId:request.organizationId,
+          scopedUserId:actor.hubUserId}),
+        verifyMarketingBackgroundEntitlement({organizationId:request.organizationId,
+          scopedUserId:creator.hub}),
+      ]);
+      if(!approverAllowed||!creatorAllowed)
+        return res.status(403).json({error:'Current creator and approver subscription required'});
+      // Durable cross-worker replay fencing. No automatic retry after a
+      // transport error that may follow a committed publication approval.
+      const receipt=db.transaction(()=>{
+        db.prepare('DELETE FROM studio_hub_approval_nonces WHERE expires_at<?').run(now);
+        const inserted=db.prepare(`INSERT OR IGNORE INTO studio_hub_approval_nonces
+          (nonce,business_id,expires_at) VALUES (?,?,?)`)
+          .run(request.requestNonce,actor.businessId,now+300000);
+        if(inserted.changes!==1)throw Error('Hub approval nonce already used');
+        return authoriseStudioPublication(db,actor,
+          request.request.creatorUserId,request.request.campaignId,
+          request.request.packageId,request.request.exactDigest,
+          request.request.confirmExactPublication,secret,now);
+      }).immediate();
       return res.status(201).json({delivery:receipt});
-    }catch{return res.status(409).json({error:'Approval rejected; verify exact creative review, owner account, entitlement and schedule'});}
+    }catch{
+      return res.status(409).json({error:'Exact approval rejected; review membership, media, OAuth ownership and schedule'});
+    }
   });
   app.get('/api/studio/publishing/history',...guard,(req:AuthenticatedRequest,res)=>{
     safe(res);
