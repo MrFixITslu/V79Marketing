@@ -194,3 +194,32 @@ export const studioPublishApprovalSchema=z.object({
   packageId:z.string().uuid(),exactDigest:z.string().regex(hashPattern),
   confirmExactPublication:z.literal(true),
 }).strict();
+
+export function studioMediaToken(row:PublicationRecord,assetId:string,sha256:string,expiresAt:number,secret:string){
+  return sign(secret,row.business_id,JSON.stringify({
+    purpose:'approved-media-lease-v1',deliveryId:row.id,packageId:row.package_id,
+    exactDigest:row.exact_digest,attemptId:row.attempt_id,
+    assetId,sha256,expiresAt
+  }));
+}
+export function readStudioApprovedMedia(db:Database.Database,deliveryId:string,assetId:string,
+ expiresAt:number,token:string,secret:string,now=Date.now()){
+  if(!Number.isSafeInteger(expiresAt)||expiresAt<now||expiresAt>now+40*60000)
+    throw Error('Media lease expired');
+  const row=getRow(db,deliveryId);
+  if(!row||!['DISPATCHING','PUBLISHED'].includes(row.status)||!row.attempt_id)
+    throw Error('Media is not approved for provider retrieval');
+  verifyApproval(row,secret);
+  const creator={id:row.creator_user_id,businessId:row.business_id};
+  const p=readOwnStudioPackage(db,creator,row.campaign_id,row.package_id,secret);
+  const asset=(p.assetDigests as {id:string;sha256:string;kind:string;mime:string}[])
+    .find(x=>x.id===assetId);
+  if(!p.reviewed||p.exactDigest!==row.exact_digest||!asset)
+    throw Error('Reviewed media reference changed');
+  const expected=studioMediaToken(row,asset.id,asset.sha256,expiresAt,secret);
+  if(!eq(expected,token))throw Error('Media lease signature failed');
+  const saved=readOwnStudioAsset(db,creator,row.campaign_id,assetId);
+  if(saved.sha256!==asset.sha256||saved.mime!==asset.mime)
+    throw Error('Approved asset digest mismatch');
+  return saved;
+}
