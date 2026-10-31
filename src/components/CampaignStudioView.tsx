@@ -168,8 +168,8 @@ export function CampaignStudioView({business,onCreateCampaign}:{
         // Browser CSP intentionally forbids network fetch() against data: URLs.
         // Decode the already-generated local image/video without networking.
         const decodeLocal=(uri:string)=>{
-          const match=/^data:(image\\/(?:png|jpeg)|video\\/mp4);base64,([A-Za-z0-9+/]+={0,2})$/.exec(uri);
-          if(!match)throw Error('Unsupported media data URI');
+          const match=/^data:([^;,]+);base64,([A-Za-z0-9+/]+={0,2})$/.exec(uri);
+          if(!match||!['image/png','image/jpeg','video/mp4'].includes(match[1]))throw Error('Unsupported media data URI');
           const binary=atob(match[2]);
           if(binary.length>7*1024*1024)throw Error('Local media exceeds limit');
           const bytes=new Uint8Array(binary.length);
