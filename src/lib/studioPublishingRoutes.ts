@@ -109,7 +109,7 @@ export function installStudioPublishingRoutes(app:express.Express,db:Database.Da
     const pathname='/api/platform/studio-publishing/approve';
     const now=Date.now();
     if(key.length<32||req.get('x-v79-service-id')!=='v79-hub'||req.get('origin')||
-       req.get('cookie')||!/^\\d{13}$/.test(ts)||Math.abs(now-Number(ts))>300000||
+       req.get('cookie')||!/^\d{13}$/.test(ts)||Math.abs(now-Number(ts))>300000||
        !/^[a-f0-9]{64}$/.test(supplied)||!body)
       return res.status(401).json({error:'Trusted MFA-verifying Hub service required'});
     const expected=signPlatformRequest({method:'POST',pathname,timestamp:ts,body,secret:key});
@@ -130,9 +130,9 @@ export function installStudioPublishingRoutes(app:express.Express,db:Database.Da
         {id:string;role:string;businessId:string;hubUserId:string}[];
       if(matches.length!==1)return res.status(403).json({error:'Scoped approving member unavailable'});
       const actor=matches[0];
-      const creator=db.prepare(`SELECT hub_user_id AS hub FROM users
-        WHERE id=? AND business_id=?`).get(request.request.creatorUserId,actor.businessId)
-        as {hub:string|null}|undefined;
+      const creator=(db.prepare(`SELECT hub_user_id AS hub FROM users
+        WHERE id=? AND business_id=?`).get(request.request.creatorUserId,actor.businessId)) as
+        {hub:string|null}|undefined;
       if(!creator?.hub)return res.status(403).json({error:'Creator Hub identity unavailable'});
       // Both the approver and ORIGINAL campaign creator must still be
       // entitled. No actor can lend another member's subscription or keys.
