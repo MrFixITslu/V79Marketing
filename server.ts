@@ -1458,8 +1458,8 @@ app.delete("/api/social-accounts/:id", authenticate, requireMarketingPermission(
 
     const now = new Date().toISOString();
     db.transaction(() => {
-      db.prepare("DELETE FROM social_accounts WHERE id=? AND business_id=? AND
-        (connected_by_user_id=? OR (connected_by_user_id IS NULL AND ?='BUSINESS_OWNER'))")
+      db.prepare(`DELETE FROM social_accounts WHERE id=? AND business_id=? AND
+        (connected_by_user_id=? OR (connected_by_user_id IS NULL AND ?='BUSINESS_OWNER'))`)
         .run(req.params.id,req.user!.businessId,req.user!.id,req.user!.role);
       db.prepare(`
         INSERT INTO audit_logs(id,business_id,user_id,user_name,action,details,ip_address,timestamp)
