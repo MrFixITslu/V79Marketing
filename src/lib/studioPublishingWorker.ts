@@ -3,6 +3,7 @@ import {decryptToken} from './tokenVault.js';
 import {publishWithProvider,type ProviderAccountRecord,
   type ProviderPlatform,type ProviderPublishPayload} from './socialProviders.js';
 import {verifyMarketingBackgroundEntitlement,hasMarketingPermission} from './auth.js';
+import {studioPublishedMediaType} from './studioPublishMediaPolicy.js';
 import {claimStudioDelivery,expireInterruptedStudioAttempts,
   finaliseStudioDelivery,verifyStudioDispatch,studioMediaToken,
   type PublicationRecord} from './studioPublicationBridge.js';
@@ -84,8 +85,7 @@ export function createStudioPublisher(db:Database.Database,secret:string,
         // Secure exact media URL is usable only while the signed delivery is
         // dispatching (or has a receipt), and expires after 25 minutes.
         const asset=(checked.media as {id:string;kind:string;mime:string;sha256:string}[])
-          .find(a=>platform==='youtube'?a.mime==='video/mp4':
-            a.kind==='image'&&['image/jpeg','image/png'].includes(a.mime));
+          .find(a=>studioPublishedMediaType(platform,a));
         if(!asset)throw Error('Approved media format unavailable');
         const expires=clock()+25*60000;
         const token=studioMediaToken(job,asset.id,asset.sha256,expires,secret);

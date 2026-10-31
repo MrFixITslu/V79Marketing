@@ -3,6 +3,7 @@ import {randomUUID,createHmac,createHash,timingSafeEqual} from 'node:crypto';
 import {z} from 'zod';
 import {readOwnStudioPackage,readOwnStudioAsset,type StudioActor} from './studioCampaignAssets.js';
 import {readCampaignSkillPin} from './personalMarketingSkills.js';
+import {eligibleStudioPublishMedia} from './studioPublishMediaPolicy.js';
 
 const hashPattern=/^[a-f0-9]{64}$/;
 const sign=(secret:string,businessId:string,value:string)=>{
@@ -109,9 +110,8 @@ export function authoriseStudioPublication(db:Database.Database,approver:Publica
     if(!['facebook','instagram','youtube'].includes(p.channel))
       throw Error('Provider publishing adapter not yet approved');
     const kinds=p.assetDigests as {kind:string;mime:string;sha256:string;id:string}[];
-    if(p.channel==='youtube'?!kinds.some(a=>a.kind==='video'&&a.mime==='video/mp4'):
-        !kinds.some(a=>a.kind==='image'&&['image/png','image/jpeg'].includes(a.mime)))
-      throw Error('Appropriate reviewed image or video required');
+    if(!eligibleStudioPublishMedia(p.channel,kinds))
+      throw Error('Reviewed media format not accepted by selected publishing provider');
     const t=Date.parse(p.scheduledAt);
     if(!Number.isFinite(t)||t<=now+60000||t>now+14*86400000)
       throw Error('Schedule must allow time for review and be within fourteen days');
