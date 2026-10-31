@@ -68,8 +68,24 @@ const creator=await context('studio-browser-creator','studio-test-biz-1','CONTEN
 const outsider=await context('studio-browser-external','studio-test-biz-2','BUSINESS_OWNER');
 try{
   const page=await owner.newPage();
-  await page.goto(base+'/?view=studio',{waitUntil:'domcontentloaded',timeout:30000});
-  await page.getByRole('heading',{name:/Create a campaign worth sharing/i}).waitFor({timeout:20000});
+  const pageFaults=[];
+  page.on('pageerror',error=>pageFaults.push(error.message.slice(0,350)));
+  const pageResponse=await page.goto(base+'/?view=studio',{waitUntil:'domcontentloaded',timeout:30000});
+  try{
+    await page.getByRole('heading',{name:/Create a campaign worth sharing/i}).waitFor({timeout:15000});
+  }catch(error){
+    await page.screenshot({path:path.join(artifacts,'00-studio-browser-diagnostic.png'),fullPage:true});
+    const visible=await page.locator('body').innerText().catch(()=>'(body unavailable)');
+    const auth=await page.evaluate(async()=>{
+      try{const r=await fetch('/api/auth/me');return {status:r.status};}
+      catch{return {status:'unavailable'};}
+    });
+    console.error('STUDIO_BROWSER_DIAGNOSTIC='+JSON.stringify({
+      httpStatus:pageResponse?.status(),pageUrl:new URL(page.url()).pathname,
+      visibleText:visible.slice(0,1000),pageErrors:pageFaults.slice(0,5),auth,
+    }));
+    throw error;
+  }
   await page.screenshot({path:path.join(artifacts,'01-studio-desktop.png'),fullPage:true});
   const dimension=await page.evaluate(()=>({scrollWidth:document.documentElement.scrollWidth,
     clientWidth:document.documentElement.clientWidth}));
