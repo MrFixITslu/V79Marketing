@@ -3,7 +3,7 @@ import {decryptToken} from './tokenVault.js';
 import {publishWithProvider,type ProviderAccountRecord,
   type ProviderPlatform,type ProviderPublishPayload} from './socialProviders.js';
 import {verifyMarketingBackgroundEntitlement,hasMarketingPermission} from './auth.js';
-import {studioPublishedMediaType} from './studioPublishMediaPolicy.js';
+import {studioPublishedMediaType,studioProductionChannelAllowed} from './studioPublishMediaPolicy.js';
 import {claimStudioDelivery,expireInterruptedStudioAttempts,
   finaliseStudioDelivery,verifyStudioDispatch,studioMediaToken,
   type PublicationRecord} from './studioPublicationBridge.js';
@@ -80,8 +80,8 @@ export function createStudioPublisher(db:Database.Database,secret:string,
           throw Error('Live creator or publishing approver Hub entitlement denied');
         const checked=verifyStudioDispatch(db,job,secret);
         const row=checked.account,platform=job.channel as ProviderPlatform;
-        if(!['facebook','instagram','youtube'].includes(platform))
-          throw Error('Publishing channel not approved');
+        if(!studioProductionChannelAllowed(platform))
+          throw Error('This channel lacks the signed provider-specific content review');
         // Secure exact media URL is usable only while the signed delivery is
         // dispatching (or has a receipt), and expires after 25 minutes.
         const asset=(checked.media as {id:string;kind:string;mime:string;sha256:string}[])
