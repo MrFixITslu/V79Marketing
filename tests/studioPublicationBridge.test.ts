@@ -80,6 +80,30 @@ describe('exact multi-member Studio publication bridge — new targeted tests',(
         pkg.id,pkg.exactDigest,true,secret,now)).toThrow();
     }finally{f.db.close();}
   });
+  it('blocks manager self-approval but supports a sole business owner with fresh Hub-gated consent',()=>{
+    const f=fixture();try{
+      const pkg=f.packageIt();
+      f.db.prepare("UPDATE users SET role='MARKETING_MANAGER' WHERE id='creator'").run();
+      expect(()=>authoriseStudioPublication(f.db,{id:'creator',businessId:'biz1',role:'MARKETING_MANAGER'},
+        creator.id,f.campaignId,pkg.id,pkg.exactDigest,true,secret,now)).toThrow(/Independent/);
+      expect(()=>authoriseStudioPublication(f.db,{id:'manager',businessId:'biz1',role:'BUSINESS_OWNER'},
+        creator.id,f.campaignId,pkg.id,pkg.exactDigest,true,secret,now)).toThrow(/role changed/);
+      f.db.prepare("UPDATE users SET role='BUSINESS_OWNER' WHERE id='creator'").run();
+      const sameOwner=authoriseStudioPublication(f.db,
+        {id:'creator',businessId:'biz1',role:'BUSINESS_OWNER'},
+        creator.id,f.campaignId,pkg.id,pkg.exactDigest,true,secret,now);
+      expect(sameOwner.status).toBe('APPROVED');
+    }finally{f.db.close();}
+  });
+  it('holds publishing if recorded original OAuth scopes are insufficient',()=>{
+    const f=fixture();try{
+      const pkg=f.packageIt();
+      f.db.prepare("UPDATE social_accounts SET token_scopes='pages_show_list' WHERE id='personal-page'").run();
+      expect(()=>authoriseStudioPublication(f.db,approver,creator.id,f.campaignId,
+        pkg.id,pkg.exactDigest,true,secret,now)).toThrow(/publishing scope/);
+      expect((f.db.prepare('SELECT COUNT(*) AS n FROM studio_publication_deliveries').get() as {n:number}).n).toBe(0);
+    }finally{f.db.close();}
+  });
   it('revisions invalidate prior approvals and revoked original OAuth makes dispatch fail',()=>{
     const f=fixture();try{
       const pkg=f.packageIt();

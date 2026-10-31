@@ -59,6 +59,18 @@ export function currentOwnedAccount(db:Database.Database,owner:StudioActor,id:st
     .get(id,owner.businessId,owner.id,channel) as Record<string,string|null>|undefined;
   if(!account||account.expires_at&&Date.parse(account.expires_at)<=Date.now())
     throw Error('Original creator personal account is not active');
+  // Defence in depth: a stored grant must contain the scope for THIS
+  // implementation's provider API. Recorded scopes are not proof that
+  // Meta/Google still grants them; live provider verification remains a
+  // separate release acceptance gate.
+  const required:Record<string,string>={
+    facebook:'pages_manage_posts',
+    instagram:'instagram_content_publish',
+    youtube:'https://www.googleapis.com/auth/youtube.upload',
+  };
+  const declared=new Set(String(account.token_scopes||'').split(/\\s+/).filter(Boolean));
+  if(required[channel]&&!declared.has(required[channel]))
+    throw Error('Original creator connection lacks recorded publishing scope');
   return {account,fingerprint:packageFingerprint(account)};
 }
 // Same algorithm as the immutable package's exact account fingerprint,
@@ -76,6 +88,14 @@ export function authoriseStudioPublication(db:Database.Database,approver:Publica
   if(confirmExactPublication!==true||!hashPattern.test(digest))throw Error('Explicit exact publishing approval required');
   ensureStudioPublicationTables(db);
   return db.transaction(()=>{
+    const current=db.prepare('SELECT role FROM users WHERE id=? AND business_id=?')
+      .get(approver.id,approver.businessId) as {role:string}|undefined;
+    if(!current||current.role!==approver.role)
+      throw Error('Current approving user role changed');
+    // A sole business owner may approve their own creative after fresh Hub MFA,
+    // but a Marketing manager must not approve their own work.
+    if(approver.id===creatorId&&current.role!=='BUSINESS_OWNER')
+      throw Error('Independent manager approval required');
     const creator={id:creatorId,businessId:approver.businessId};
     const p=readOwnStudioPackage(db,creator,campaignId,packageId,secret);
     if(!p.reviewed||p.status!=='CREATIVE_REVIEWED_PRIVATE'||!eq(p.exactDigest,digest))
