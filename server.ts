@@ -1339,25 +1339,25 @@ app.get("/api/social-accounts/oauth/:platform/callback", async (req, res) => {
       db.prepare(`
         UPDATE social_accounts SET account_name=?, account_handle=?, connected=1, access_token_enc=?,
           refresh_token_enc=?, expires_at=?, provider_metadata_json=?, token_scopes=?,
-          legal_version=?, legal_consented_at=?, last_synced_at=?
+          legal_version=?, legal_consented_at=?, last_synced_at=?, connected_by_user_id=?
         WHERE id=? AND business_id=?
       `).run(
         connection.accountName, connection.accountHandle, accessTokenEnc, refreshTokenEnc,
         connection.expiresAt || null, metadata, scopes,
         String(saved.legal_version || LEGAL_VERSION), String(saved.consented_at || now),
-        now, id, saved.business_id
+        now, saved.user_id, id, saved.business_id
       );
     } else {
       db.prepare(`
         INSERT INTO social_accounts
           (id,business_id,platform,account_name,account_handle,connected,follower_count,access_token_enc,
            refresh_token_enc,expires_at,provider_account_id,provider_metadata_json,token_scopes,
-           legal_version,legal_consented_at,last_synced_at)
-        VALUES(?,?,?,?,?,1,0,?,?,?,?,?,?,?,?,?)
+           legal_version,legal_consented_at,last_synced_at,connected_by_user_id)
+        VALUES(?,?,?,?,?,1,0,?,?,?,?,?,?,?,?,?,?)
       `).run(
         id, saved.business_id, platform, connection.accountName, connection.accountHandle,
         accessTokenEnc, refreshTokenEnc, connection.expiresAt || null, connection.providerAccountId,
-        metadata, scopes, String(saved.legal_version || LEGAL_VERSION), String(saved.consented_at || now), now
+        metadata, scopes, String(saved.legal_version || LEGAL_VERSION), String(saved.consented_at || now), now, saved.user_id
       );
     }
 
