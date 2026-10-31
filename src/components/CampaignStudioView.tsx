@@ -444,12 +444,18 @@ export function CampaignStudioView({business,onCreateCampaign}:{
                 onChange={e=>{setCaptionEdit(e.target.value);setAssetApproved(false);setPrivatePackage(null);}}
                 className="mt-2 w-full rounded-xl border border-slate-300 bg-[#faf8f4] p-3 text-sm text-slate-800"/>
             </div>
-            <div><label htmlFor="studio-channel" className="block font-semibold">Publication platform</label>
+            <div><label htmlFor="studio-channel" className="block font-semibold">Creative channel</label>
               <select id="studio-channel" value={channel}
                 onChange={e=>{setChannel(e.target.value as typeof channel);setSelectedAccount('');setPrivatePackage(null);setAssetApproved(false);}}
                 className="mt-2 w-full rounded-xl border border-slate-300 bg-white p-3">
                 {['facebook','instagram','linkedin','youtube','tiktok'].map(p=><option key={p} value={p}>{p}</option>)}
-              </select></div>
+              </select>
+              <p className="mt-2 text-xs leading-5 text-slate-600" role="status">
+                {channel==='facebook'||channel==='instagram'
+                  ? 'Guarded publishing candidate: requires a personally connected account, reviewed exact media and separate Hub MFA approval. No post is sent by saving a draft.'
+                  : 'Creative drafts and private reviews only. This channel is not cleared for automatic publishing or scheduled dispatch.'}
+              </p>
+            </div>
             <div><label htmlFor="studio-account" className="block font-semibold">Exact personal account (optional)</label>
               <select id="studio-account" value={selectedAccount}
                 onChange={e=>{setSelectedAccount(e.target.value);setPrivatePackage(null);setAssetApproved(false);}}
