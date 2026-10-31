@@ -32,7 +32,7 @@ export function CampaignStudioView({business,onCreateCampaign}:{
   const [verifiedAvailable,setVerifiedAvailable]=useState(false);
   const [videoSource,setVideoSource]=useState('');
   const [selectedFact,setSelectedFact]=useState('');
-  const [video,setVideo]=useState<{videoUrl:string;sha256:string;subtitles:string;notice:string}|null>(null);
+  const [video,setVideo]=useState<{videoUrl:string;previewWebmUrl?:string;sha256:string;subtitles:string;notice:string}|null>(null);
   const [videoBusy,setVideoBusy]=useState(false);
   const [videoError,setVideoError]=useState('');
   const [importedImage,setImportedImage]=useState('');
@@ -380,9 +380,13 @@ export function CampaignStudioView({business,onCreateCampaign}:{
             </>}
             {videoError&&<p role="alert" className="rounded-xl bg-red-50 p-3 text-xs text-red-800">{videoError}</p>}
             {video&&<div className="space-y-3">
-              <video controls playsInline preload="metadata" src={video.videoUrl}
+              <video controls playsInline preload="metadata"
                 aria-label="Locally composed motion video preview"
-                className="mx-auto max-h-[540px] w-full max-w-xs rounded-xl bg-slate-900"/>
+                className="mx-auto max-h-[540px] w-full max-w-xs rounded-xl bg-slate-900">
+                {video.previewWebmUrl&&<source src={video.previewWebmUrl} type="video/webm"/>}
+                <source src={video.videoUrl} type="video/mp4"/>
+                Your browser cannot play this local preview. Use the MP4 draft export.
+              </video>
               <a download="v79-local-motion-draft.mp4" href={video.videoUrl}
                 className="inline-flex min-h-11 items-center rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold">
                 Save playable MP4 draft
