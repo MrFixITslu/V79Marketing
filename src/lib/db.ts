@@ -304,6 +304,7 @@ export function initDb() {
   ensureColumn("social_accounts", "token_scopes", "TEXT");
   ensureColumn("social_accounts", "legal_version", "TEXT");
   ensureColumn("social_accounts", "legal_consented_at", "TEXT");
+  ensureColumn("social_accounts", "connected_by_user_id", "TEXT");
   ensureColumn("social_oauth_states", "legal_version", "TEXT");
   ensureColumn("social_oauth_states", "consented_at", "TEXT");
   migrateHubManagedUserEmailScope();
