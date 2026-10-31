@@ -183,5 +183,5 @@ try{
   await fs.writeFile(path.join(artifacts,'acceptance.json'),JSON.stringify(results,null,2)+'\n');
 }
 const failed=results.filter(x=>!x.pass);
+console.log('ISOLATED_BROWSER_ACCEPTANCE='+(failed.length?'FAIL':'PASS')+' '+JSON.stringify(results));
 if(failed.length)throw Error(failed.length+' browser acceptance checks failed');
-console.log('ISOLATED_BROWSER_ACCEPTANCE=PASS '+JSON.stringify(results));
