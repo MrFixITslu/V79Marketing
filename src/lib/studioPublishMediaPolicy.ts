@@ -1,4 +1,10 @@
 export type StudioCreativeAsset={kind:string;mime:string};
+/** Live publication only after the platform's signed compliance review is supported.
+ * YouTube requires individually reviewed made-for-kids / synthetic-media declarations;
+ * other channels still need verified production contracts. Creative drafts remain available. */
+export function studioProductionChannelAllowed(channel:string):boolean{
+  return channel==='facebook'||channel==='instagram';
+}
 /** Provider-specific media for the exact already-reviewed delivery. Never transcode after approval. */
 export function eligibleStudioPublishMedia(channel:string,assets:StudioCreativeAsset[]):boolean{
   if(channel==='facebook')return assets.some(a=>a.kind==='image'&&
