@@ -3,6 +3,7 @@ import { installProductionTracking } from "./productionTracking.js";
 import { ensureAgentCampaignDraftTable } from "./agentCampaignDrafts.js";
 import { ensureMediaKeyTable } from "./mediaProviderVault.js";
 import { ensurePersonalSkillTables } from "./personalMarketingSkills.js";
+import { ensureScopedSocialAccountIndexes } from "./socialAccountOwnership.js";
 import path from "path";
 import fs from "fs";
 import bcrypt from "bcryptjs";
@@ -316,17 +317,7 @@ export function initDb() {
   db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_legacy_email ON users(email) WHERE hub_user_id IS NULL;");
   db.exec("DROP INDEX IF EXISTS idx_users_hub_user;");
   db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_hub_user_business ON users(hub_user_id,business_id) WHERE hub_user_id IS NOT NULL;");
-  // A provider Page may be authorised independently by several members.
-  // The prior business-wide UNIQUE index made a second member overwrite the
-  // first member's credential and could invalidate their approved campaigns.
-  // Legacy business-wide connections remain unassigned, not transferred.
-  db.exec("DROP INDEX IF EXISTS idx_social_provider_account;");
-  db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_social_provider_owner_account
-    ON social_accounts(business_id,connected_by_user_id,platform,provider_account_id)
-    WHERE connected_by_user_id IS NOT NULL AND provider_account_id IS NOT NULL;`);
-  db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_social_provider_legacy_account
-    ON social_accounts(business_id,platform,provider_account_id)
-    WHERE connected_by_user_id IS NULL AND provider_account_id IS NOT NULL;`);
+  ensureScopedSocialAccountIndexes(db);
 
   if (process.env.NODE_ENV !== "production" && process.env.V79_MARKETING_SEED_DEMO === "1") {
     seedInitialData();
