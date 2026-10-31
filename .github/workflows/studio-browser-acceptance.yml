@@ -38,6 +38,8 @@ jobs:
         with:
           node-version: '22'
           cache: npm
+      - name: Use lockfile-compatible npm (same version as passed CI)
+        run: npm install --global npm@11.9.0
       - name: Install isolated app dependencies (no prior unit test reruns)
         run: npm ci --no-audit --no-fund
       - name: Install headless Chromium for NEW browser acceptance only
