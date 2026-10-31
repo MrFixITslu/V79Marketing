@@ -1,6 +1,7 @@
 import express from "express";
 import crypto from "crypto";
 import path from "path";
+import fs from "node:fs/promises";
 import cors from "cors";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
@@ -2303,9 +2304,19 @@ async function startServer() {
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
-      appType: "spa",
+      appType: "custom",
     });
     app.use(vite.middlewares);
+    // In middleware mode Express owns the HTML response. Always run Vite's
+    // transformIndexHtml so React refresh's preamble is installed; otherwise
+    // a valid session shows a blank page only in development.
+    app.get("*", async(req,res,next)=>{
+      try{
+        const html=await fs.readFile(path.join(process.cwd(),"index.html"),"utf8");
+        const transformed=await vite.transformIndexHtml(req.originalUrl,html);
+        res.status(200).type("html").send(transformed);
+      }catch(e){next(e);}
+    });
   } else {
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
