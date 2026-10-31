@@ -29,22 +29,7 @@ export function StudioApprovalsView(){
       .finally(()=>{if(alive)setLoading(false);});
     return()=>{alive=false;};
   },[load]);
-  const approve=async(item:Reviewed)=>{
-    if(!ready||!confirmed||sending)return;
-    setSending(true);setError('');setNotice('');
-    try{
-      const r=await fetch('/api/studio/publishing/approve',{method:'POST',credentials:'same-origin',
-        headers:{'content-type':'application/json'},body:JSON.stringify({
-          creatorUserId:item.creatorUserId,campaignId:item.campaignId,
-          packageId:item.packageId,exactDigest:item.exactDigest,confirmExactPublication:true,
-        })});
-      const result=await r.json().catch(()=>({}));
-      if(!r.ok||!result.delivery?.id)throw Error('Exact approval was not accepted. Check your current Hub permission and destination.');
-      setNotice('Exact scheduling approval recorded. This does NOT prove a post was published.');
-      setSelected(null);setConfirmed(false);await load();
-    }catch(e){setError(e instanceof Error?e.message:'Approval unavailable');}
-    finally{setSending(false);}
-  };
+  const openHub=()=>window.location.assign('https://hub.v79sl.com/?view=marketing-approvals');
   return <main className="mx-auto max-w-6xl space-y-6 pb-16 text-[#0b1f33]">
     <header className="rounded-3xl border border-slate-200 bg-white p-6 sm:p-8">
       <div className="text-sm font-bold text-[#0e8f88]">V79 / Publishing control</div>
@@ -110,10 +95,10 @@ export function StudioApprovalsView(){
                   <input type="checkbox" checked={confirmed} onChange={e=>setConfirmed(e.target.checked)}/>
                   <span>I authorise publication of this exact reviewed package to the specified account at the specified time.</span>
                 </label>
-                <button type="button" disabled={!ready||!confirmed||sending}
-                  onClick={()=>void approve(item)}
+                <button type="button" disabled={!confirmed}
+                  onClick={openHub}
                   className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#0e8f88] px-4 text-sm font-bold text-white disabled:opacity-40">
-                  <ShieldCheck size={18}/> {sending?'Submitting exact approval…':'Approve this exact delivery'}
+                  <ShieldCheck size={18}/> Open Hub for MFA publishing review
                 </button>
               </div>}
             </div>

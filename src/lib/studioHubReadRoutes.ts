@@ -15,21 +15,22 @@ const envelope=z.object({
   actorHubUserId:z.string().min(8).max(180),
   request:z.discriminatedUnion('action',[
     z.object({action:z.literal('list')}).strict(),
+    z.object({action:z.literal('history')}).strict(),
     z.object({action:z.literal('asset'),packageId:uuid,assetId:uuid}).strict(),
   ]),
 }).strict();
 type HubActor={id:string;businessId:string;role:string};
 export function installStudioHubReadRoutes(app:express.Express,db:Database.Database,
   env:NodeJS.ProcessEnv=process.env){
-  async function actor(req:express.Request,action:'list'|'asset'){
+  async function actor(req:express.Request,action:'list'|'asset'|'history'){
     const key=env.V79_STUDIO_HUB_SHARED_SECRET||'';
     const timestamp=req.get('x-v79-timestamp')||'';
     const supplied=req.get('x-v79-signature')||'';
     const raw=(req as express.Request&{rawBody?:Buffer}).rawBody?.toString('utf8')||'';
-    const pathname='/api/platform/studio-publishing/'+(action==='list'?'inbox':'asset');
+    const pathname='/api/platform/studio-publishing/'+(action==='list'?'inbox':action);
     if(key.length<32||env.V79_ENTITLEMENT_RECHECK_ENABLED!=='1'||
        !verifyMarketingBackgroundEntitlement||req.get('x-v79-service-id')!=='v79-hub'||
-       req.get('origin')||req.get('cookie')||!/^\\d{13}$/.test(timestamp)||
+       req.get('origin')||req.get('cookie')||!/^\d{13}$/.test(timestamp)||
        Math.abs(Date.now()-Number(timestamp))>300000||
        !/^[0-9a-f]{64}$/.test(supplied)||!raw)return null;
     const exact=signPlatformRequest({method:'POST',pathname,timestamp,body:raw,secret:key});
@@ -83,6 +84,20 @@ export function installStudioHubReadRoutes(app:express.Express,db:Database.Datab
         approvalEnabled:env.V79_STUDIO_PUBLISH_ENABLED==='1',
         notice:'Private creative review is not publication authorisation'});
     }catch{return res.status(503).json({error:'Studio signed inbox unavailable'});}
+  });
+  app.post('/api/platform/studio-publishing/history',async(req,res)=>{
+    secure(res);
+    try{
+      const identity=await actor(req,'history');
+      if(!identity)return res.status(403).json({error:'Signed Hub Marketing history access denied'});
+      const rows=db.prepare(`SELECT id,package_id AS packageId,channel,scheduled_at AS scheduledAt,
+          status,provider_post_id AS providerPostId,last_issue AS issue,created_at AS createdAt
+        FROM studio_publication_deliveries
+        WHERE business_id=? ORDER BY created_at DESC LIMIT 50`)
+        .all(identity.actor.businessId);
+      return res.json({deliveries:rows,
+        note:'Uncertain provider outcomes require manual reconciliation; no automatic retries'});
+    }catch{return res.status(503).json({error:'Signed publishing history unavailable'});}
   });
   app.post('/api/platform/studio-publishing/asset',async(req,res)=>{
     secure(res);
