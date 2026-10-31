@@ -596,7 +596,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* Clean, Grouped Nav Bar (No Scrollbar, Uncluttered) */}
         <div className="border-t border-slate-100 py-2 relative" ref={dropdownRef}>
-          <nav className="flex items-center justify-between sm:justify-start gap-1 sm:gap-2 no-scrollbar text-xs">
+          <nav className="flex flex-wrap items-center justify-start gap-1 sm:gap-2 no-scrollbar text-xs">
             {navGroups.map((group) => {
               const Icon = group.icon;
               const isGroupActive = activeGroup?.id === group.id;
