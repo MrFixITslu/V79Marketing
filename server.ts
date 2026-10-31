@@ -57,6 +57,9 @@ app.use(
         styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
         fontSrc: ["'self'", "https://fonts.gstatic.com"],
         imgSrc: ["'self'", "data:", "blob:", "https:"],
+        // Only media playback (not scripts/frames) may use local generated
+        // MP4 data/blob previews. Without this, Chromium reports MEDIA_ERR_SRC_NOT_SUPPORTED.
+        mediaSrc: ["'self'", "data:", "blob:"],
         connectSrc: ["'self'", "https://generativelanguage.googleapis.com"],
         frameAncestors: ["'none'"],
         objectSrc: ["'none'"],
