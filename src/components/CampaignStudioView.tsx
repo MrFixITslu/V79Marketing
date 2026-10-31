@@ -35,6 +35,15 @@ export function CampaignStudioView({business,onCreateCampaign}:{
   const [video,setVideo]=useState<{videoUrl:string;sha256:string;subtitles:string;notice:string}|null>(null);
   const [videoBusy,setVideoBusy]=useState(false);
   const [videoError,setVideoError]=useState('');
+  const [importedImage,setImportedImage]=useState('');
+  const [captionEdit,setCaptionEdit]=useState('');
+  const [channel,setChannel]=useState<'facebook'|'instagram'|'linkedin'|'youtube'|'tiktok'>('facebook');
+  const [personalAccounts,setPersonalAccounts]=useState<{id:string;platform:string;accountName:string}[]>([]);
+  const [selectedAccount,setSelectedAccount]=useState('');
+  const [scheduleLocal,setScheduleLocal]=useState('');
+  const [privatePackage,setPrivatePackage]=useState<{id:string;exactDigest:string;revision:number;status:string}|null>(null);
+  const [mediaPinStatus,setMediaPinStatus]=useState('');
+
 
   useEffect(()=>{
     let active=true;
@@ -42,6 +51,9 @@ export function CampaignStudioView({business,onCreateCampaign}:{
       .then(r=>r.ok?r.json():Promise.reject(Error('Connections unavailable')))
       .then(v=>{if(active)setCapabilities(v.providers||[]);})
       .catch(()=>{if(active)setCapError('Provider availability could not be checked. Local composition remains the fallback.');});
+    fetch('/api/studio/my-accounts',{credentials:'same-origin',cache:'no-store'})
+      .then(r=>r.ok?r.json():Promise.reject(Error('Personal OAuth accounts unavailable')))
+      .then(v=>{if(active)setPersonalAccounts(v.accounts||[]);}).catch(()=>{});
     fetch('/api/creative/verified-brief',{credentials:'same-origin',cache:'no-store'})
       .then(r=>r.ok?r.json():Promise.reject(Error('Approved facts unavailable')))
       .then(v=>{if(active){setVerifiedAvailable(v.approved===true);
@@ -67,7 +79,11 @@ export function CampaignStudioView({business,onCreateCampaign}:{
       const draftDirections=steps.slice(0,3);
       if(!draftDirections.length)throw Error('No concepts were produced');
       setConcepts(draftDirections);setSelected(0);setPlan({name:campaignName,objective,skillDigest:result.skillDigest,steps});
+      setCaptionEdit(String(draftDirections[0].caption||draftDirections[0].captionPrompt||''));
+      if(['facebook','instagram','linkedin','youtube','tiktok'].includes(draftDirections[0].channel))
+        setChannel(draftDirections[0].channel as typeof channel);
       setStatus('needs_review');setStep(1);setAsset(null);setAssetApproved(false);
+      setImportedImage('');setVideo(null);setPrivatePackage(null);setMediaPinStatus('');
     }catch{setError('Could not build a plan. Verify your Marketing entitlement and local AI availability.');setStatus('draft');}
     finally{setRunning(false);}
   }
@@ -95,22 +111,84 @@ export function CampaignStudioView({business,onCreateCampaign}:{
     finally{setRunning(false);}
   }
   async function saveDraft(){
-    if(!plan||!asset||!assetApproved||running)return;
-    setRunning(true);setError('');
+    if(!plan||!assetApproved||running||!(importedImage||asset||video))return;
+    setRunning(true);setError('');setMediaPinStatus('');
     try{
       const now=new Date();
       const steps:CampaignStep[]=plan.steps.map(x=>({
         dayNumber:x.dayNumber,channel:x.channel as CampaignStep['channel'],
-        postTitle:x.postTitle,captionPrompt:x.captionPrompt||x.caption||'',suggestedTime:x.suggestedTime,completed:false}));
-      const result=await onCreateCampaign({
+        postTitle:x.postTitle,captionPrompt:x.captionPrompt||x.caption||'',
+        suggestedTime:x.suggestedTime,completed:false}));
+      // Create a PLAN once. If an asset upload fails, retry against the same
+      // original campaign instead of accidentally creating duplicates.
+      const campaign=saved||await onCreateCampaign({
         id:'',businessId:business.id,name:plan.name,objective:plan.objective,
         startDate:now.toISOString().slice(0,10),
         endDate:new Date(now.getTime()+30*86400000).toISOString().slice(0,10),
-        status:'PLANNED',steps,aiPlanGenerated:true,createdAt:now.toISOString(),skillDigest:plan.skillDigest,
+        status:'PLANNED',steps,aiPlanGenerated:true,
+        createdAt:now.toISOString(),skillDigest:plan.skillDigest,
       });
-      setSaved(result);setStatus('saved');setStep(3);
-    }catch{setError('Campaign save rejected. Your personal skill may have changed; regenerate the plan before saving.');}
+      setSaved(campaign);
+      if(!campaign.skillPin?.skillDigest)throw Error('Campaign creator skill pin missing');
+      const media:{kind:'image'|'video';uri:string}[]=[];
+      const still=importedImage||(asset?.imageUrl.match(/^data:image\/(png|jpeg);base64,/)?
+        asset.imageUrl:'');
+      if(still)media.push({kind:'image',uri:still});
+      if(video?.videoUrl)media.push({kind:'video',uri:video.videoUrl});
+      if(!media.length)throw Error('No supported media');
+      const ids:string[]=[];
+      for(const item of media){
+        const blob=await fetch(item.uri).then(r=>r.blob());
+        const response=await fetch('/api/campaigns/'+encodeURIComponent(campaign.id)+
+          '/studio-asset?kind='+item.kind,{
+          method:'POST',credentials:'same-origin',headers:{'Content-Type':blob.type},
+          body:blob});
+        const body=await response.json().catch(()=>({}));
+        if(!response.ok||!body.asset?.id)throw Error('Media pin rejected');
+        ids.push(body.asset.id);
+      }
+      const schedule=selectedAccount&&scheduleLocal?new Date(scheduleLocal).toISOString():null;
+      const response=await fetch('/api/campaigns/'+encodeURIComponent(campaign.id)+'/studio-package',{
+        method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({expectedSkillDigest:campaign.skillPin.skillDigest,
+          assetIds:ids,caption:captionEdit,channel,
+          connectedAccountId:selectedAccount||null,scheduledAt:schedule})});
+      const packageBody=await response.json().catch(()=>({}));
+      if(!response.ok||!packageBody.package?.exactDigest)throw Error('Private review package unavailable');
+      const item=packageBody.package;
+      setPrivatePackage({id:item.id,revision:item.revision,exactDigest:item.exactDigest,status:item.status});
+      setMediaPinStatus('Image/video bytes and exact caption pinned to your personal campaign. Awaiting creative review; publishing remains disabled.');
+      setStatus('needs_review');setStep(3);
+    }catch{
+      setError('The plan or media review package could not be completed. Nothing was published. If the plan was saved, retry media pinning without creating another campaign.');
+      setStatus('needs_review');
+    }finally{setRunning(false);}
+  }
+  async function acknowledgeExactReview(){
+    if(!saved||!privatePackage||running)return;
+    setRunning(true);setError('');
+    try{
+      const response=await fetch('/api/campaigns/'+encodeURIComponent(saved.id)+'/studio-package/'+privatePackage.id+'/review',{
+        method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({exactDigest:privatePackage.exactDigest})});
+      const data=await response.json().catch(()=>({}));
+      if(!response.ok||data.package?.status!=='CREATIVE_REVIEWED_PRIVATE')throw Error('Review mismatch');
+      setPrivatePackage(v=>v?{...v,status:'CREATIVE_REVIEWED_PRIVATE'}:v);
+      setMediaPinStatus('Creative review recorded against exact pinned media, caption, destination and proposed schedule. NOT approved for publication.');
+      setStatus('saved');
+    }catch{setError('Exact review version changed or unavailable. Reopen the package before accepting.');}
     finally{setRunning(false);}
+  }
+  async function loadImportedPhoto(file:File|null){
+    setImportedImage('');setAssetApproved(false);setPrivatePackage(null);
+    if(!file)return;
+    if(file.size>2*1024*1024||!['image/png','image/jpeg'].includes(file.type)){
+      setError('Choose PNG or JPEG under 2MB. SVG layouts are previews only, not uploadable media.');return;
+    }
+    const reader=new FileReader();
+    reader.onload=()=>{if(typeof reader.result==='string')setImportedImage(reader.result);};
+    reader.onerror=()=>setError('Cannot read the local image.');
+    reader.readAsDataURL(file);
   }
   async function selectVideoSource(file:File|null){
     setVideo(null);setVideoSource('');setVideoError('');
@@ -176,7 +254,10 @@ export function CampaignStudioView({business,onCreateCampaign}:{
           <h2 className="text-lg font-bold">Choose a direction</h2>
           <p className="mt-1 text-sm text-slate-600">These are draft post ideas from your personal-skill plan, not three finished ads.</p>
           <div className="mt-5 grid gap-3 sm:grid-cols-3">
-            {concepts.map((item,i)=><button type="button" key={i} onClick={()=>{setSelected(i);setAsset(null);setAssetApproved(false);}}
+            {concepts.map((item,i)=><button type="button" key={i} onClick={()=>{setSelected(i);setAsset(null);setAssetApproved(false);setPrivatePackage(null);
+                setCaptionEdit(String(item.caption||item.captionPrompt||''));setImportedImage('');setVideo(null);
+                if(['facebook','instagram','linkedin','youtube','tiktok'].includes(item.channel))
+                  setChannel(item.channel as typeof channel);}}
               aria-pressed={selected===i}
               className={'min-h-44 rounded-2xl border p-4 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 '+
               (selected===i?'border-[#0e8f88] bg-teal-50':'border-slate-200 bg-[#faf8f4]')}>
@@ -196,12 +277,17 @@ export function CampaignStudioView({business,onCreateCampaign}:{
           </div>
           <div className={'mt-5 flex min-h-[300px] items-center justify-center overflow-hidden rounded-2xl bg-[#e9eeed] sm:min-h-[440px] '+
             (format==='9:16'?'mx-auto max-w-xs':'')}>
-            {asset?<img alt="Creative draft preview; inspect claims and accuracy before use"
-              src={asset.imageUrl} className="max-h-[560px] w-full object-contain"/>:
+            {(importedImage||asset)?<img alt="Creative draft preview; inspect claims and accuracy before use"
+              src={importedImage||asset!.imageUrl} className="max-h-[560px] w-full object-contain"/>:
               <div className="p-8 text-center text-slate-600"><ImageIcon size={43} className="mx-auto mb-3 text-slate-400"/>
                 <p className="font-semibold">No image generated yet</p><p className="mt-2 text-sm">Choose a format and generate a private preview.</p>
               </div>}
           </div>
+          <label htmlFor="studio-import-image" className="mt-4 block text-sm font-semibold">Attach a PNG/JPEG for an immutable campaign review</label>
+          <input id="studio-import-image" type="file" accept="image/png,image/jpeg"
+            onChange={e=>void loadImportedPhoto(e.target.files?.[0]||null)}
+            className="mt-2 w-full rounded-xl border border-slate-300 bg-white p-3 text-sm"/>
+          <p className="mt-2 text-xs text-slate-600">Your local SVG layouts can be previewed, but must first be exported as PNG. Importing or regenerating media invalidates an earlier creative review.</p>
           {asset&&<a href={asset.imageUrl} download={'v79-campaign-draft.'+(asset.imageUrl.startsWith('data:image/svg')?'svg':asset.imageUrl.startsWith('data:image/jpeg')?'jpg':'png')}
             className="mt-3 inline-flex min-h-11 items-center rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-[#0b1f33]">
             Save this preview image to your device
@@ -272,9 +358,32 @@ export function CampaignStudioView({business,onCreateCampaign}:{
           <button type="button" onClick={()=>setShowInspector(v=>!v)} className="mt-2 text-xs font-semibold text-teal-700 underline"
             aria-expanded={showInspector}>{showInspector?'Hide details':'Show details'}</button>
           {showInspector&&<div className="mt-4 space-y-3 text-sm">
-            <div><p className="font-semibold">Caption draft</p>
-              <p className="mt-1 whitespace-pre-wrap rounded-xl bg-[#faf8f4] p-3 text-slate-700">
-                {planStep?.caption||planStep?.captionPrompt||'Prepare a brief first.'}</p></div>
+            <div><label htmlFor="studio-caption" className="block font-semibold">Exact caption for review</label>
+              <textarea id="studio-caption" value={captionEdit} maxLength={2200} rows={5}
+                onChange={e=>{setCaptionEdit(e.target.value);setAssetApproved(false);setPrivatePackage(null);}}
+                className="mt-2 w-full rounded-xl border border-slate-300 bg-[#faf8f4] p-3 text-sm text-slate-800"/>
+            </div>
+            <div><label htmlFor="studio-channel" className="block font-semibold">Publication platform</label>
+              <select id="studio-channel" value={channel}
+                onChange={e=>{setChannel(e.target.value as typeof channel);setSelectedAccount('');setPrivatePackage(null);setAssetApproved(false);}}
+                className="mt-2 w-full rounded-xl border border-slate-300 bg-white p-3">
+                {['facebook','instagram','linkedin','youtube','tiktok'].map(p=><option key={p} value={p}>{p}</option>)}
+              </select></div>
+            <div><label htmlFor="studio-account" className="block font-semibold">Exact personal account (optional)</label>
+              <select id="studio-account" value={selectedAccount}
+                onChange={e=>{setSelectedAccount(e.target.value);setPrivatePackage(null);setAssetApproved(false);}}
+                className="mt-2 w-full rounded-xl border border-slate-300 bg-white p-3">
+                <option value="">No destination · private draft only</option>
+                {personalAccounts.filter(a=>a.platform===channel).map(a=><option key={a.id} value={a.id}>{a.accountName}</option>)}
+              </select>
+              {!personalAccounts.some(a=>a.platform===channel)&&
+                <p className="mt-2 text-xs text-amber-900">No personal OAuth account confirmed for this platform. Legacy/shared accounts are not borrowed.</p>}
+            </div>
+            {selectedAccount&&<div><label htmlFor="studio-date" className="block font-semibold">Proposed schedule (local time)</label>
+              <input id="studio-date" type="datetime-local" value={scheduleLocal}
+                onChange={e=>{setScheduleLocal(e.target.value);setPrivatePackage(null);setAssetApproved(false);}}
+                className="mt-2 w-full rounded-xl border border-slate-300 bg-white p-3"/>
+            </div>}
             <div><p className="font-semibold">Suggested local scheduling</p>
               <p className="mt-1 text-slate-600">{planStep?.suggestedTime||'Not proposed'} · Not yet scheduled</p></div>
             <div className="text-xs text-slate-600"><p>Personal skill: {plan?.skillDigest?'Pinned in draft':'Awaiting generation'}</p>
@@ -287,15 +396,24 @@ export function CampaignStudioView({business,onCreateCampaign}:{
           <p className="mt-2 text-sm leading-6 text-slate-600">Check every claim, screenshot, contact route and platform restriction. This review does not authorise publication.</p>
           <p className="mt-2 rounded-xl bg-amber-50 p-3 text-xs text-amber-900">This is a private visual preview. Image-to-campaign media pinning and the final publishing approval workflow are still under development. Do not treat this as a publishable package.</p>
           <label className="mt-4 flex items-start gap-2 text-sm">
-            <input type="checkbox" checked={assetApproved} disabled={!asset||running}
+            <input type="checkbox" checked={assetApproved} disabled={!(asset||importedImage||video)||running}
               onChange={e=>setAssetApproved(e.target.checked)} className="mt-1"/>
             I inspected this exact draft image and confirm it is suitable for the next approval stage.
           </label>
-          <button type="button" disabled={running||!assetApproved||!asset||status==='saved'}
+          <button type="button" disabled={running||!assetApproved||!(asset||importedImage||video)||!captionEdit.trim()||!!privatePackage}
             onClick={()=>void saveDraft()} className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#0e8f88] px-4 py-3 text-sm font-bold text-white disabled:opacity-40">
-            {running?<RefreshCw size={17} className="animate-spin"/>:<Check size={17}/>} Save private campaign draft
+            {running?<RefreshCw size={17} className="animate-spin"/>:<Check size={17}/>} Pin exact private media review
           </button>
-          {saved&&<p role="status" className="mt-3 text-sm text-teal-800">Saved campaign plan {saved.name}. The preview image is NOT yet attached to the server-side campaign package; save it locally. Publishing still requires exact platform approval and a verified destination.</p>}
+          {mediaPinStatus&&<p role="status" className="mt-3 rounded-xl bg-teal-50 p-3 text-sm text-teal-900">{mediaPinStatus}</p>}
+          {privatePackage&&<div className="mt-3 space-y-2 border-t border-slate-200 pt-3">
+            <p className="text-xs text-slate-600">Private revision {privatePackage.revision} · {privatePackage.status} · exact SHA-256 {privatePackage.exactDigest.slice(0,16)}…</p>
+            <button type="button" disabled={running||privatePackage.status==='CREATIVE_REVIEWED_PRIVATE'}
+              onClick={()=>void acknowledgeExactReview()}
+              className="min-h-11 w-full rounded-xl bg-[#0b1f33] px-3 py-2 text-sm font-semibold text-white disabled:opacity-40">
+              Acknowledge exact private creative review
+            </button>
+          </div>}
+          {saved&&<p role="status" className="mt-3 text-xs text-slate-600">Campaign plan {saved.name}. Private review receipts DO NOT schedule or publish anything. Publisher integration remains disabled.</p>}
         </section>}
         <section className="rounded-2xl border border-slate-200 bg-[#faf8f4] p-5">
           <h2 className="text-sm font-bold">Connections and production truth</h2>
