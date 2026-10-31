@@ -35,6 +35,7 @@ import {installMediaCredentialRoutes} from "./src/lib/mediaProviderRoutes.js";
 import {installCreativeMediaRoutes} from "./src/lib/creativeMediaRoutes.js";
 import {installStudioCampaignRoutes} from "./src/lib/studioCampaignRoutes.js";
 import {installStudioPublishingRoutes} from "./src/lib/studioPublishingRoutes.js";
+import {mayDisconnectSocialAccount} from "./src/lib/socialAccountOwnership.js";
 import {installPersonalSkillRoutes} from "./src/lib/personalMarketingSkillRoutes.js";
 import {pinCampaignSkill,readCampaignSkillPin,snapshotOwnSkill} from "./src/lib/personalMarketingSkills.js";
 import {readOwnMediaKey} from "./src/lib/mediaProviderVault.js";
@@ -1439,8 +1440,7 @@ app.delete("/api/social-accounts/:id", authenticate, requireMarketingPermission(
   if (!existing) return res.status(404).json({ error:"Social connection not found." });
   // Member-owned credentials cannot be revoked by colleagues in the same business.
   // Owner-only administrative handling of unassigned legacy records is retained.
-  if(existing.connected_by_user_id?existing.connected_by_user_id!==req.user!.id:
-     req.user!.role!=='BUSINESS_OWNER')
+  if(!mayDisconnectSocialAccount(existing.connected_by_user_id,req.user!.id,req.user!.role))
     return res.status(403).json({error:"Only the person who connected this account can disconnect it."});
 
   try {
