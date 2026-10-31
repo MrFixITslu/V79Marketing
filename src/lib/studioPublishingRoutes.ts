@@ -3,7 +3,7 @@ import type Database from 'better-sqlite3';
 import {z} from 'zod';
 import {authenticate,requireRole,type AuthenticatedRequest,
   verifyMarketingBackgroundEntitlement} from './auth.js';
-import {readOwnStudioPackage} from './studioCampaignAssets.js';
+import {readOwnStudioPackage,readOwnStudioAsset} from './studioCampaignAssets.js';
 import {ensureStudioPublicationTables,authoriseStudioPublication,
   readStudioApprovedMedia,studioPublishApprovalSchema} from './studioPublicationBridge.js';
 import {createStudioPublisher} from './studioPublishingWorker.js';
@@ -52,6 +52,32 @@ export function installStudioPublishingRoutes(app:express.Express,db:Database.Da
       return res.json({packages,publicationEnabled:enabled(),
         notice:'Creator creative review is not publication consent. Approving requires your current Hub entitlement.'});
     }catch{return res.status(503).json({error:'Signed review inbox unavailable'});}
+  });
+  app.get('/api/studio/publishing/inbox/:packageId/asset/:assetId',...guard,(req:AuthenticatedRequest,res)=>{
+    safe(res);
+    const valid=z.object({packageId:z.string().uuid(),assetId:z.string().uuid()})
+      .safeParse(req.params);
+    if(!valid.success)return res.status(404).end();
+    try{
+      const row=db.prepare(`SELECT p.user_id,p.campaign_id,p.revision
+        FROM studio_campaign_packages p
+        WHERE p.id=? AND p.business_id=?`).get(valid.data.packageId,req.user!.businessId) as
+        {user_id:string;campaign_id:string;revision:number}|undefined;
+      if(!row)return res.status(404).end();
+      const latest=db.prepare(`SELECT MAX(revision) AS n FROM studio_campaign_packages
+        WHERE campaign_id=? AND business_id=? AND user_id=?`)
+        .get(row.campaign_id,req.user!.businessId,row.user_id) as {n:number};
+      if(latest.n!==row.revision)return res.status(404).end();
+      const creator={id:row.user_id,businessId:req.user!.businessId};
+      const p=readOwnStudioPackage(db,creator,row.campaign_id,valid.data.packageId,secret);
+      const approved=(p.assetDigests as {id:string;mime:string;sha256:string}[])
+        .find(x=>x.id===valid.data.assetId);
+      if(!p.reviewed||!approved)return res.status(404).end();
+      const media=readOwnStudioAsset(db,creator,row.campaign_id,approved.id);
+      if(media.sha256!==approved.sha256||media.mime!==approved.mime)return res.status(404).end();
+      res.setHeader('Content-Security-Policy',"default-src 'none'");
+      return res.type(media.mime).send(media.bytes);
+    }catch{return res.status(404).end();}
   });
   app.post('/api/studio/publishing/approve',...guard,async(req:AuthenticatedRequest,res)=>{
     safe(res);
