@@ -1227,8 +1227,10 @@ app.get("/api/social-accounts", authenticate, requireMarketingPermission("social
   const rows = db.prepare(`
     SELECT id,business_id,platform,account_name,account_handle,connected,follower_count,last_synced_at,
            provider_account_id,expires_at,token_scopes,legal_version,legal_consented_at
-    FROM social_accounts WHERE business_id=? ORDER BY platform
-  `).all(req.user!.businessId) as any[];
+    FROM social_accounts WHERE business_id=?
+      AND (connected_by_user_id=? OR (connected_by_user_id IS NULL AND ?='BUSINESS_OWNER'))
+    ORDER BY platform
+  `).all(req.user!.businessId,req.user!.id,req.user!.role) as any[];
   res.json({
     socialAccounts: rows.map(row => ({
       id:row.id,
@@ -1335,8 +1337,9 @@ app.get("/api/social-accounts/oauth/:platform/callback", async (req, res) => {
 
     const now = new Date().toISOString();
     const existing = db.prepare(`
-      SELECT id FROM social_accounts WHERE business_id=? AND platform=? AND provider_account_id=?
-    `).get(saved.business_id, platform, connection.providerAccountId) as any;
+      SELECT id FROM social_accounts WHERE business_id=? AND connected_by_user_id=?
+        AND platform=? AND provider_account_id=?
+    `).get(saved.business_id,saved.user_id,platform,connection.providerAccountId) as any;
     const id = existing?.id || `social-${crypto.randomUUID()}`;
     const accessTokenEnc = encryptToken(connection.accessToken);
     const refreshTokenEnc = encryptToken(connection.refreshToken || null);
@@ -1348,12 +1351,12 @@ app.get("/api/social-accounts/oauth/:platform/callback", async (req, res) => {
         UPDATE social_accounts SET account_name=?, account_handle=?, connected=1, access_token_enc=?,
           refresh_token_enc=?, expires_at=?, provider_metadata_json=?, token_scopes=?,
           legal_version=?, legal_consented_at=?, last_synced_at=?, connected_by_user_id=?
-        WHERE id=? AND business_id=?
+        WHERE id=? AND business_id=? AND connected_by_user_id=?
       `).run(
         connection.accountName, connection.accountHandle, accessTokenEnc, refreshTokenEnc,
         connection.expiresAt || null, metadata, scopes,
         String(saved.legal_version || LEGAL_VERSION), String(saved.consented_at || now),
-        now, saved.user_id, id, saved.business_id
+        now, saved.user_id, id, saved.business_id, saved.user_id
       );
     } else {
       db.prepare(`
@@ -1385,17 +1388,18 @@ app.get("/api/social-accounts/oauth/:platform/callback", async (req, res) => {
 
     return res.redirect(302, socialReturnUrl("connected", platform));
   } catch (error:any) {
-    console.warn(`[Social OAuth] ${platform} connection failed:`, error?.message || error);
-    return res.redirect(302, socialReturnUrl("error", platform, error?.message || "Provider connection failed."));
+    // Provider SDK errors can contain signed URLs and token fragments.
+    console.warn("[Social OAuth] Connection unavailable; no provider details logged.");
+    return res.redirect(302, socialReturnUrl("error", platform, "Provider connection failed safely."));
   }
 });
 
 app.get("/api/social-accounts/tiktok/creator-info", authenticate, requireMarketingPermission("social.read"), async (req: AuthenticatedRequest, res) => {
   const row = db.prepare(`
     SELECT * FROM social_accounts
-    WHERE business_id=? AND platform='tiktok' AND connected=1
+    WHERE business_id=? AND connected_by_user_id=? AND platform='tiktok' AND connected=1
     ORDER BY last_synced_at DESC LIMIT 1
-  `).get(req.user!.businessId) as any;
+  `).get(req.user!.businessId,req.user!.id) as any;
   if (!row) return res.status(404).json({ error:"Connect TikTok before loading creator publishing options." });
 
   try {
@@ -1433,6 +1437,11 @@ app.get("/api/social-accounts/tiktok/creator-info", authenticate, requireMarketi
 app.delete("/api/social-accounts/:id", authenticate, requireMarketingPermission("social.write"), async (req: AuthenticatedRequest, res) => {
   const existing = db.prepare("SELECT * FROM social_accounts WHERE id=? AND business_id=?").get(req.params.id, req.user!.businessId) as any;
   if (!existing) return res.status(404).json({ error:"Social connection not found." });
+  // Member-owned credentials cannot be revoked by colleagues in the same business.
+  // Owner-only administrative handling of unassigned legacy records is retained.
+  if(existing.connected_by_user_id?existing.connected_by_user_id!==req.user!.id:
+     req.user!.role!=='BUSINESS_OWNER')
+    return res.status(403).json({error:"Only the person who connected this account can disconnect it."});
 
   try {
     if ((existing.platform === "youtube" || existing.platform === "google_business") && existing.access_token_enc) {
@@ -1449,7 +1458,9 @@ app.delete("/api/social-accounts/:id", authenticate, requireMarketingPermission(
 
     const now = new Date().toISOString();
     db.transaction(() => {
-      db.prepare("DELETE FROM social_accounts WHERE id=? AND business_id=?").run(req.params.id, req.user!.businessId);
+      db.prepare("DELETE FROM social_accounts WHERE id=? AND business_id=? AND
+        (connected_by_user_id=? OR (connected_by_user_id IS NULL AND ?='BUSINESS_OWNER'))")
+        .run(req.params.id,req.user!.businessId,req.user!.id,req.user!.role);
       db.prepare(`
         INSERT INTO audit_logs(id,business_id,user_id,user_name,action,details,ip_address,timestamp)
         VALUES(?,?,?,?,?,?,?,?)
@@ -1467,7 +1478,7 @@ app.delete("/api/social-accounts/:id", authenticate, requireMarketingPermission(
 
     res.json({ success:true, id:req.params.id, platform:existing.platform, providerAuthorizationRevoked:true });
   } catch (error:any) {
-    console.warn("[Social OAuth] Provider disconnect/revocation failed:", error?.message || error);
+    console.warn("[Social OAuth] Provider disconnect/revocation failed; details withheld.");
     res.status(502).json({
       error:"Provider authorization could not be revoked safely. No local connection data was deleted; retry the disconnect.",
     });
