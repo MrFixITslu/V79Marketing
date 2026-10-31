@@ -123,6 +123,7 @@ try{
     throw e;
   }
   await page.screenshot({path:path.join(out,'04-signed-creative-package.png'),fullPage:true});
+  await page.getByLabel(/I inspected the exact stored image\/video/i).check();
   await page.getByRole('button',{name:/Acknowledge exact private creative review/}).click();
   await page.getByText(/Creative review recorded against exact pinned media/).waitFor();
   const db=new Database(file,{readonly:true});

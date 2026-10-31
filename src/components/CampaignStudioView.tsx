@@ -43,6 +43,8 @@ export function CampaignStudioView({business,onCreateCampaign}:{
   const [scheduleLocal,setScheduleLocal]=useState('');
   const [privatePackage,setPrivatePackage]=useState<{id:string;exactDigest:string;revision:number;status:string}|null>(null);
   const [mediaPinStatus,setMediaPinStatus]=useState('');
+  const [pinnedMedia,setPinnedMedia]=useState<{id:string;kind:string;mime:string;sha256:string}[]>([]);
+  const [exactStoredMediaReviewed,setExactStoredMediaReviewed]=useState(false);
 
 
   useEffect(()=>{
@@ -135,9 +137,35 @@ export function CampaignStudioView({business,onCreateCampaign}:{
     if(png.size<64||png.size>2*1024*1024)throw Error('PNG preview outside safe upload bounds');
     return png;
   }
+  async function instagramJpeg(source:Blob):Promise<Blob>{
+    // No background network calls or silent crops. Meta's Facebook-login
+    // Instagram feed API accepts JPEG, within 4:5 .. 1.91:1 aspect.
+    if(!['image/png','image/jpeg'].includes(source.type))throw Error('Instagram requires a PNG/JPEG source');
+    const bitmap=await createImageBitmap(source);
+    try{
+      const ratio=bitmap.width/bitmap.height;
+      if(!Number.isFinite(ratio)||ratio<0.8-0.0001||ratio>1.91+0.0001||
+         bitmap.width<320||bitmap.height<320)
+        throw Error('Instagram requires a 4:5 to 1.91:1 image, at least 320 pixels wide');
+      const width=Math.min(bitmap.width,1440),height=Math.round(width/ratio);
+      if(height<1||width*height>3_000_000)
+        throw Error('Instagram image dimensions exceed safe browser JPEG conversion');
+      const canvas=document.createElement('canvas');
+      canvas.width=width;canvas.height=height;
+      const ctx=canvas.getContext('2d');
+      if(!ctx)throw Error('Browser JPEG conversion is unavailable');
+      ctx.fillStyle='#ffffff';ctx.fillRect(0,0,width,height);
+      ctx.drawImage(bitmap,0,0,width,height);
+      const jpeg=await new Promise<Blob>((resolve,reject)=>canvas.toBlob(v=>
+        v?resolve(v):reject(Error('JPEG conversion failed')),'image/jpeg',0.91));
+      if(jpeg.type!=='image/jpeg'||jpeg.size<100||jpeg.size>2*1024*1024)
+        throw Error('Converted Instagram JPEG exceeds private media upload limits');
+      return jpeg;
+    }finally{bitmap.close();}
+  }
   async function saveDraft(){
     if(!plan||!assetApproved||running||!(importedImage||asset||video))return;
-    setRunning(true);setError('');setMediaPinStatus('');
+    setRunning(true);setError('');setMediaPinStatus('');setExactStoredMediaReviewed(false);
     try{
       const now=new Date();
       const steps:CampaignStep[]=plan.steps.map(x=>({
@@ -164,6 +192,7 @@ export function CampaignStudioView({business,onCreateCampaign}:{
       if(video?.videoUrl)media.push({kind:'video',uri:video.videoUrl});
       if(!media.length)throw Error('No supported media');
       const ids:string[]=[];
+      const stored:{id:string;kind:string;mime:string;sha256:string}[]=[];
       for(const item of media){
         // Browser CSP intentionally forbids network fetch() against data: URLs.
         // Decode the already-generated local image/video without networking.
@@ -176,7 +205,9 @@ export function CampaignStudioView({business,onCreateCampaign}:{
           for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);
           return new Blob([bytes],{type:match[1]});
         };
-        const blob=item.blob||decodeLocal(item.uri!);
+        const original=item.blob||decodeLocal(item.uri!);
+        const blob=channel==='instagram'&&item.kind==='image'
+          ?await instagramJpeg(original):original;
         const response=await fetch('/api/campaigns/'+encodeURIComponent(campaign.id)+
           '/studio-asset?kind='+item.kind,{
           method:'POST',credentials:'same-origin',headers:{'Content-Type':blob.type},
@@ -184,6 +215,9 @@ export function CampaignStudioView({business,onCreateCampaign}:{
         const body=await response.json().catch(()=>({}));
         if(!response.ok||!body.asset?.id)throw Error('Media pin rejected');
         ids.push(body.asset.id);
+        if(!/^[a-f0-9]{64}$/.test(body.asset.sha256)||!body.asset.mime)
+          throw Error('Pinned media checksum missing');
+        stored.push({id:body.asset.id,kind:item.kind,mime:body.asset.mime,sha256:body.asset.sha256});
       }
       const schedule=selectedAccount&&scheduleLocal?new Date(scheduleLocal).toISOString():null;
       const response=await fetch('/api/campaigns/'+encodeURIComponent(campaign.id)+'/studio-package',{
@@ -195,15 +229,18 @@ export function CampaignStudioView({business,onCreateCampaign}:{
       if(!response.ok||!packageBody.package?.exactDigest)throw Error('Private review package unavailable');
       const item=packageBody.package;
       setPrivatePackage({id:item.id,revision:item.revision,exactDigest:item.exactDigest,status:item.status});
+      setPinnedMedia(stored);
       setMediaPinStatus('Image/video bytes and exact caption pinned to your personal campaign. Awaiting creative review; publishing remains disabled.');
       setStatus('needs_review');setStep(3);
-    }catch{
-      setError('The plan or media review package could not be completed. Nothing was published. If the plan was saved, retry media pinning without creating another campaign.');
+    }catch(e){
+      const reason=e instanceof Error&&e.message.startsWith('Instagram requires')?e.message:
+        'The plan or media review package could not be completed. Nothing was published. If the plan was saved, retry media pinning without creating another campaign.';
+      setError(reason);
       setStatus('needs_review');
     }finally{setRunning(false);}
   }
   async function acknowledgeExactReview(){
-    if(!saved||!privatePackage||running)return;
+    if(!saved||!privatePackage||!exactStoredMediaReviewed||running)return;
     setRunning(true);setError('');
     try{
       const response=await fetch('/api/campaigns/'+encodeURIComponent(saved.id)+'/studio-package/'+privatePackage.id+'/review',{
@@ -327,7 +364,7 @@ export function CampaignStudioView({business,onCreateCampaign}:{
           <input id="studio-import-image" type="file" accept="image/png,image/jpeg"
             onChange={e=>void loadImportedPhoto(e.target.files?.[0]||null)}
             className="mt-2 w-full rounded-xl border border-slate-300 bg-white p-3 text-sm"/>
-          <p className="mt-2 text-xs text-slate-600">Local branded SVG layouts are converted to PNG in your browser before pinning. Imported PNG/JPEG files are also supported. Editing or regenerating invalidates earlier creative review.</p>
+          <p className="mt-2 text-xs text-slate-600">Local SVG layouts are rasterised before pinning. Instagram graphics are converted to JPEG without cropping; incompatible aspect ratios are rejected. The exact stored file is displayed before private review. Editing or regenerating requires fresh review.</p>
           {asset&&<a href={asset.imageUrl} download={'v79-campaign-draft.'+(asset.imageUrl.startsWith('data:image/svg')?'svg':asset.imageUrl.startsWith('data:image/jpeg')?'jpg':'png')}
             className="mt-3 inline-flex min-h-11 items-center rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-[#0b1f33]">
             Save this preview image to your device
@@ -438,7 +475,7 @@ export function CampaignStudioView({business,onCreateCampaign}:{
         {step>=2&&<section className="rounded-2xl border border-slate-200 bg-white p-5">
           <h2 className="flex items-center gap-2 font-bold"><ShieldCheck size={18}/> Review your draft</h2>
           <p className="mt-2 text-sm leading-6 text-slate-600">Check every claim, screenshot, contact route and platform restriction. This review does not authorise publication.</p>
-          <p className="mt-2 rounded-xl bg-amber-50 p-3 text-xs text-amber-900">This is a private visual preview. Image-to-campaign media pinning and the final publishing approval workflow are still under development. Do not treat this as a publishable package.</p>
+          <p className="mt-2 rounded-xl bg-amber-50 p-3 text-xs text-amber-900">Generated media is only a draft. Inspect the exact pinned server-stored file below before private review. Only a separate MFA-verified Hub approval can authorise scheduled publishing.</p>
           <label className="mt-4 flex items-start gap-2 text-sm">
             <input type="checkbox" checked={assetApproved} disabled={!(asset||importedImage||video)||running}
               onChange={e=>setAssetApproved(e.target.checked)} className="mt-1"/>
@@ -451,7 +488,24 @@ export function CampaignStudioView({business,onCreateCampaign}:{
           {mediaPinStatus&&<p role="status" className="mt-3 rounded-xl bg-teal-50 p-3 text-sm text-teal-900">{mediaPinStatus}</p>}
           {privatePackage&&<div className="mt-3 space-y-2 border-t border-slate-200 pt-3">
             <p className="text-xs text-slate-600">Private revision {privatePackage.revision} · {privatePackage.status} · exact SHA-256 {privatePackage.exactDigest.slice(0,16)}…</p>
-            <button type="button" disabled={running||privatePackage.status==='CREATIVE_REVIEWED_PRIVATE'}
+            {saved&&<div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <p className="text-sm font-semibold">Exact stored files for private review</p>
+              {pinnedMedia.map(media=><div key={media.id} className="rounded-lg bg-white p-2">
+                {media.mime.startsWith('image/')?
+                  <img alt={'Exact pinned creative '+media.mime} className="mx-auto max-h-80 w-full object-contain"
+                    src={'/api/campaigns/'+encodeURIComponent(saved.id)+'/studio-assets/'+media.id}/>:
+                  <video controls playsInline className="mx-auto max-h-72 w-full"
+                    aria-label="Exact pinned private video"
+                    src={'/api/campaigns/'+encodeURIComponent(saved.id)+'/studio-assets/'+media.id}/>}
+                <p className="mt-1 break-all font-mono text-xs text-slate-500">{media.mime} · SHA-256 {media.sha256.slice(0,18)}…</p>
+              </div>)}
+              <label className="flex items-start gap-2 text-sm">
+                <input type="checkbox" checked={exactStoredMediaReviewed}
+                  onChange={e=>setExactStoredMediaReviewed(e.target.checked)} className="mt-1"/>
+                I inspected the exact stored image/video and approve these bytes for private creative review.
+              </label>
+            </div>}
+            <button type="button" disabled={running||!exactStoredMediaReviewed||privatePackage.status==='CREATIVE_REVIEWED_PRIVATE'}
               onClick={()=>void acknowledgeExactReview()}
               className="min-h-11 w-full rounded-xl bg-[#0b1f33] px-3 py-2 text-sm font-semibold text-white disabled:opacity-40">
               Acknowledge exact private creative review
