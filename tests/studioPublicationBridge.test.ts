@@ -9,6 +9,7 @@ import {ensureStudioPublicationTables,authoriseStudioPublication,
   expireInterruptedStudioAttempts,studioMediaToken,readStudioApprovedMedia
 } from '../src/lib/studioPublicationBridge.js';
 import {createStudioPublisher} from '../src/lib/studioPublishingWorker.js';
+import {encryptToken} from '../src/lib/tokenVault.js';
 
 const secret='isolated-publishing-approval-test-key-32-chars';
 const creator={id:'creator',businessId:'biz1'};
@@ -16,6 +17,7 @@ const approver={id:'manager',businessId:'biz1',role:'MARKETING_MANAGER'};
 const now=Date.now(),time=new Date(now+180000).toISOString();
 const sha=(b:Buffer)=>createHash('sha256').update(b).digest('hex');
 function fixture(){
+  process.env.SOCIAL_TOKEN_ENCRYPTION_KEY='isolated-browser-synthetic-social-encryption-key-123456';
   const db=new Database(':memory:');
   db.pragma('foreign_keys=ON');
   db.exec(`CREATE TABLE businesses(id TEXT PRIMARY KEY,hub_organization_id TEXT);
@@ -39,7 +41,7 @@ function fixture(){
      account_name,account_handle,access_token_enc,token_scopes,provider_metadata_json)
     VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
     .run('personal-page','biz1','creator',1,'facebook','page-123','Page','@page',
-      'encrypted-synthetic-token','pages_manage_posts','{}');
+      encryptToken('synthetic-facebook-page-access-token'),'pages_manage_posts','{}');
   ensurePersonalSkillTables(db);ensureStudioCampaignTables(db);ensureStudioPublicationTables(db);
   const pin=pinCampaignSkill(db,creator,campaignId);
   // Synthetic binary in a fixture: media decode validity belongs to the
@@ -129,6 +131,50 @@ describe('exact multi-member Studio publication bridge — new targeted tests',(
       expect(expireInterruptedStudioAttempts(f.db,now+200000+30*60000+1)).toBe(1);
       expect(claimStudioDelivery(f.db,secret,now+99999999)).toBeNull();
       expect(()=>finaliseStudioDelivery(f.db,first,'PUBLISHED',{providerPostId:'late'})).toThrow();
+    }finally{f.db.close();}
+  });
+  it('mocked provider success records one receipt for an exact personal account and signed media URL',async()=>{
+    const f=fixture();try{
+      const pkg=f.packageIt();
+      authoriseStudioPublication(f.db,approver,creator.id,f.campaignId,pkg.id,pkg.exactDigest,true,secret,now);
+      let calls=0;
+      const worker=createStudioPublisher(f.db,secret,{
+        env:{V79_STUDIO_PUBLISH_ENABLED:'1',V79_ENTITLEMENT_RECHECK_ENABLED:'1',
+          APP_URL:'https://marketing.example.invalid'} as NodeJS.ProcessEnv,
+        deps:{now:()=>now+200000,entitled:async()=>true,
+          dispatch:async(_row,account,payload)=>{
+            calls++;
+            expect(account.providerAccountId).toBe('page-123');
+            expect(account.accessToken).toBe('synthetic-facebook-page-access-token');
+            expect(payload.mediaUrls?.[0]).toMatch(/^https:\/\/marketing\.example\.invalid\/media\/studio\//);
+            expect(payload.caption).toBe('Approved synthetic service caption');
+            return {providerPostId:'synthetic-platform-receipt-123',publishedAt:time};
+          }},
+      });
+      const result=await worker.tick();
+      expect(result).toMatchObject({status:'PUBLISHED',providerPostId:'synthetic-platform-receipt-123'});
+      expect(calls).toBe(1);
+      await worker.tick();
+      expect(calls).toBe(1);
+    }finally{f.db.close();}
+  });
+  it('ambiguous mocked provider timeout produces UNKNOWN and never blindly sends twice',async()=>{
+    const f=fixture();try{
+      const pkg=f.packageIt();
+      authoriseStudioPublication(f.db,approver,creator.id,f.campaignId,pkg.id,pkg.exactDigest,true,secret,now);
+      let calls=0;
+      const worker=createStudioPublisher(f.db,secret,{
+        env:{V79_STUDIO_PUBLISH_ENABLED:'1',V79_ENTITLEMENT_RECHECK_ENABLED:'1',
+          APP_URL:'https://marketing.example.invalid'} as NodeJS.ProcessEnv,
+        deps:{now:()=>now+200000,entitled:async()=>true,
+          dispatch:async()=>{calls++;throw Error('Synthetic timeout after possible remote post');}},
+      });
+      const first=await worker.tick();
+      expect(first).toMatchObject({status:'UNKNOWN'});
+      expect(calls).toBe(1);
+      await worker.tick();
+      expect(calls).toBe(1);
+      expect((worker.history('biz1') as {status:string}[])[0].status).toBe('UNKNOWN');
     }finally{f.db.close();}
   });
   it('background worker with revoked live Hub entitlement performs no provider call and records BLOCKED',async()=>{
