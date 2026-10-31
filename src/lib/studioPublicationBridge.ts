@@ -3,7 +3,7 @@ import {randomUUID,createHmac,createHash,timingSafeEqual} from 'node:crypto';
 import {z} from 'zod';
 import {readOwnStudioPackage,readOwnStudioAsset,type StudioActor} from './studioCampaignAssets.js';
 import {readCampaignSkillPin} from './personalMarketingSkills.js';
-import {eligibleStudioPublishMedia} from './studioPublishMediaPolicy.js';
+import {eligibleStudioPublishMedia,studioProductionChannelAllowed} from './studioPublishMediaPolicy.js';
 
 const hashPattern=/^[a-f0-9]{64}$/;
 const sign=(secret:string,businessId:string,value:string)=>{
@@ -107,8 +107,8 @@ export function authoriseStudioPublication(db:Database.Database,approver:Publica
     if(latest.n!==p.revision)throw Error('A newer campaign edit requires a new exact approval');
     if(!p.connectedAccountId||!p.scheduledAt||!p.providerAccountId||!p.accountFingerprint)
       throw Error('Exact personal destination and scheduled instant required');
-    if(!['facebook','instagram','youtube'].includes(p.channel))
-      throw Error('Provider publishing adapter not yet approved');
+    if(!studioProductionChannelAllowed(p.channel))
+      throw Error('This channel needs signed content disclosures and a verified publishing contract');
     const kinds=p.assetDigests as {kind:string;mime:string;sha256:string;id:string}[];
     if(!eligibleStudioPublishMedia(p.channel,kinds))
       throw Error('Reviewed media format not accepted by selected publishing provider');
