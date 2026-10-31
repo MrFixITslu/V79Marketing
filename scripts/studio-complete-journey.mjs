@@ -76,7 +76,10 @@ try{
     return {readyState:el.readyState,duration:Number.isFinite(el.duration)?el.duration:null,
       errorCode:el.error?.code||null,videoWidth:el.videoWidth,videoHeight:el.videoHeight};
   });
-  const videoSrc=await video.getAttribute('src');
+  assert(playback.readyState>=1,'Real browser must decode WebM preview metadata');
+  assert.equal(playback.errorCode,null,'Browser preview must not report media decoding failure');
+  assert(playback.videoWidth>=320&&playback.videoHeight>=560,'Video preview must have actual frame dimensions');
+  const videoSrc=await video.locator('source[type="video/mp4"]').getAttribute('src');
   if(videoSrc?.startsWith('data:video/mp4;base64,')){
     const bytes=Buffer.from(videoSrc.split(',')[1],'base64');
     await fs.writeFile(path.join(out,'synthetic-local-motion-debug.mp4'),bytes);
