@@ -35,6 +35,7 @@ import {installMediaCredentialRoutes} from "./src/lib/mediaProviderRoutes.js";
 import {installCreativeMediaRoutes} from "./src/lib/creativeMediaRoutes.js";
 import {installStudioCampaignRoutes} from "./src/lib/studioCampaignRoutes.js";
 import {installStudioPublishingRoutes} from "./src/lib/studioPublishingRoutes.js";
+import {installStudioHubReadRoutes} from "./src/lib/studioHubReadRoutes.js";
 import {mayDisconnectSocialAccount} from "./src/lib/socialAccountOwnership.js";
 import {installPersonalSkillRoutes} from "./src/lib/personalMarketingSkillRoutes.js";
 import {pinCampaignSkill,readCampaignSkillPin,snapshotOwnSkill} from "./src/lib/personalMarketingSkills.js";
@@ -129,6 +130,7 @@ installMediaCredentialRoutes(app,db);
 installCreativeMediaRoutes(app,db);
 installStudioCampaignRoutes(app,db);
 const studioPublisher=installStudioPublishingRoutes(app,db);
+installStudioHubReadRoutes(app,db);
 installPersonalSkillRoutes(app,db);
 
 // AI Client Initialization
