@@ -64,11 +64,26 @@ export async function composeLocalMotionVideo(input:{imageData:string;brand:Prod
     ],{cwd:temp,timeout:options.maxDurationMs||120000,maxBuffer:2048});
     const video=await fs.readFile(path.join(temp,'preview.mp4'));
     if(video.length<2048||video.length>7*1024*1024)throw Error('Local video size outside safe range');
+    // Browser builds without H.264 decoding still need actual playback.
+    // A deliberately small VP8 WebM is a local preview; the original MP4
+    // remains the exact uploaded/exported release asset.
+    await execute(options.ffmpegPath||'ffmpeg',[
+      '-hide_banner','-loglevel','error','-nostdin','-i','preview.mp4',
+      '-vf','scale=360:640:flags=bicubic,fps=12','-t','9',
+      '-c:v','libvpx','-deadline','realtime','-cpu-used','7','-b:v','350k',
+      '-threads','2','-an','-y','browser-preview.webm'
+    ],{cwd:temp,timeout:90000,maxBuffer:2048});
+    const webm=await fs.readFile(path.join(temp,'browser-preview.webm'));
+    if(webm.length<1024||webm.length>2*1024*1024||
+      webm.subarray(0,4).toString('hex')!=='1a45dfa3')
+      throw Error('Browser video preview encoding unavailable');
     const sha256=createHash('sha256').update(video).digest('hex');
     const subtitles=`1\n00:00:00,000 --> 00:00:06,000\n${label}. ${claim}\n\n2\n00:00:06,000 --> 00:00:09,000\n${cta}. ${website.hostname}\n`;
     return {source:'local-motion-composition' as const,mediaGenerated:true,generatedFootage:false,
       mimeType:'video/mp4' as const,sourceImageSha256:image.sha256,sha256,bytes:video.length,
       videoUrl:'data:video/mp4;base64,'+video.toString('base64'),
+      previewWebmUrl:'data:video/webm;base64,'+webm.toString('base64'),
+      previewMimeType:'video/webm' as const,
       subtitles,notice:'Motion composition from user-provided media and owner-approved business facts. No AI-generated footage or provider publication.'};
   }finally{await fs.rm(temp,{recursive:true,force:true});}
 }
