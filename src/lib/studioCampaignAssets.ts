@@ -64,7 +64,13 @@ export function ensureStudioCampaignTables(db:Database.Database){
   CREATE TRIGGER IF NOT EXISTS studio_package_immutable
     BEFORE UPDATE ON studio_campaign_packages BEGIN SELECT RAISE(ABORT,'Immutable Studio package'); END;
   CREATE TRIGGER IF NOT EXISTS studio_review_immutable
-    BEFORE UPDATE ON studio_campaign_private_reviews BEGIN SELECT RAISE(ABORT,'Immutable Studio review'); END;`);
+    BEFORE UPDATE ON studio_campaign_private_reviews BEGIN SELECT RAISE(ABORT,'Immutable Studio review'); END;
+  CREATE TRIGGER IF NOT EXISTS studio_asset_protect_delete
+    BEFORE DELETE ON studio_campaign_assets
+    WHEN EXISTS(SELECT 1 FROM studio_campaign_packages p
+      WHERE p.business_id=OLD.business_id AND p.user_id=OLD.user_id AND p.campaign_id=OLD.campaign_id
+        AND p.asset_ids_json LIKE '%'||OLD.id||'%')
+    BEGIN SELECT RAISE(ABORT,'Pinned Studio media cannot be deleted'); END;`);
 }
 function campaignOwner(db:Database.Database,actor:StudioActor,campaignId:string){
   const pin=readCampaignSkillPin(db,actor,campaignId);
@@ -215,9 +221,16 @@ export function readOwnStudioPackage(db:Database.Database,actor:StudioActor,camp
     const actual=readOwnStudioAsset(db,actor,campaignId,asset.id);
     if(actual.sha256!==asset.sha256)throw Error('Attached asset digest changed');
   }
-  const reviewed=db.prepare(`SELECT reviewer_user_id AS reviewerUserId,reviewed_at AS reviewedAt
-    FROM studio_campaign_private_reviews WHERE package_id=? AND business_id=?`)
-    .get(packageId,actor.businessId) as {reviewerUserId:string;reviewedAt:string}|undefined;
+  const reviewed=db.prepare(`SELECT reviewer_user_id AS reviewerUserId,reviewed_at AS reviewedAt,
+      exact_digest AS exactDigest,signature FROM studio_campaign_private_reviews
+      WHERE package_id=? AND business_id=?`)
+    .get(packageId,actor.businessId) as
+      {reviewerUserId:string;reviewedAt:string;exactDigest:string;signature:string}|undefined;
+  if(reviewed&&(!secureEq(reviewed.exactDigest,row.exact_digest)||
+    !secureEq(reviewed.signature,hmac(secret,actor.businessId,JSON.stringify({
+      packageId,exactDigest:row.exact_digest,reviewerUserId:reviewed.reviewerUserId,
+      reviewedAt:reviewed.reviewedAt
+    })))))throw Error('Creative review receipt integrity failed');
   return {...signedPackageFields(row),exactDigest:row.exact_digest,
     status:reviewed?'CREATIVE_REVIEWED_PRIVATE':'NEEDS_REVIEW',reviewed:reviewed||null,
     publicationAuthorized:false,schedulingActivated:false};
