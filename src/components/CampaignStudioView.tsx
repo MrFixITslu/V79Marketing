@@ -111,6 +111,30 @@ export function CampaignStudioView({business,onCreateCampaign}:{
       setStatus('needs_review');}
     finally{setRunning(false);}
   }
+  async function rasterizeLocalSvg(dataUri:string):Promise<Blob>{
+    // Only the application's own static SVG layout is rasterised. Uploaded
+    // SVG, external image URLs and script-capable formats remain disallowed.
+    if(!asset||asset.source!=='brand-template'||!/^data:image\/svg\+xml;base64,/.test(dataUri))
+      throw Error('Unsupported local layout source');
+    const source=new Image();
+    await new Promise<void>((resolve,reject)=>{
+      source.onload=()=>resolve();
+      source.onerror=()=>reject(Error('Local SVG cannot be rasterised'));
+      source.src=dataUri;
+    });
+    const w=source.naturalWidth,h=source.naturalHeight;
+    if(!w||!h||w>1920||h>1920||w*h>3_000_000)
+      throw Error('Local layout dimensions unavailable or unsafe');
+    const canvas=document.createElement('canvas');
+    canvas.width=w;canvas.height=h;
+    const ctx=canvas.getContext('2d');
+    if(!ctx)throw Error('Browser PNG rendering is unavailable');
+    ctx.drawImage(source,0,0);
+    const png=await new Promise<Blob>((resolve,reject)=>canvas.toBlob(blob=>
+      blob?resolve(blob):reject(Error('PNG export failed')),'image/png'));
+    if(png.size<64||png.size>2*1024*1024)throw Error('PNG preview outside safe upload bounds');
+    return png;
+  }
   async function saveDraft(){
     if(!plan||!assetApproved||running||!(importedImage||asset||video))return;
     setRunning(true);setError('');setMediaPinStatus('');
@@ -131,15 +155,17 @@ export function CampaignStudioView({business,onCreateCampaign}:{
       });
       setSaved(campaign);
       if(!campaign.skillPin?.skillDigest)throw Error('Campaign creator skill pin missing');
-      const media:{kind:'image'|'video';uri:string}[]=[];
+      const media:{kind:'image'|'video';uri?:string;blob?:Blob}[]=[];
       const still=importedImage||(asset?.imageUrl.match(/^data:image\/(png|jpeg);base64,/)?
         asset.imageUrl:'');
       if(still)media.push({kind:'image',uri:still});
+      else if(asset?.source==='brand-template'&&asset.imageUrl.startsWith('data:image/svg+xml;base64,'))
+        media.push({kind:'image',blob:await rasterizeLocalSvg(asset.imageUrl)});
       if(video?.videoUrl)media.push({kind:'video',uri:video.videoUrl});
       if(!media.length)throw Error('No supported media');
       const ids:string[]=[];
       for(const item of media){
-        const blob=await fetch(item.uri).then(r=>r.blob());
+        const blob=item.blob||await fetch(item.uri!).then(r=>r.blob());
         const response=await fetch('/api/campaigns/'+encodeURIComponent(campaign.id)+
           '/studio-asset?kind='+item.kind,{
           method:'POST',credentials:'same-origin',headers:{'Content-Type':blob.type},
@@ -290,7 +316,7 @@ export function CampaignStudioView({business,onCreateCampaign}:{
           <input id="studio-import-image" type="file" accept="image/png,image/jpeg"
             onChange={e=>void loadImportedPhoto(e.target.files?.[0]||null)}
             className="mt-2 w-full rounded-xl border border-slate-300 bg-white p-3 text-sm"/>
-          <p className="mt-2 text-xs text-slate-600">Your local SVG layouts can be previewed, but must first be exported as PNG. Importing or regenerating media invalidates an earlier creative review.</p>
+          <p className="mt-2 text-xs text-slate-600">Local branded SVG layouts are converted to PNG in your browser before pinning. Imported PNG/JPEG files are also supported. Editing or regenerating invalidates earlier creative review.</p>
           {asset&&<a href={asset.imageUrl} download={'v79-campaign-draft.'+(asset.imageUrl.startsWith('data:image/svg')?'svg':asset.imageUrl.startsWith('data:image/jpeg')?'jpg':'png')}
             className="mt-3 inline-flex min-h-11 items-center rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-[#0b1f33]">
             Save this preview image to your device
