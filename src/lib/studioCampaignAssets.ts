@@ -89,8 +89,30 @@ function imageMime(data:Buffer):string|null{
     data.readUInt32BE(20)>=1&&data.readUInt32BE(20)<=4096&&
     data.readUInt32BE(16)*data.readUInt32BE(20)<=8_000_000)
       return 'image/png';
+  // JPEG compressed payloads can hide huge dimensions. Walk bounded header
+  // markers to find a real Start of Frame width/height, fail closed on any
+  // malformed length, unsupported frame or decompression bomb dimensions.
   if(data.length>=128&&data.subarray(0,3).toString('hex')==='ffd8ff'&&
-    data.subarray(-2).toString('hex')==='ffd9')return 'image/jpeg';
+    data.subarray(-2).toString('hex')==='ffd9'){
+    let position=2;
+    for(let count=0;count<80&&position+4<data.length;count++){
+      if(data[position]!==0xff)return null;
+      while(position<data.length&&data[position]===0xff)position++;
+      const marker=data[position++];
+      if(marker===0xd9||marker===0xda)break;
+      if(marker===0x01||marker>=0xd0&&marker<=0xd7)continue;
+      if(position+2>data.length)return null;
+      const length=data.readUInt16BE(position);
+      if(length<2||position+length>data.length)return null;
+      if([0xc0,0xc1,0xc2].includes(marker)){
+        if(length<7)return null;
+        const height=data.readUInt16BE(position+3),width=data.readUInt16BE(position+5);
+        return width>=1&&height>=1&&width<=4096&&height<=4096&&
+          width*height<=8_000_000?'image/jpeg':null;
+      }
+      position+=length;
+    }
+  }
   return null;
 }
 function hasMp4Atoms(data:Buffer){
