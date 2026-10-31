@@ -2,7 +2,7 @@ import type Database from 'better-sqlite3';
 import {decryptToken} from './tokenVault.js';
 import {publishWithProvider,type ProviderAccountRecord,
   type ProviderPlatform,type ProviderPublishPayload} from './socialProviders.js';
-import {verifyMarketingBackgroundEntitlement} from './auth.js';
+import {verifyMarketingBackgroundEntitlement,hasMarketingPermission} from './auth.js';
 import {claimStudioDelivery,expireInterruptedStudioAttempts,
   finaliseStudioDelivery,verifyStudioDispatch,studioMediaToken,
   type PublicationRecord} from './studioPublicationBridge.js';
@@ -22,6 +22,7 @@ function liveIdentity(db:Database.Database,row:PublicationRecord){
   const approver=db.prepare('SELECT role FROM users WHERE id=? AND business_id=?')
     .get(row.approver_user_id,row.business_id) as {role:string}|undefined;
   if(!creator?.org||!creator.hub||!approver||
+     !hasMarketingPermission(creator.creatorRole,'content.write')||
      !['BUSINESS_OWNER','MARKETING_MANAGER'].includes(approver.role))
     throw Error('Creator or independent publishing approver no longer authorised');
   return creator as {org:string;hub:string;creatorRole:string};
