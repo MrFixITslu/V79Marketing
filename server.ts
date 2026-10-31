@@ -32,6 +32,7 @@ import { queueMarketingEvent, startPlatformEventPump } from "./src/lib/platformE
 import { decryptToken, encryptToken } from "./src/lib/tokenVault.js";
 import {installMediaCredentialRoutes} from "./src/lib/mediaProviderRoutes.js";
 import {installCreativeMediaRoutes} from "./src/lib/creativeMediaRoutes.js";
+import {installStudioCampaignRoutes} from "./src/lib/studioCampaignRoutes.js";
 import {installPersonalSkillRoutes} from "./src/lib/personalMarketingSkillRoutes.js";
 import {pinCampaignSkill,readCampaignSkillPin,snapshotOwnSkill} from "./src/lib/personalMarketingSkills.js";
 import {readOwnMediaKey} from "./src/lib/mediaProviderVault.js";
@@ -72,6 +73,9 @@ if (allowedOrigins.length) {
   app.use(cors({ origin: allowedOrigins, credentials: true }));
 }
 
+// Exact studio-media endpoint only; no multipart or arbitrary uploads.
+app.use('/api/campaigns/:campaignId/studio-asset',
+  express.raw({type:['image/png','image/jpeg','video/mp4'],limit:'8mb'}));
 app.use(express.json({ limit: "2mb", verify: (req:any, _res, body) => { req.rawBody = Buffer.from(body); } }));
 app.use(cookieParser());
 
@@ -117,6 +121,7 @@ const aiGenerationLimiter = rateLimit({
 app.use("/api/", globalApiLimiter);
 installMediaCredentialRoutes(app,db);
 installCreativeMediaRoutes(app,db);
+installStudioCampaignRoutes(app,db);
 installPersonalSkillRoutes(app,db);
 
 // AI Client Initialization
