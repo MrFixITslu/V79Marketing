@@ -90,6 +90,7 @@ export function CampaignStudioView({business,onCreateCampaign}:{
   async function createImage(){
     if(!planStep||running||!generationAvailable)return;
     setRunning(true);setStatus('generating');setError('');
+    setPrivatePackage(null);setAssetApproved(false);
     try{
       const text=String(planStep.caption||planStep.captionPrompt||brief).slice(0,500);
       const url=generationMode==='local'?'/api/ai/generate-image':'/api/creative/personal-image';
@@ -192,6 +193,7 @@ export function CampaignStudioView({business,onCreateCampaign}:{
   }
   async function selectVideoSource(file:File|null){
     setVideo(null);setVideoSource('');setVideoError('');
+    setPrivatePackage(null);setAssetApproved(false);
     if(!file)return;
     if(file.size>1000000||!['image/png','image/jpeg'].includes(file.type)){
       setVideoError('Choose a personal PNG or JPEG image smaller than 1MB.');return;
@@ -206,6 +208,7 @@ export function CampaignStudioView({business,onCreateCampaign}:{
       asset?.imageUrl?.startsWith('data:image/jpeg')?asset.imageUrl:'');
     if(!image||!selectedFact||videoBusy||!verifiedAvailable)return;
     setVideoBusy(true);setVideoError('');setVideo(null);
+    setPrivatePackage(null);setAssetApproved(false);
     try{
       const response=await fetch('/api/creative/local-video',{method:'POST',
         credentials:'same-origin',headers:{'content-type':'application/json'},
@@ -295,12 +298,12 @@ export function CampaignStudioView({business,onCreateCampaign}:{
           {asset&&<p className="mt-2 text-xs text-slate-600">Source: {asset.source==='brand-template'?'Basic local layout — not an AI photo':asset.source==='cloud-ai-image'?'External AI image — requires human review':asset.source}. Images remain drafts until reviewed.</p>}
           <div className="mt-5 flex flex-wrap items-center gap-3">
             <label className="text-sm font-semibold" htmlFor="studio-format">Format</label>
-            <select id="studio-format" value={format} onChange={e=>{setFormat(e.target.value as typeof format);setAsset(null);setAssetApproved(false);}}
+            <select id="studio-format" value={format} onChange={e=>{setFormat(e.target.value as typeof format);setAsset(null);setAssetApproved(false);setPrivatePackage(null);}}
               className="min-h-11 rounded-xl border border-slate-300 bg-white px-3 text-sm">
               <option value="4:5">Feed · 4:5</option><option value="1:1">Square · 1:1</option><option value="9:16">Story · 9:16</option>
             </select>
             <label htmlFor="studio-provider" className="text-sm font-semibold">Engine</label>
-            <select id="studio-provider" value={generationMode} onChange={e=>{setGenerationMode(e.target.value as typeof generationMode);setAsset(null);setAssetApproved(false);setCloudConsent(false);}}
+            <select id="studio-provider" value={generationMode} onChange={e=>{setGenerationMode(e.target.value as typeof generationMode);setAsset(null);setAssetApproved(false);setPrivatePackage(null);setCloudConsent(false);}}
               className="min-h-11 rounded-xl border border-slate-300 bg-white px-3 text-sm">
               <option value="local">Local · basic composition</option><option value="gemini">My Gemini · AI image (optional)</option>
             </select>
