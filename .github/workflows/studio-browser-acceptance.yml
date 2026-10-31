@@ -1,0 +1,71 @@
+name: Studio isolated browser acceptance
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'src/components/CampaignStudioView.tsx'
+      - 'src/components/MyMarketingSkillView.tsx'
+      - 'src/components/StudioApprovalsView.tsx'
+      - 'src/lib/studioCampaign*.ts'
+      - 'src/lib/studioPublishing*.ts'
+      - 'src/lib/studioPublicationBridge.ts'
+      - 'scripts/studio-browser-acceptance.mjs'
+      - '.github/workflows/studio-browser-acceptance.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: studio-browser-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  isolated-browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      PORT: '3070'
+      NODE_ENV: development
+      DATABASE_PATH: /tmp/v79-studio-browser-acceptance.sqlite
+      V79_MARKETING_SEED_DEMO: '1'
+      V79_ENABLE_SIMULATED_PUBLISHER: '0'
+      V79_ENTITLEMENT_RECHECK_ENABLED: '0'
+      V79_STUDIO_PUBLISH_ENABLED: '0'
+      JWT_SECRET: isolated-browser-jwt-secret-with-32pluschars
+      V79_MARKETING_STUDIO_REVIEW_KEY: isolated-browser-studio-review-key-32pluschars
+      OLLAMA_BASE_URL: http://127.0.0.1:65535
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install isolated app dependencies (no prior unit test reruns)
+        run: npm ci --no-audit --no-fund
+      - name: Install headless Chromium for NEW browser acceptance only
+        run: |
+          npm install --no-save --no-audit --no-fund playwright@1.56.1
+          npx playwright install --with-deps chromium
+      - name: Launch ephemeral Marketing test server (NO production endpoints)
+        run: |
+          npm run dev > /tmp/v79-studio-browser-server.log 2>&1 &
+          echo $! > /tmp/v79-studio-browser-server.pid
+          for i in $(seq 1 60); do
+            if curl --silent --output /dev/null http://127.0.0.1:3070/; then exit 0; fi
+            sleep 1
+          done
+          cat /tmp/v79-studio-browser-server.log
+          exit 1
+      - name: Real desktop/mobile browser acceptance and private-tenant API redteam
+        run: node scripts/studio-browser-acceptance.mjs
+      - name: Capture isolated browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: studio-isolated-browser-${{ github.run_id }}
+          path: |
+            artifacts/studio-browser-acceptance/*.png
+            artifacts/studio-browser-acceptance/acceptance.json
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Print sanitized test server errors
+        if: failure()
+        run: grep -E 'error TS|Error:|ERR_|failed' /tmp/v79-studio-browser-server.log | tail -30 || true
