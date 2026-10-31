@@ -128,6 +128,11 @@ export async function processScheduledPosts(): Promise<PublishResult[]> {
   db.prepare(`UPDATE post_deliveries SET status='OUTCOME_UNKNOWN',updated_at=?,
     last_error='Provider outcome unknown after dispatch interruption. Verify the social account before any new post.'
     WHERE status='DISPATCHING'`).run(now);
+  // REDTEAM HOLD: the legacy general queue has no cryptographically pinned
+  // per-user destination and no exact creative+media approval. Do not dispatch
+  // real customer posts through this path while the multi-user review bridge
+  // remains unfinished. Simulated development tests remain available.
+  if(!simulationEnabled())return [];
   const duePosts = db.prepare(`SELECT p.* FROM posts p WHERE p.status IN ('SCHEDULED','FAILED') AND p.scheduled_for <= ?
     AND p.id NOT LIKE 'production-%' AND NOT EXISTS(SELECT 1 FROM production_post_links l WHERE l.post_id=p.id)
     ORDER BY p.scheduled_for LIMIT 50`)
