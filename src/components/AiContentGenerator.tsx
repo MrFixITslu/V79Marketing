@@ -60,6 +60,7 @@ export const AiContentGenerator: React.FC<AiContentGeneratorProps> = ({
   const [specialDetail, setSpecialDetail] = useState('');
   const [prompt, setPrompt] = useState(initialPrompt);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [useOwnCloudKey,setUseOwnCloudKey]=useState(false);
   const [generationError, setGenerationError] = useState('');
   const [activePlatform, setActivePlatform] = useState<SocialPlatform | 'whatsapp'>('facebook');
   const [copied, setCopied] = useState(false);
@@ -163,7 +164,7 @@ export const AiContentGenerator: React.FC<AiContentGeneratorProps> = ({
       const response = await fetch('/api/ai/generate-text', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: fullPrompt }),
+        body: JSON.stringify({ prompt: fullPrompt, useOwnCloudKey }),
       });
 
       const data = await response.json().catch(() => ({}));
@@ -426,6 +427,12 @@ export const AiContentGenerator: React.FC<AiContentGeneratorProps> = ({
             />
           </div>
 
+          <label className="flex items-start gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+            <input type="checkbox" checked={useOwnCloudKey} onChange={e=>setUseOwnCloudKey(e.target.checked)}
+              className="mt-1" />
+            <span>Allow a cloud fallback using <strong>my own saved Gemini API key</strong> if local AI is unavailable.
+              Provider charges may apply to my account. Off by default; never shares keys between users.</span>
+          </label>
           {generationError && <p role="alert" className="text-sm text-red-700">{generationError}</p>}
 
           <div className="flex justify-end pt-2">

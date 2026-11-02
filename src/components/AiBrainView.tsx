@@ -32,6 +32,7 @@ export const AiBrainView: React.FC<AiBrainViewProps> = ({
   const [formData, setFormData] = useState<AIBusinessBrain>(brain);
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [optimizing, setOptimizing] = useState(false);
+  const [useOwnCloudKey,setUseOwnCloudKey]=useState(false);
   const [error, setError] = useState('');
   const [proposalReady, setProposalReady] = useState(false);
 
@@ -68,7 +69,7 @@ export const AiBrainView: React.FC<AiBrainViewProps> = ({
       const response = await fetch('/api/ai/optimize-brain', {
         method:'POST',
         headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({ brain:formData }),
+        body:JSON.stringify({ brain:formData,useOwnCloudKey }),
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok || !body.brain) throw new Error(body.error || 'Business Brain optimisation failed.');
@@ -193,6 +194,10 @@ export const AiBrainView: React.FC<AiBrainViewProps> = ({
           </div>
         </div>
 
+        <label className="mt-3 flex items-center gap-2 text-xs text-purple-100">
+          <input type="checkbox" checked={useOwnCloudKey} onChange={e=>setUseOwnCloudKey(e.target.checked)} />
+          Allow Gemini fallback with my personal key if local AI is unavailable (my provider may charge). Off by default.
+        </label>
         {savedSuccess && (
           <div className="mt-4 p-3 bg-emerald-500/20 border border-emerald-400/40 text-emerald-200 text-xs font-bold rounded-xl flex items-center gap-2 animate-fade-in">
             <CheckCircle2 className="w-4 h-4 text-emerald-300" />
