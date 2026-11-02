@@ -5,6 +5,7 @@ import type { ProductionActor, ProductionDependencies } from './productionWorkfl
 import type { Delivery } from './productionStore.js';
 import { renderProductionAssets, verifyAsset } from './productionRenderer.js';
 import { decryptToken, encryptToken } from './tokenVault.js';
+import { refreshStoredTikTokAccount } from './tiktokTokenLifecycle.js';
 import { refreshProviderAccess, publishWithProvider, queryTikTokCreatorInfo, type ProviderAccountRecord, type ProviderPublishPayload } from './socialProviders.js';
 import { signPlatformRequest } from './platform.js';
 
@@ -113,8 +114,8 @@ export function productionAdapters(db:Database.Database):ProductionDependencies 
         if(material.channel==='tiktok'){
           if(!plan.tiktokPrivacy||plan.tiktokMusicConfirmed!==true)blocker='Select TikTok privacy and confirm music rights in the draft plan';
           else if(row)try{
-            const info=await queryTikTokCreatorInfo({platform:'tiktok',providerAccountId:row.provider_account_id,
-              accessToken:decryptToken(row.access_token_enc),metadata:JSON.parse(row.provider_metadata_json||'{}')});
+            const fresh=await refreshStoredTikTokAccount(db,String(row.id),actor.businessId);
+            const info=await queryTikTokCreatorInfo(fresh);
             if(!info.privacyLevelOptions.includes(plan.tiktokPrivacy))blocker='Selected TikTok privacy is not currently available';
           }catch{blocker='TikTok creator verification unavailable';}
         }
@@ -159,10 +160,13 @@ export function productionAdapters(db:Database.Database):ProductionDependencies 
       const account:ProviderAccountRecord={platform:d.channel as ProviderAccountRecord['platform'],providerAccountId:d.providerAccountId,
         accessToken:decryptToken(row.access_token_enc),refreshToken:row.refresh_token_enc?decryptToken(row.refresh_token_enc):undefined,
         expiresAt:row.expires_at,metadata:JSON.parse(row.provider_metadata_json||'{}')};
-      const refreshed=await refreshProviderAccess(account);
-      if(refreshed.accessToken!==account.accessToken)db.prepare('UPDATE social_accounts SET access_token_enc=?,refresh_token_enc=?,expires_at=? WHERE id=? AND business_id=?')
-        .run(encryptToken(refreshed.accessToken),refreshed.refreshToken?encryptToken(refreshed.refreshToken):row.refresh_token_enc,
-          refreshed.expiresAt||null,row.id,actor.businessId);
+      const refreshed=d.channel==='tiktok'
+        ? await refreshStoredTikTokAccount(db,String(row.id),actor.businessId)
+        : await refreshProviderAccess(account);
+      if(d.channel!=='tiktok' && refreshed.accessToken!==account.accessToken)
+        db.prepare('UPDATE social_accounts SET access_token_enc=?,refresh_token_enc=?,expires_at=? WHERE id=? AND business_id=?')
+          .run(encryptToken(refreshed.accessToken),refreshed.refreshToken?encryptToken(refreshed.refreshToken):row.refresh_token_enc,
+            refreshed.expiresAt||null,row.id,actor.businessId);
       // Re-check Hub owner/subscription immediately before the irreversible call.
       await authorize();
       return publishWithProvider(refreshed,d.payload as unknown as ProviderPublishPayload);
