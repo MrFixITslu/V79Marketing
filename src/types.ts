@@ -214,6 +214,7 @@ export interface SocialAccount {
   lastSyncedAt: string;
   providerAccountId?: string;
   expiresAt?: string;
+  reauthorizationRequired?: boolean;
   scopes?: string[];
   legalVersion?: string;
   legalConsentedAt?: string;
