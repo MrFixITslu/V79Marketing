@@ -306,6 +306,15 @@ export function initDb() {
   ensureColumn("social_accounts", "legal_version", "TEXT");
   ensureColumn("social_accounts", "legal_consented_at", "TEXT");
   ensureColumn("social_accounts", "connected_by_user_id", "TEXT");
+  ensureColumn("social_accounts", "refresh_expires_at", "TEXT");
+  // A durable reservation prevents two workers from using one rotating TikTok
+  // refresh credential; an interrupted attempt must never silently retry it.
+  db.exec(`CREATE TABLE IF NOT EXISTS tiktok_refresh_attempts (
+    account_id TEXT PRIMARY KEY,
+    attempt_id TEXT NOT NULL,
+    state TEXT NOT NULL CHECK(state IN ('inflight','reconnect_required')),
+    started_at TEXT NOT NULL
+  )`);
   ensureColumn("social_oauth_states", "legal_version", "TEXT");
   ensureColumn("social_oauth_states", "consented_at", "TEXT");
   migrateHubManagedUserEmailScope();
