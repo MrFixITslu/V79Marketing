@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import type Database from "better-sqlite3";
 import { decryptToken, encryptToken } from "./tokenVault.js";
-import { refreshProviderAccess, type ProviderAccountRecord } from "./socialProviders.js";
+import { refreshProviderAccess, tiktokRotationRequired, type ProviderAccountRecord } from "./socialProviders.js";
 
 type StoredAccount = {
   id: string;
@@ -69,7 +69,7 @@ export async function refreshStoredTikTokAccount(
 
   try {
     const updated = await refreshProviderAccess(account);
-    if (!updated.refreshToken || updated.refreshToken === account.refreshToken ||
+    if (!updated.refreshToken || (tiktokRotationRequired() && updated.refreshToken === account.refreshToken) ||
         !updated.expiresAt || !updated.refreshExpiresAt) throw new Error(RECONNECT);
     // Both credentials and both deadlines are one atomic write. A concurrent
     // OAuth reconnection cannot be overwritten by a slower refresh response.
