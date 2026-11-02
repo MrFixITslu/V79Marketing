@@ -1232,10 +1232,11 @@ app.get("/api/social-providers", authenticate, requireMarketingPermission("socia
 
 app.get("/api/social-accounts", authenticate, requireMarketingPermission("social.read"), (req: AuthenticatedRequest, res) => {
   const rows = db.prepare(`
-    SELECT id,business_id,platform,account_name,account_handle,connected,follower_count,last_synced_at,
-           provider_account_id,expires_at,token_scopes,legal_version,legal_consented_at
-    FROM social_accounts WHERE business_id=?
-      AND (connected_by_user_id=? OR (connected_by_user_id IS NULL AND ?='BUSINESS_OWNER'))
+    SELECT s.id,s.business_id,s.platform,s.account_name,s.account_handle,s.connected,s.follower_count,s.last_synced_at,
+           s.provider_account_id,s.expires_at,s.refresh_expires_at,s.token_scopes,s.legal_version,s.legal_consented_at,
+           tr.state AS tiktok_refresh_state,tr.started_at AS tiktok_refresh_started_at
+    FROM social_accounts s LEFT JOIN tiktok_refresh_attempts tr ON tr.account_id=s.id WHERE s.business_id=?
+      AND (s.connected_by_user_id=? OR (s.connected_by_user_id IS NULL AND ?='BUSINESS_OWNER'))
     ORDER BY platform
   `).all(req.user!.businessId,req.user!.id,req.user!.role) as any[];
   res.json({
@@ -1250,6 +1251,12 @@ app.get("/api/social-accounts", authenticate, requireMarketingPermission("social
       lastSyncedAt:row.last_synced_at,
       providerAccountId:row.provider_account_id || undefined,
       expiresAt:row.expires_at || undefined,
+      reauthorizationRequired:row.platform === "tiktok" && (
+        row.tiktok_refresh_state === "reconnect_required" ||
+        (row.tiktok_refresh_state === "inflight" &&
+          Date.now() - Date.parse(row.tiktok_refresh_started_at) >= 120000) ||
+        Boolean(row.refresh_expires_at && Date.parse(row.refresh_expires_at) <= Date.now())
+      ),
       scopes:String(row.token_scopes || "").split(" ").filter(Boolean),
       legalVersion:row.legal_version || undefined,
       legalConsentedAt:row.legal_consented_at || undefined,
