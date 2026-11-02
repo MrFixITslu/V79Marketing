@@ -2,6 +2,7 @@ import { db } from "./db.js";
 import { verifyMarketingBackgroundEntitlement } from "./auth.js";
 import { allowScheduledPostPublication } from "./publisherEntitlement.js";
 import { decryptToken, encryptToken } from "./tokenVault.js";
+import { refreshStoredTikTokAccount } from "./tiktokTokenLifecycle.js";
 import { publishWithProvider, refreshProviderAccess, type ProviderAccountRecord, type ProviderPlatform } from "./socialProviders.js";
 
 export interface PublishResult {
@@ -76,6 +77,11 @@ async function loadUsableAccount(businessId:string, platform:ProviderPlatform) {
     ORDER BY last_synced_at DESC LIMIT 1
   `).get(businessId, platform) as any;
   if (!row) return null;
+
+  if (platform === "tiktok") {
+    const account = await refreshStoredTikTokAccount(db, String(row.id), businessId);
+    return { row, account };
+  }
 
   const record:ProviderAccountRecord = {
     platform,
