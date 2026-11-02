@@ -11,6 +11,7 @@ export interface ProviderConnection {
   accessToken: string;
   refreshToken?: string;
   expiresAt?: string;
+  refreshExpiresAt?: string;
   scopes?: string[];
   metadata?: Record<string, unknown>;
 }
@@ -21,6 +22,7 @@ export interface ProviderAccountRecord {
   accessToken: string;
   refreshToken?: string;
   expiresAt?: string | null;
+  refreshExpiresAt?: string | null;
   metadata: Record<string, any>;
 }
 
@@ -417,6 +419,7 @@ async function connectTikTok(code: string, redirectUri: string): Promise<Provide
     accessToken: String(token.access_token),
     refreshToken: token.refresh_token ? String(token.refresh_token) : undefined,
     expiresAt: token.expires_in ? new Date(Date.now() + Number(token.expires_in) * 1000).toISOString() : undefined,
+    refreshExpiresAt: token.refresh_expires_in ? new Date(Date.now() + Number(token.refresh_expires_in) * 1000).toISOString() : undefined,
     scopes: String(token.scope || "user.info.basic,video.publish").split(",").filter(Boolean),
     metadata: { openId: String(user.open_id || token.open_id || "") },
   };
@@ -800,7 +803,15 @@ async function publishGoogleBusiness(account: ProviderAccountRecord, payload: Pr
 
 export async function refreshProviderAccess(account: ProviderAccountRecord): Promise<ProviderAccountRecord> {
   const expiresAt = account.expiresAt ? Date.parse(account.expiresAt) : 0;
-  if (!expiresAt || expiresAt - Date.now() > 10 * 60 * 1000) return account;
+  const refreshMargin = account.platform === "tiktok" ? 20 * 60 * 1000 : 10 * 60 * 1000;
+  if (account.platform === "tiktok" && !expiresAt) {
+    throw new Error("TikTok token lifetime is unknown. Reconnect the TikTok account.");
+  }
+  if (!expiresAt || expiresAt - Date.now() > refreshMargin) return account;
+  if (account.platform === "tiktok" && account.refreshExpiresAt &&
+      Date.parse(account.refreshExpiresAt) <= Date.now()) {
+    throw new Error("TikTok authorization expired. Reconnect the TikTok account.");
+  }
 
   if (account.platform === "facebook" || account.platform === "instagram") {
     throw new Error("Meta access has expired. Reconnect the Facebook/Instagram account.");
@@ -863,6 +874,25 @@ export async function refreshProviderAccess(account: ProviderAccountRecord): Pro
   }
 
   if (!token?.access_token) throw new Error("Provider token refresh failed. Reconnect the account.");
+  if (account.platform === "tiktok") {
+    // Every successful refresh rotates the credential. Reusing an old
+    // credential after a successful refresh would invalidate future access.
+    const accessSeconds = Number(token.expires_in);
+    const refreshSeconds = Number(token.refresh_expires_in);
+    if (!token.refresh_token || String(token.refresh_token) === account.refreshToken ||
+        !Number.isFinite(accessSeconds) || accessSeconds <= 0 ||
+        !Number.isFinite(refreshSeconds) || refreshSeconds <= 0 ||
+        (token.open_id && String(token.open_id) !== account.providerAccountId)) {
+      throw new Error("TikTok returned an unusable rotating token response. Reconnect the TikTok account.");
+    }
+    return {
+      ...account,
+      accessToken: String(token.access_token),
+      refreshToken: String(token.refresh_token),
+      expiresAt: new Date(Date.now() + accessSeconds * 1000).toISOString(),
+      refreshExpiresAt: new Date(Date.now() + refreshSeconds * 1000).toISOString(),
+    };
+  }
   return {
     ...account,
     accessToken:String(token.access_token),
