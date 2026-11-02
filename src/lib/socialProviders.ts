@@ -59,6 +59,9 @@ export interface ProviderPublishResult {
 
 const SUPPORTED: ProviderPlatform[] = ["facebook", "instagram", "linkedin", "tiktok", "youtube", "google_business"];
 
+// Before the announced cutover, TikTok may still return the same refresh token.
+export const tiktokRotationRequired = () => Date.now() >= Date.UTC(2026, 11, 1);
+
 function env(name: string) {
   return String(process.env[name] || "").trim();
 }
@@ -879,7 +882,7 @@ export async function refreshProviderAccess(account: ProviderAccountRecord): Pro
     // credential after a successful refresh would invalidate future access.
     const accessSeconds = Number(token.expires_in);
     const refreshSeconds = Number(token.refresh_expires_in);
-    if (!token.refresh_token || String(token.refresh_token) === account.refreshToken ||
+    if (!token.refresh_token || (tiktokRotationRequired() && String(token.refresh_token) === account.refreshToken) ||
         !Number.isFinite(accessSeconds) || accessSeconds <= 0 ||
         !Number.isFinite(refreshSeconds) || refreshSeconds <= 0 ||
         (token.open_id && String(token.open_id) !== account.providerAccountId)) {
