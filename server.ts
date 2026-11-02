@@ -31,6 +31,7 @@ import { consumeHubLaunchTicket, verifyHubProvisionRequest, verifyHubSummaryRequ
 import { deprovisionHubTeamIdentity, provisionHubIdentity } from "./src/lib/hubProvisioning.js";
 import { queueMarketingEvent, startPlatformEventPump } from "./src/lib/platformEvents.js";
 import { decryptToken, encryptToken } from "./src/lib/tokenVault.js";
+import { refreshStoredTikTokAccount } from "./src/lib/tiktokTokenLifecycle.js";
 import {installMediaCredentialRoutes} from "./src/lib/mediaProviderRoutes.js";
 import {installCreativeMediaRoutes} from "./src/lib/creativeMediaRoutes.js";
 import {installStudioCampaignRoutes} from "./src/lib/studioCampaignRoutes.js";
@@ -1355,12 +1356,12 @@ app.get("/api/social-accounts/oauth/:platform/callback", async (req, res) => {
     if (existing) {
       db.prepare(`
         UPDATE social_accounts SET account_name=?, account_handle=?, connected=1, access_token_enc=?,
-          refresh_token_enc=?, expires_at=?, provider_metadata_json=?, token_scopes=?,
+          refresh_token_enc=?, expires_at=?, refresh_expires_at=?, provider_metadata_json=?, token_scopes=?,
           legal_version=?, legal_consented_at=?, last_synced_at=?, connected_by_user_id=?
         WHERE id=? AND business_id=? AND connected_by_user_id=?
       `).run(
         connection.accountName, connection.accountHandle, accessTokenEnc, refreshTokenEnc,
-        connection.expiresAt || null, metadata, scopes,
+        connection.expiresAt || null, connection.refreshExpiresAt || null, metadata, scopes,
         String(saved.legal_version || LEGAL_VERSION), String(saved.consented_at || now),
         now, saved.user_id, id, saved.business_id, saved.user_id
       );
@@ -1368,16 +1369,20 @@ app.get("/api/social-accounts/oauth/:platform/callback", async (req, res) => {
       db.prepare(`
         INSERT INTO social_accounts
           (id,business_id,platform,account_name,account_handle,connected,follower_count,access_token_enc,
-           refresh_token_enc,expires_at,provider_account_id,provider_metadata_json,token_scopes,
+           refresh_token_enc,expires_at,refresh_expires_at,provider_account_id,provider_metadata_json,token_scopes,
            legal_version,legal_consented_at,last_synced_at,connected_by_user_id)
-        VALUES(?,?,?,?,?,1,0,?,?,?,?,?,?,?,?,?,?)
+        VALUES(?,?,?,?,?,1,0,?,?,?,?,?,?,?,?,?,?,?)
       `).run(
         id, saved.business_id, platform, connection.accountName, connection.accountHandle,
-        accessTokenEnc, refreshTokenEnc, connection.expiresAt || null, connection.providerAccountId,
+        accessTokenEnc, refreshTokenEnc, connection.expiresAt || null, connection.refreshExpiresAt || null, connection.providerAccountId,
         metadata, scopes, String(saved.legal_version || LEGAL_VERSION), String(saved.consented_at || now), now, saved.user_id
       );
     }
 
+    if (platform === "tiktok") {
+      // A deliberate new OAuth grant supersedes any interrupted rotation.
+      db.prepare("DELETE FROM tiktok_refresh_attempts WHERE account_id=?").run(id);
+    }
     db.prepare(`
       INSERT INTO audit_logs(id,business_id,user_id,user_name,action,details,ip_address,timestamp)
       SELECT ?,?,?,?,?,?,?,?
@@ -1409,30 +1414,7 @@ app.get("/api/social-accounts/tiktok/creator-info", authenticate, requireMarketi
   if (!row) return res.status(404).json({ error:"Connect TikTok before loading creator publishing options." });
 
   try {
-    let account:ProviderAccountRecord = {
-      platform:"tiktok",
-      providerAccountId:String(row.provider_account_id || ""),
-      accessToken:decryptToken(row.access_token_enc),
-      refreshToken:row.refresh_token_enc ? decryptToken(row.refresh_token_enc) : undefined,
-      expiresAt:row.expires_at || null,
-      metadata:JSON.parse(row.provider_metadata_json || "{}"),
-    };
-    const refreshed = await refreshProviderAccess(account);
-    if (refreshed.accessToken !== account.accessToken || refreshed.refreshToken !== account.refreshToken || refreshed.expiresAt !== account.expiresAt) {
-      db.prepare(`
-        UPDATE social_accounts
-        SET access_token_enc=?, refresh_token_enc=?, expires_at=?, last_synced_at=?
-        WHERE id=? AND business_id=?
-      `).run(
-        encryptToken(refreshed.accessToken),
-        encryptToken(refreshed.refreshToken || null),
-        refreshed.expiresAt || null,
-        new Date().toISOString(),
-        row.id,
-        req.user!.businessId
-      );
-      account = refreshed;
-    }
+    const account = await refreshStoredTikTokAccount(db, String(row.id), req.user!.businessId, req.user!.id);
     const creator = await queryTikTokCreatorInfo(account);
     res.json({ creator });
   } catch (error:any) {
