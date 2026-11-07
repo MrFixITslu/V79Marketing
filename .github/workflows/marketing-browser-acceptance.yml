@@ -1,0 +1,50 @@
+name: Marketing isolated desktop and mobile acceptance
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - feature/marketing-enquiry-attribution-20261027
+permissions:
+  contents: read
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install app and isolated browser test runner
+        run: |
+          npm install -g npm@11.9.0
+          npm ci --no-audit --no-fund
+          npm install --no-save --ignore-scripts --no-audit --no-fund @playwright/test
+          npx playwright install --with-deps chromium
+      - name: Build browser candidate
+        run: npm run build
+      - name: Run desktop and mobile tests with synthetic API only
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p test-results
+          npm run preview -- --host 127.0.0.1 --port 4173 > /tmp/v79-marketing-preview.log 2>&1 &
+          preview_pid=$!
+          trap 'kill "$preview_pid" 2>/dev/null || true' EXIT
+          for i in $(seq 1 90); do
+            if curl --fail --silent http://127.0.0.1:4173/ >/dev/null; then break; fi
+            sleep 1
+          done
+          curl --fail http://127.0.0.1:4173/ >/dev/null
+          npx playwright test e2e/marketing-browser-acceptance.spec.mjs --reporter=line --workers=1
+      - name: Upload browser screenshots or failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: marketing-desktop-mobile-acceptance
+          path: test-results/
+          retention-days: 7
+          if-no-files-found: ignore

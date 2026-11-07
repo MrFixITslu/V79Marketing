@@ -4,6 +4,7 @@ import { ensureAgentCampaignDraftTable } from "./agentCampaignDrafts.js";
 import { ensureMediaKeyTable } from "./mediaProviderVault.js";
 import { ensurePersonalSkillTables } from "./personalMarketingSkills.js";
 import { ensureScopedSocialAccountIndexes } from "./socialAccountOwnership.js";
+import { ensureCustomerCampaignAttribution } from "./campaignAttribution.js";
 import path from "path";
 import fs from "fs";
 import bcrypt from "bcryptjs";
@@ -317,6 +318,7 @@ export function initDb() {
   )`);
   ensureColumn("social_oauth_states", "legal_version", "TEXT");
   ensureColumn("social_oauth_states", "consented_at", "TEXT");
+  ensureCustomerCampaignAttribution(db);
   migrateHubManagedUserEmailScope();
   // Creating the BYOK FK before this legacy users-table rename would bind it
   // to users_global_email_legacy and break both cleanup and account deletion.

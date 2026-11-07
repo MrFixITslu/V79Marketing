@@ -226,6 +226,7 @@ export async function processScheduledPosts(): Promise<PublishResult[]> {
           mediaUrls,
           website:String(business?.website || ""),
           tiktok:platformContent.tiktok || undefined,
+          youtube:platformContent.youtube || undefined,
         });
 
         db.prepare(`

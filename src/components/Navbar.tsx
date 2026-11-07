@@ -278,9 +278,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               onClick={() => setActiveTab('landing')}
               className="flex items-center gap-3 cursor-pointer group"
             >
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#0A86FF] via-[#7C3AED] to-[#FF7A00] flex items-center justify-center font-black text-sm tracking-tight text-white border border-white/10 shadow-lg group-hover:brightness-110 transition">
-                V79
-              </div>
+              <img src="/brand/icon-transparent-256.png" alt="V79 Digital" width={36} height={36} className="w-9 h-9 object-contain" />
               <div className="hidden sm:block">
                 <span className="font-bold text-base tracking-tight text-slate-900 block leading-tight">
                   V79 Digital Marketing
