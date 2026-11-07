@@ -6,7 +6,6 @@ import {promisify} from 'node:util';
 import {createHash} from 'node:crypto';
 import type {ProductionBrand} from './productionContract.js';
 const execute=promisify(execFile);
-const font='/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf';
 export function decodePersonalSourceImage(image:string){
   const parsed=/^data:image\/(png|jpeg);base64,([A-Za-z0-9+/]+={0,2})$/.exec(image);
   if(!parsed||image.length>1500000)throw Error('Use a PNG or JPEG image under 1MB');
@@ -48,7 +47,11 @@ export async function composeLocalMotionVideo(input:{imageData:string;brand:Prod
       throw Error('Invalid or oversized local source image');
     await fs.writeFile(path.join(temp,'hook.txt'),label+'\n'+claim,{mode:0o600});
     await fs.writeFile(path.join(temp,'end.txt'),cta+'\n'+website.hostname,{mode:0o600});
-    await fs.access(font);
+    let font='';
+    for(const candidate of ['/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf','/usr/share/fonts/dejavu/DejaVuSans.ttf']){
+      try{await fs.access(candidate);font=candidate;break;}catch{}
+    }
+    if(!font)throw Error('Local rendering font unavailable');
     const vf=[
       'scale=1080:1920:force_original_aspect_ratio=increase',
       'crop=1080:1920',
