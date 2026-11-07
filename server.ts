@@ -2345,6 +2345,18 @@ async function startServer() {
     });
   } else {
     const distPath = path.join(process.cwd(), "dist");
+    // Build tools place private server artifacts beside the browser output.
+    // Decode once, as express.static does, and deny private files before it.
+    app.use((req, res, next) => {
+      let requested: string;
+      try { requested = decodeURIComponent(req.path); }
+      catch { res.status(400).end(); return; }
+      if (/(^|\/)\.[^/]+/.test(requested) ||
+          /\.(?:cjs|mjs|map|ts|tsx|sql|sqlite(?:-wal|-shm)?|key)$/i.test(requested)) {
+        res.status(404).end(); return;
+      }
+      next();
+    });
     app.use(express.static(distPath));
     app.get("*", (req, res) => {
       res.sendFile(path.join(distPath, "index.html"));
