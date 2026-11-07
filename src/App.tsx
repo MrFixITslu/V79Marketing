@@ -61,6 +61,11 @@ import { AiBrandKitView } from './components/AiBrandKitView';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { CustomerPipelineView } from './components/CustomerPipelineView';
 import { OneIdeaCampaignView } from './components/OneIdeaCampaignView';
+import { MyMarketingSkillView } from './components/MyMarketingSkillView';
+import { CampaignStudioView } from './components/CampaignStudioView';
+import { StudioApprovalsView } from './components/StudioApprovalsView';
+import type { CampaignOutcome } from './lib/campaignAttribution';
+import { prepareCampaignContent, type CampaignContentHandoff } from './lib/campaignHandoff';
 import { CustomerInquiry } from './types';
 
 export type ViewType =
@@ -69,6 +74,9 @@ export type ViewType =
   | 'customers'
   | 'one-idea-campaign'
   | 'ai_brain'
+  | 'my-marketing-skill'
+  | 'studio'
+  | 'studio-approvals'
   | 'ai-assistant'
   | 'ai-image'
   | 'reviews'
@@ -86,6 +94,9 @@ export type ViewType =
   | 'admin';
 
 export default function App() {
+  const [skillHasUnsavedEdits,setSkillHasUnsavedEdits]=useState(false);
+  const [contentHandoff, setContentHandoff] = useState<CampaignContentHandoff | null>(null);
+  const [quickContentPrompt, setQuickContentPrompt] = useState('');
   const [currentView, setCurrentView] = useState<ViewType>(() =>
     typeof window === 'undefined' ? 'dashboard' : readMarketingView(window.location.search)
   );
@@ -101,6 +112,12 @@ export default function App() {
       window.history.replaceState(window.history.state, '', path);
     }
   }, [currentView, sessionState]);
+
+  // A campaign handoff only applies while explicitly working in the content creator.
+  // Leaving it never leaves a hidden campaign association on a later unrelated post.
+  useEffect(() => {
+    if (currentView !== 'ai-assistant') setContentHandoff(null);
+  }, [currentView]);
 
   // UTM Parameter Tracking State
   const [utmParams, setUtmParams] = useState<UtmTrackingParams | null>(() => {
@@ -208,7 +225,7 @@ export default function App() {
         setCurrentBusiness(session.business);
         setUsers([session.user]);
         setBusinesses([session.business]);
-        const [postResponse, customerResponse, creditResponse, campaignResponse, socialResponse, brainResponse, assetResponse, competitorResponse, deliveryResponse] = await Promise.all([
+        const [postResponse, customerResponse, creditResponse, campaignResponse, socialResponse, brainResponse, assetResponse, competitorResponse, deliveryResponse, outcomeResponse] = await Promise.all([
           fetch('/api/posts', { credentials: 'same-origin' }),
           fetch('/api/customers', { credentials: 'same-origin' }),
           fetch('/api/credits/balance', { credentials: 'same-origin' }),
@@ -218,6 +235,7 @@ export default function App() {
           fetch('/api/assets', { credentials: 'same-origin' }),
           fetch('/api/competitors', { credentials: 'same-origin' }),
           fetch('/api/post-deliveries', { credentials: 'same-origin' }),
+          fetch('/api/campaigns/outcomes', { credentials: 'same-origin' }),
         ]);
         if (postResponse.ok) {
           const body = await postResponse.json();
@@ -254,6 +272,10 @@ export default function App() {
         if (deliveryResponse.ok) {
           const body = await deliveryResponse.json();
           if (!cancelled) setPostDeliveries(body.deliveries || []);
+        }
+        if (!cancelled && outcomeResponse.ok) {
+          const body = await outcomeResponse.json();
+          setCampaignOutcomes(body.outcomes || []);
         }
         if (!cancelled) setSessionState('authenticated');
       } catch {
@@ -308,6 +330,17 @@ export default function App() {
 
   // Growth Platform Customers CRM State
   const [customers, setCustomers] = useState<CustomerInquiry[]>([]);
+  const [campaignOutcomes, setCampaignOutcomes] = useState<CampaignOutcome[] | null>(null);
+  const refreshCampaignOutcomes = async () => {
+    try {
+      const response=await fetch('/api/campaigns/outcomes',{credentials:'same-origin'});
+      if (!response.ok) {setCampaignOutcomes(null);return;}
+      const data=await response.json();
+      setCampaignOutcomes(Array.isArray(data.outcomes) ? data.outcomes : null);
+    } catch {
+      setCampaignOutcomes(null);
+    }
+  };
 
   // Sync selected business when user changes
   const handleSelectUser = (user: User) => {
@@ -363,6 +396,17 @@ export default function App() {
     setBusinesses((items) => items.map((b) => (b.id === saved.id ? saved : b)));
   };
 
+  const handlePrepareCampaignStep = (campaign: Campaign, step: Campaign['steps'][number]) => {
+    try {
+      const prepared = prepareCampaignContent(campaign, step, currentBusiness.id);
+      setContentHandoff(prepared);
+      setQuickContentPrompt('');
+      setCurrentView('ai-assistant');
+    } catch (error) {
+      console.error('Could not prepare this campaign step:', error);
+    }
+  };
+
   const handleSchedulePost = async (newPost: Partial<Post>): Promise<void> => {
       const response = await fetch('/api/posts', {
         method: 'POST',
@@ -393,11 +437,13 @@ export default function App() {
         status:newCamp.status,
         steps:newCamp.steps,
         aiPlanGenerated:newCamp.aiPlanGenerated,
+        expectedSkillDigest:newCamp.skillDigest,
       }),
     });
     const body = await response.json().catch(() => ({}));
     if (!response.ok || !body.campaign) throw new Error(body.error || 'Could not create campaign.');
     setCampaigns((items) => [body.campaign, ...items.filter((item) => item.id !== body.campaign.id)]);
+    void refreshCampaignOutcomes();
     return body.campaign as Campaign;
   };
 
@@ -485,7 +531,7 @@ export default function App() {
   }
 
   return (
-    <div className="v79-marketing-app min-h-screen bg-[#07111f] text-slate-100 font-sans flex flex-col">
+    <div className={`v79-marketing-app min-h-screen font-sans flex flex-col ${currentView==='studio'||currentView==='studio-approvals'||currentView==='my-marketing-skill'?'v79-light-workspace':'bg-[#07111f] text-slate-100'}`}>
       {/* Primary Top Navigation */}
       <Navbar
         currentUser={currentUser}
@@ -494,7 +540,11 @@ export default function App() {
         currentBusiness={currentBusiness}
         creditBalance={creditBalance}
         activeTab={currentView}
-        setActiveTab={(tab) => setCurrentView(tab as ViewType)}
+        setActiveTab={(tab) => {
+          if(currentView==='my-marketing-skill'&&skillHasUnsavedEdits&&
+            !window.confirm('You have unsaved personal skill edits. Leave without saving?'))return;
+          setCurrentView(tab as ViewType);
+        }}
         currency={currency}
         setCurrency={setCurrency}
         onOpenAuth={() => window.location.assign('/api/platform/hub')}
@@ -507,7 +557,7 @@ export default function App() {
       />
 
       {/* Main App Canvas Body */}
-      <main className="flex-1 max-w-[1540px] w-full mx-auto px-4 sm:px-5 xl:px-7 pt-5 pb-[calc(5.25rem+env(safe-area-inset-bottom))] md:pb-5">
+      <main className="flex-1 max-w-[1540px] w-full mx-auto px-4 sm:px-5 xl:px-7 pt-5 pb-[calc(5.25rem+env(safe-area-inset-bottom))] lg:pb-5">
         {currentView === 'landing' && (
           <LandingPage
             onStartDemo={handleGetStartedFromLanding}
@@ -534,6 +584,8 @@ export default function App() {
             } as any}
             onNavigate={(tab) => setCurrentView(tab as ViewType)}
             onQuickGenerate={(prompt) => {
+              setContentHandoff(null);
+              setQuickContentPrompt(prompt);
               setCurrentView('ai-assistant');
             }}
             onViewPublicProfile={() => setCurrentView('public_storefront')}
@@ -545,16 +597,20 @@ export default function App() {
           <CustomerPipelineView
             business={currentBusiness}
             customers={customers}
-            onAddCustomer={(newCust) => {
-              void fetch('/api/customers', {
+            campaigns={campaigns}
+            onAddCustomer={async (newCust) => {
+              const response=await fetch('/api/customers',{
                 method:'POST',
                 headers:{'Content-Type':'application/json'},
-                body:JSON.stringify(newCust),
-              }).then(async response => {
-                const body=await response.json().catch(()=>({}));
-                if(!response.ok) throw new Error(body.error || 'Could not add customer.');
-                if(body.customer) setCustomers(items => [body.customer, ...items]);
-              }).catch(error => console.error('Customer save failed:', error));
+                body:JSON.stringify({
+                  name:newCust.name,phone:newCust.phone,email:newCust.email,
+                  channel:newCust.channel,status:newCust.status,campaignId:newCust.campaignId
+                }),
+              });
+              const body=await response.json().catch(()=>({}));
+              if(!response.ok || !body.customer) throw new Error(body.error || 'Could not save customer enquiry.');
+              setCustomers(items=>[body.customer,...items]);
+              await refreshCampaignOutcomes();
             }}
             onUpdateCustomerStatus={(id, status) => {
               void (async () => {
@@ -566,6 +622,7 @@ export default function App() {
                 const body = await response.json().catch(() => ({}));
                 if (!response.ok) throw new Error(body.error || 'Customer status update failed.');
                 setCustomers(items => items.map(c => c.id===id ? {...c,status} : c));
+                await refreshCampaignOutcomes();
               })().catch(error => console.error('Customer status update failed:', error));
             }}
           />
@@ -575,8 +632,13 @@ export default function App() {
           <OneIdeaCampaignView
             business={currentBusiness}
             onCreateCampaign={handleCreateCampaign}
+            onViewPlans={() => setCurrentView('campaigns')}
           />
         )}
+
+        {currentView === 'my-marketing-skill' && <MyMarketingSkillView onUnsavedChange={setSkillHasUnsavedEdits} />}
+        {currentView === 'studio' && <CampaignStudioView business={currentBusiness} onCreateCampaign={handleCreateCampaign} />}
+        {currentView === 'studio-approvals' && <StudioApprovalsView />}
 
         {currentView === 'ai_brain' && (
           <AiBrainView
@@ -599,6 +661,9 @@ export default function App() {
             business={currentBusiness}
             socialAccounts={socialAccounts}
             onSchedulePost={handleSchedulePost}
+            initialPrompt={contentHandoff?.prompt || quickContentPrompt}
+            initialTitle={contentHandoff?.title}
+            campaignContext={contentHandoff}
           />
         )}
 
@@ -655,7 +720,11 @@ export default function App() {
           <CampaignBuilder
             business={currentBusiness}
             campaigns={campaigns}
-            onCreateCampaign={handleCreateCampaign}
+            outcomes={campaignOutcomes}
+            posts={posts}
+            onCreateNewPlan={() => setCurrentView('one-idea-campaign')}
+            onPrepareStep={handlePrepareCampaignStep}
+            onRegeneratedCampaign={campaign=>setCampaigns(items=>[campaign,...items])}
           />
         )}
 

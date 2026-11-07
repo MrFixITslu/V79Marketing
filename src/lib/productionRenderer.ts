@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 import type { ProductionBrand, Material, Asset } from './productionContract.js';
 
 const execute=promisify(execFile);
-export const ASSET_NAMES=['poster-square.png','poster-wide.png','short.mp4','subtitles.srt','newsletter.html','copy.json'] as const;
+export const ASSET_NAMES=['poster-square.png','poster-feed.png','poster-wide.png','short.mp4','subtitles.srt','newsletter.html','copy.json'] as const;
 export const productionAssetRoot=()=>path.resolve(process.env.V79_PRODUCTION_ASSET_DIR || path.join(process.cwd(),'data','production-assets'));
 export function assetPath(jobId:string,name:string,root=productionAssetRoot()) {
   if (!/^[a-f0-9-]{36}$/.test(jobId) || !(ASSET_NAMES as readonly string[]).includes(name)) throw Error('Invalid asset reference');
@@ -64,6 +64,7 @@ export async function renderProductionAssets(jobId:string,brand:ProductionBrand,
   }
   const w=options.width||1080,h=options.height||1920;
   await image('poster-square.png',hook+'\n\n'+fact.service,w,w);
+  await image('poster-feed.png',hook+'\n\n'+fact.service,w,Math.round(w*1.25));
   await image('poster-wide.png',hook+'\n\n'+fact.service,options.width||1200,options.width?Math.round(w*0.523):628);
   const scenes=first.videoScenes.map((text,i)=>({text,seconds:i===1?14:8}));
   let seconds=0,srt='';

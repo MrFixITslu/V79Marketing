@@ -1,0 +1,69 @@
+name: Studio complete local image-video journey
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'scripts/studio-complete-journey-setup.ts'
+      - 'scripts/studio-complete-journey.mjs'
+      - '.github/workflows/studio-complete-journey.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: studio-complete-journey-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  real-local-flow:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      PORT: '3070'
+      NODE_ENV: development
+      DATABASE_PATH: /tmp/v79-studio-complete-journey.sqlite
+      V79_MARKETING_SEED_DEMO: '0'
+      V79_ENABLE_SIMULATED_PUBLISHER: '0'
+      V79_ENTITLEMENT_RECHECK_ENABLED: '0'
+      V79_STUDIO_PUBLISH_ENABLED: '0'
+      JWT_SECRET: synthetic-studio-complete-journey-jwt-32pluschars
+      V79_MARKETING_STUDIO_REVIEW_KEY: synthetic-studio-complete-journey-review-signature-32pluschars
+      V79_MARKETING_PRODUCTION_AUDIT_KEY: synthetic-studio-complete-journey-signed-brand-32pluschars
+      OLLAMA_BASE_URL: http://127.0.0.1:65535
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Match existing npm lockfile
+        run: npm install -g npm@11.9.0
+      - name: Install app for this NEW isolated visual journey only
+        run: npm ci --no-audit --no-fund
+      - name: Install local video renderer and Chromium
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core
+          npm install --no-save --no-audit --no-fund playwright@1.56.1
+          npx playwright install --with-deps chromium
+      - name: Boot ephemeral Marketing API with publishing disabled
+        run: |
+          npm run dev >/tmp/v79-complete-journey-server.log 2>&1 &
+          for i in $(seq 1 60); do
+            if curl --fail --silent --output /dev/null http://127.0.0.1:3070/api/health; then exit 0; fi
+            sleep 1
+          done
+          echo 'STOP: Isolated server health unavailable'; exit 1
+      - name: Seed only synthetic signed brand claims
+        run: npx tsx scripts/studio-complete-journey-setup.ts
+      - name: Actual browser brief to PNG and MP4 to signed review
+        run: node scripts/studio-complete-journey.mjs
+      - name: Capture isolated original browser media/screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: studio-local-image-video-${{ github.run_id }}
+          path: artifacts/studio-complete-journey/
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Sanitized failure clues
+        if: failure()
+        run: grep -E 'Error:|failed|invalid' /tmp/v79-complete-journey-server.log | tail -25 || true
