@@ -892,6 +892,12 @@ app.put("/api/businesses/:id", authenticate, requireMarketingPermission("busines
   const existing = db.prepare("SELECT * FROM businesses WHERE id = ?").get(id) as any;
   if (!existing) return res.status(404).json({ error: "Business not found" });
 
+  const nextSlug = updates.slug ?? existing.slug;
+  if (nextSlug !== existing.slug) {
+    const collision = db.prepare("SELECT id FROM businesses WHERE slug=? AND id<>?").get(nextSlug, id);
+    if (collision) return res.status(409).json({ error:"That public profile URL is already in use." });
+  }
+
   // Hub is canonical for names shared by all subscribed applications.
   // Non-owners can still edit permitted profile fields, but never rename the
   // entire tenant. A failed Hub write stops the local rename (fail closed).
@@ -935,12 +941,6 @@ app.put("/api/businesses/:id", authenticate, requireMarketingPermission("busines
     } catch {
       return res.status(503).json({error:"Hub could not be reached. Business name was not changed."});
     }
-  }
-
-  const nextSlug = updates.slug ?? existing.slug;
-  if (nextSlug !== existing.slug) {
-    const collision = db.prepare("SELECT id FROM businesses WHERE slug=? AND id<>?").get(nextSlug, id);
-    if (collision) return res.status(409).json({ error:"That public profile URL is already in use." });
   }
 
   let existingBrand:any = {};
