@@ -30,6 +30,8 @@ import {
   AlertTriangle,
   Trophy,
   Star,
+  Sun,
+  Moon,
   X
 } from 'lucide-react';
 
@@ -43,6 +45,8 @@ interface NavbarProps {
   setActiveTab: (tab: string) => void;
   currency: 'XCD' | 'USD';
   setCurrency: (curr: 'XCD' | 'USD') => void;
+  theme: 'light' | 'dark';
+  onToggleTheme: () => void;
   onOpenAuth: () => void;
   onViewPublicProfile: () => void;
   onOpenCreditStore: () => void;
@@ -63,6 +67,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   setActiveTab,
   currency,
   setCurrency,
+  theme,
+  onToggleTheme,
   onOpenAuth,
   onViewPublicProfile,
   onOpenCreditStore,
@@ -235,6 +241,17 @@ export const Navbar: React.FC<NavbarProps> = ({
           >
             <ExternalLink className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Back to Hub</span>
+          </button>
+          <button
+            type="button"
+            onClick={onToggleTheme}
+            aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            aria-pressed={theme === 'light'}
+            title={theme === 'dark' ? 'Light mode' : 'Dark mode'}
+            className="v79-theme-toggle flex items-center gap-1.5 rounded-lg border border-slate-600 px-2.5 py-1 text-xs font-semibold transition-colors focus-visible:outline-offset-2"
+          >
+            {theme === 'dark' ? <Sun className="h-4 w-4" aria-hidden="true" /> : <Moon className="h-4 w-4" aria-hidden="true" />}
+            <span className="hidden sm:inline">{theme === 'dark' ? 'Light mode' : 'Dark mode'}</span>
           </button>
           <button
             onClick={() => setCurrency(currency === 'XCD' ? 'USD' : 'XCD')}
