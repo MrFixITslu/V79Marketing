@@ -127,7 +127,7 @@ export const BusinessProfileBuilder: React.FC<BusinessProfileBuilderProps> = ({
         </div>
       )}
       {syncNotice && (
-        <div role="status" className="rounded-xl border border-blue-500/30 bg-blue-500/10 px-4 py-3 text-xs font-medium text-blue-100">
+        <div role="status" className="rounded-xl border border-blue-500/30 bg-blue-500/10 px-4 py-3 text-xs font-medium text-blue-700">
           {syncNotice}
         </div>
       )}
