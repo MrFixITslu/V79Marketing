@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { parseFaqCsv, mergeFaqs, FAQ_CSV_MAX_BYTES } from '../lib/faqCsv';
 import { AIBusinessBrain, Business } from '../types';
 import {
   Brain,
@@ -14,7 +15,8 @@ import {
   Calendar,
   Layers,
   History,
-  Palette
+  Palette,
+  Upload
 } from 'lucide-react';
 
 interface AiBrainViewProps {
@@ -37,6 +39,8 @@ export const AiBrainView: React.FC<AiBrainViewProps> = ({
 
   const [newFaqQ, setNewFaqQ] = useState('');
   const [newFaqA, setNewFaqA] = useState('');
+  const [faqImportStatus, setFaqImportStatus] = useState('');
+  const [faqImportBusy, setFaqImportBusy] = useState(false);
   const [newProduct, setNewProduct] = useState('');
   const [newGoal, setNewGoal] = useState('');
   const [newPromo, setNewPromo] = useState('');
@@ -90,6 +94,29 @@ export const AiBrainView: React.FC<AiBrainViewProps> = ({
     }));
     setNewFaqQ('');
     setNewFaqA('');
+  };
+
+  const importFaqs = async (file?: File) => {
+    if (!file) return;
+    setFaqImportStatus('');
+    setError('');
+    if (file.size > FAQ_CSV_MAX_BYTES) {
+      setFaqImportStatus('CSV file is too large. Maximum size is 1 MB.');
+      return;
+    }
+    setFaqImportBusy(true);
+    try {
+      const rows = parseFaqCsv(await file.text());
+      const result = mergeFaqs(formData.frequentlyAskedQuestions, rows);
+      setFormData(prev => ({ ...prev, frequentlyAskedQuestions: result.faqs }));
+      setFaqImportStatus(
+        `Imported ${result.added} FAQs; skipped ${result.skipped} duplicates. Click Save Brain to save the changes.`
+      );
+    } catch (err) {
+      setFaqImportStatus(err instanceof Error ? err.message : 'Could not import the FAQ CSV.');
+    } finally {
+      setFaqImportBusy(false);
+    }
   };
 
   const removeFaq = (idx: number) => {
@@ -510,6 +537,33 @@ export const AiBrainView: React.FC<AiBrainViewProps> = ({
             </span>
           </h3>
 
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-slate-900">Import questions and answers</p>
+                <p className="mt-1 text-xs text-slate-600">CSV columns: Question, Answer. Up to 1 MB; maximum 100 stored FAQs.</p>
+              </div>
+              <label htmlFor="v79-faq-csv" className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-xs font-bold text-slate-900">
+                <Upload className="h-4 w-4" />
+                {faqImportBusy ? 'Importing…' : 'Upload FAQ CSV'}
+              </label>
+              <input
+                id="v79-faq-csv"
+                className="sr-only"
+                aria-label="Upload a CSV containing Question and Answer columns"
+                type="file"
+                accept=".csv,text/csv"
+                disabled={faqImportBusy}
+                onChange={(event) => {
+                  const file = event.currentTarget.files?.[0];
+                  event.currentTarget.value = '';
+                  void importFaqs(file);
+                }}
+              />
+            </div>
+            {faqImportStatus && <p role="status" aria-live="polite" className="text-xs text-slate-600">{faqImportStatus}</p>}
+          </div>
+
           <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3">
             <input
               type="text"
@@ -530,7 +584,7 @@ export const AiBrainView: React.FC<AiBrainViewProps> = ({
               className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center gap-1 cursor-pointer"
             >
               <Plus className="w-4 h-4" />
-              <span>Save FAQ</span>
+              <span>Add FAQ</span>
             </button>
           </div>
 
