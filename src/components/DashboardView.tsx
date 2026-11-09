@@ -143,8 +143,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_78%_18%,rgba(255,122,0,.20),transparent_30%),radial-gradient(circle_at_92%_68%,rgba(124,58,237,.18),transparent_34%),radial-gradient(circle_at_20%_0%,rgba(10,134,255,.15),transparent_30%)]" />
         <div className="relative px-5 sm:px-7 py-6 flex flex-col xl:flex-row xl:items-center justify-between gap-6">
           <div className="flex items-center gap-4 min-w-0">
-            <div className="w-14 h-14 rounded-2xl overflow-hidden border border-white/10 bg-white shrink-0">
-              <img src={currentBusiness.logoUrl} alt={currentBusiness.name} className="w-full h-full object-cover" />
+            <div className="v79-logo-tile w-14 h-14 rounded-2xl overflow-hidden border border-white/10 bg-white shrink-0">
+              <img src={currentBusiness.logoUrl} alt={currentBusiness.name} className="w-full h-full object-contain" />
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.2em] text-[#ff9a3d]">
