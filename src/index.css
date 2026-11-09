@@ -582,3 +582,9 @@
     color:#13243b !important;
   }
 }
+
+
+/* Business artwork stays on white so transparent and dark logo marks remain legible. */
+@layer theme {
+  .v79-marketing-app .v79-logo-tile { background-color: #fff !important; }
+}
