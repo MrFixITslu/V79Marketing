@@ -377,3 +377,61 @@
     transition-duration:.01ms !important;
   }
 }
+
+
+/*
+ * Tailwind v4 cascade note: the existing dark theme uses !important rules in
+ * @layer theme. A later unlayered !important declaration loses to these.
+ * Light mode must override them inside the same layer; otherwise text and
+ * translucent status panels become unreadable on white surfaces.
+ */
+@layer theme {
+  .v79-marketing-app[data-theme="light"] .text-slate-600,
+  .v79-marketing-app[data-theme="light"] .text-slate-500,
+  .v79-marketing-app[data-theme="light"] .text-slate-400 {
+    color:#45586f !important;
+  }
+  .v79-marketing-app[data-theme="light"] .text-slate-300,
+  .v79-marketing-app[data-theme="light"] .text-slate-200,
+  .v79-marketing-app[data-theme="light"] .text-slate-100 {
+    color:#24364f !important;
+  }
+  .v79-marketing-app[data-theme="light"] .bg-purple-50,
+  .v79-marketing-app[data-theme="light"] .bg-indigo-50,
+  .v79-marketing-app[data-theme="light"] [class~="bg-purple-50/60"] {
+    background-color:#f2ebff !important;
+  }
+  .v79-marketing-app[data-theme="light"] .bg-blue-50,
+  .v79-marketing-app[data-theme="light"] .bg-blue-100,
+  .v79-marketing-app[data-theme="light"] [class~="bg-blue-50/60"],
+  .v79-marketing-app[data-theme="light"] [class~="bg-blue-50/80"] {
+    background-color:#eaf4ff !important;
+  }
+  .v79-marketing-app[data-theme="light"] .bg-orange-50,
+  .v79-marketing-app[data-theme="light"] .bg-orange-100,
+  .v79-marketing-app[data-theme="light"] .bg-amber-50,
+  .v79-marketing-app[data-theme="light"] [class~="bg-orange-50/40"],
+  .v79-marketing-app[data-theme="light"] [class~="bg-orange-50/80"],
+  .v79-marketing-app[data-theme="light"] [class~="bg-orange-100/80"],
+  .v79-marketing-app[data-theme="light"] [class~="bg-amber-50/80"] {
+    background-color:#fff4e5 !important;
+  }
+  .v79-marketing-app[data-theme="light"] .bg-red-50,
+  .v79-marketing-app[data-theme="light"] .bg-red-100 {
+    background-color:#fff0f2 !important;
+  }
+  .v79-marketing-app[data-theme="light"] .bg-emerald-50,
+  .v79-marketing-app[data-theme="light"] .bg-emerald-100,
+  .v79-marketing-app[data-theme="light"] [class~="bg-emerald-50/60"] {
+    background-color:#e9f9f2 !important;
+  }
+  .v79-marketing-app[data-theme="light"] [class~="bg-slate-100/80"],
+  .v79-marketing-app[data-theme="light"] [class~="bg-slate-100/90"],
+  .v79-marketing-app[data-theme="light"] [class~="bg-slate-200/60"] {
+    background-color:#eef3fa !important;
+  }
+  .v79-marketing-app[data-theme="light"] header h1.text-white,
+  .v79-marketing-app[data-theme="light"] header h2.text-white {
+    color:#13243b !important;
+  }
+}
