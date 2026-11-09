@@ -39,7 +39,7 @@ describe('Marketing-Hub organisation-name write boundary', () => {
       return { ok: true, json: async () => ({ success: true, organizationId: input.organizationId, name: input.name }) };
     });
     vi.stubGlobal('fetch', fetchSpy);
-    expect(await renameHubOrganization(input)).toBe(input.name);
+    expect(await renameHubOrganization(input)).toEqual({ name: input.name, propagation: {} });
     expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 
