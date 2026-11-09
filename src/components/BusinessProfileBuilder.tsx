@@ -21,7 +21,7 @@ import {
 
 interface BusinessProfileBuilderProps {
   business: Business;
-  onUpdateBusiness: (updated: Business) => Promise<void>;
+  onUpdateBusiness: (updated: Business) => Promise<Record<string,string> | null>;
   onViewPublicProfile: () => void;
 }
 
@@ -33,6 +33,7 @@ export const BusinessProfileBuilder: React.FC<BusinessProfileBuilderProps> = ({
   const [formData, setFormData] = useState<Business>({ ...business });
   const [isSaved, setIsSaved] = useState(false);
   const [saveError, setSaveError] = useState('');
+  const [syncNotice, setSyncNotice] = useState('');
   const [activeSubTab, setActiveSubTab] = useState<'info' | 'branding' | 'hours' | 'products'>('info');
 
   const [newProductName, setNewProductName] = useState('');
@@ -43,8 +44,17 @@ export const BusinessProfileBuilder: React.FC<BusinessProfileBuilderProps> = ({
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaveError('');
+    setSyncNotice('');
     try {
-      await onUpdateBusiness(formData);
+      const synced = await onUpdateBusiness(formData);
+      if (synced) {
+        const pending = Object.entries(synced)
+          .filter(([product, status]) => product !== 'hub' && status !== 'confirmed' && status !== 'not_connected')
+          .map(([product]) => product.toUpperCase());
+        setSyncNotice(pending.length
+          ? `Business name saved in V79 Hub. Updates for ${pending.join(', ')} are pending and will retry automatically.`
+          : 'Shared business name confirmed in Hub and connected apps.');
+      }
       setIsSaved(true);
       setTimeout(() => setIsSaved(false), 3000);
     } catch (err) {
@@ -112,8 +122,13 @@ export const BusinessProfileBuilder: React.FC<BusinessProfileBuilderProps> = ({
         </div>
       </div>
       {saveError && (
-        <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-xs font-medium text-red-300">
+        <div role="alert" className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-xs font-medium text-red-300">
           {saveError}
+        </div>
+      )}
+      {syncNotice && (
+        <div role="status" className="rounded-xl border border-blue-500/30 bg-blue-500/10 px-4 py-3 text-xs font-medium text-blue-100">
+          {syncNotice}
         </div>
       )}
 
