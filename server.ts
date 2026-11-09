@@ -823,6 +823,7 @@ app.put("/api/businesses/:id", authenticate, requireMarketingPermission("busines
   }
 
   let canonicalBusinessName = existing.name;
+  let syncPropagation: Record<string,string> | null = null;
   const requestedBusinessName = updates.name?.trim().replace(/\s+/g, " ");
   if (requestedBusinessName !== undefined && requestedBusinessName !== existing.name) {
     if (req.user!.role !== "BUSINESS_OWNER") {
@@ -838,12 +839,14 @@ app.put("/api/businesses/:id", authenticate, requireMarketingPermission("busines
       return res.status(403).json({ error: "Hub owner identity is unavailable. Reopen Marketing through Hub." });
     }
     try {
-      canonicalBusinessName = await renameHubOrganization({
+      const result = await renameHubOrganization({
         organizationId: existing.hub_organization_id,
         scopedUserId: localOwner.hub_user_id,
         name: requestedBusinessName,
         expectedName: existing.name,
       });
+      canonicalBusinessName = result.name;
+      syncPropagation = result.propagation;
     } catch (error:any) {
       return res.status(503).json({ error: error?.message || "Hub did not confirm the business name update." });
     }
@@ -894,6 +897,7 @@ app.put("/api/businesses/:id", authenticate, requireMarketingPermission("busines
   const updated = db.prepare("SELECT * FROM businesses WHERE id = ?").get(id) as any;
   res.json({
     success: true,
+    sync: syncPropagation,
     business: {
       id:updated.id,
       name:updated.name,
