@@ -1,6 +1,7 @@
 import express from "express";
 import crypto from "crypto";
 import path from "path";
+import * as fsPromises from "node:fs/promises";
 import cors from "cors";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
@@ -10,6 +11,7 @@ import { z } from "zod";
 import { GoogleGenAI, Type } from "@google/genai";
 import { createServer as createViteServer } from "vite";
 import { db, initDb } from "./src/lib/db.js";
+import { profileImageExtension, allowedProfileMediaName, allowedProfileMediaOwner, PROFILE_LOGO_MAX_BYTES, PROFILE_BANNER_MAX_BYTES } from "./src/lib/profileMedia.js";
 import { createAgentCampaignDraft, listAgentCampaignDrafts } from "./src/lib/agentCampaignDrafts.js";
 import { productionManagedPost } from "./src/lib/productionTracking.js";
 import { publicationUrl } from "./src/lib/publicationLinks.js";
@@ -800,6 +802,80 @@ app.get("/api/businesses", authenticate, requireMarketingPermission("business.re
 
   res.json({ businesses });
 });
+
+// Upload-only endpoint: tenant-scoped, raster-only, size bounded. Save Profile
+// separately persists the URL to the tenant's business record.
+const profileMediaRoot = path.resolve(
+  process.env.V79_PROFILE_MEDIA_DIR ||
+  path.join(path.dirname(path.resolve(process.env.DATABASE_PATH || "./data/v79_marketing.sqlite")), "profile-media")
+);
+const profileUploadLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 15,
+  message: { error: "Too many image uploads. Please try again later." },
+});
+app.get("/api/businesses/profile-media/:owner/:file", async (req, res) => {
+  const owner = String(req.params.owner || "");
+  const file = String(req.params.file || "");
+  if (!allowedProfileMediaOwner(owner) || !allowedProfileMediaName(file)) {
+    return res.status(404).end();
+  }
+  const mime = file.endsWith(".png") ? "image/png" : file.endsWith(".webp") ? "image/webp" : "image/jpeg";
+  try {
+    const data = await fsPromises.readFile(path.join(profileMediaRoot, owner, file));
+    res.setHeader("Content-Type", mime);
+    res.setHeader("Cache-Control", "public, max-age=86400");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    return res.send(data);
+  } catch {
+    return res.status(404).end();
+  }
+});
+app.post(
+  "/api/businesses/:id/profile-media/:kind",
+  authenticate,
+  requireMarketingPermission("business.write"),
+  requireTenantAccess,
+  profileUploadLimiter,
+  express.raw({ type:["image/png","image/jpeg","image/webp"], limit:"3mb" }),
+  async (req: AuthenticatedRequest, res) => {
+    const kind = req.params.kind;
+    if (kind !== "logo" && kind !== "banner") {
+      return res.status(400).json({ error:"Choose logo or banner." });
+    }
+    const data = req.body;
+    if (!Buffer.isBuffer(data) || !data.length) {
+      return res.status(415).json({ error:"Upload a PNG, JPEG or WebP image." });
+    }
+    const maxBytes = kind === "logo" ? PROFILE_LOGO_MAX_BYTES : PROFILE_BANNER_MAX_BYTES;
+    if (data.length > maxBytes) {
+      return res.status(413).json({ error:kind === "logo" ? "Logo must be 1 MB or smaller." : "Banner must be 3 MB or smaller." });
+    }
+    const extension = profileImageExtension(data, String(req.get("Content-Type") || ""));
+    if (!extension) return res.status(415).json({ error:"Invalid image. SVG and non-image files are not accepted." });
+    const business = db.prepare("SELECT id FROM businesses WHERE id=?").get(req.params.id) as any;
+    if (!business) return res.status(404).json({ error:"Business not found." });
+    const owner = crypto.createHash("sha256").update(req.params.id).digest("hex").slice(0,32);
+    const file = crypto.randomUUID() + extension;
+    try {
+      const folder = path.join(profileMediaRoot, owner);
+      await fsPromises.mkdir(folder, {recursive:true, mode:0o700});
+      const files = await fsPromises.readdir(folder);
+      if (files.length >= 40) {
+        return res.status(409).json({error:"Business image storage limit reached. Contact support to remove old images."});
+      }
+      await fsPromises.writeFile(path.join(folder,file), data, {mode:0o600, flag:"wx"});
+      res.status(201).json({
+        url: "/api/businesses/profile-media/" + owner + "/" + file,
+        kind,
+        bytes:data.length,
+      });
+    } catch (error:any) {
+      console.error("[profile-media] Could not store tenant image:", error?.code || "storage-error");
+      res.status(503).json({error:"The image could not be saved. Please retry."});
+    }
+  }
+);
 
 app.put("/api/businesses/:id", authenticate, requireMarketingPermission("business.write"), requireTenantAccess, (req: AuthenticatedRequest, res) => {
   const { id } = req.params;
