@@ -30,6 +30,8 @@ import {
   AlertTriangle,
   Trophy,
   Star,
+  Sun,
+  Moon,
   X
 } from 'lucide-react';
 
@@ -41,6 +43,8 @@ interface NavbarProps {
   creditBalance: CreditBalance;
   activeTab: string;
   setActiveTab: (tab: string) => void;
+  theme: 'light' | 'dark';
+  onToggleTheme: () => void;
   currency: 'XCD' | 'USD';
   setCurrency: (curr: 'XCD' | 'USD') => void;
   onOpenAuth: () => void;
@@ -63,6 +67,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   setActiveTab,
   currency,
   setCurrency,
+  theme,
+  onToggleTheme,
   onOpenAuth,
   onViewPublicProfile,
   onOpenCreditStore,
@@ -228,6 +234,10 @@ export const Navbar: React.FC<NavbarProps> = ({
           <span className="hidden sm:inline text-slate-500">Marketing & Growth Workspace</span>
         </div>
         <div className="flex items-center gap-2 sm:gap-4 shrink-0">
+          <button type="button" onClick={onToggleTheme} aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'} aria-pressed={theme === 'light'} title={theme === 'dark' ? 'Light mode' : 'Dark mode'} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 px-2.5 py-1.5 text-slate-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-orange-500">
+            {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            <span className="hidden md:inline">{theme === 'dark' ? 'Light' : 'Dark'}</span>
+          </button>
           <button
             onClick={() => window.location.assign('/api/platform/hub')}
             aria-label="Back to V79 Hub"

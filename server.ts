@@ -1,6 +1,7 @@
 import express from "express";
 import crypto from "crypto";
 import path from "path";
+import * as fsPromises from "node:fs/promises";
 import cors from "cors";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
@@ -10,6 +11,7 @@ import { z } from "zod";
 import { GoogleGenAI, Type } from "@google/genai";
 import { createServer as createViteServer } from "vite";
 import { db, initDb } from "./src/lib/db.js";
+import { profileImageExtension, allowedProfileMediaName, allowedProfileMediaOwner, PROFILE_LOGO_MAX_BYTES, PROFILE_BANNER_MAX_BYTES } from "./src/lib/profileMedia.js";
 import { createAgentCampaignDraft, listAgentCampaignDrafts } from "./src/lib/agentCampaignDrafts.js";
 import { productionManagedPost } from "./src/lib/productionTracking.js";
 import { publicationUrl } from "./src/lib/publicationLinks.js";
@@ -26,7 +28,7 @@ import {
 } from "./src/lib/auth.js";
 import { getCreditBalance, deductCredits, addCredits, refundCredits, CREDIT_COSTS } from "./src/lib/creditService.js";
 import { startPublisherWorker, processScheduledPosts } from "./src/lib/publisher.ts";
-import { consumeHubLaunchTicket, verifyHubProvisionRequest, verifyHubSummaryRequest } from "./src/lib/platform.js";
+import { consumeHubLaunchTicket, verifyHubProvisionRequest, verifyHubSummaryRequest, signPlatformRequest } from "./src/lib/platform.js";
 import { deprovisionHubTeamIdentity, provisionHubIdentity } from "./src/lib/hubProvisioning.js";
 import { queueMarketingEvent, startPlatformEventPump } from "./src/lib/platformEvents.js";
 import { decryptToken, encryptToken } from "./src/lib/tokenVault.js";
@@ -801,7 +803,81 @@ app.get("/api/businesses", authenticate, requireMarketingPermission("business.re
   res.json({ businesses });
 });
 
-app.put("/api/businesses/:id", authenticate, requireMarketingPermission("business.write"), requireTenantAccess, (req: AuthenticatedRequest, res) => {
+// Upload-only endpoint: tenant-scoped, raster-only, size bounded. Save Profile
+// separately persists the URL to the tenant's business record.
+const profileMediaRoot = path.resolve(
+  process.env.V79_PROFILE_MEDIA_DIR ||
+  path.join(path.dirname(path.resolve(process.env.DATABASE_PATH || "./data/v79_marketing.sqlite")), "profile-media")
+);
+const profileUploadLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 15,
+  message: { error: "Too many image uploads. Please try again later." },
+});
+app.get("/api/businesses/profile-media/:owner/:file", async (req, res) => {
+  const owner = String(req.params.owner || "");
+  const file = String(req.params.file || "");
+  if (!allowedProfileMediaOwner(owner) || !allowedProfileMediaName(file)) {
+    return res.status(404).end();
+  }
+  const mime = file.endsWith(".png") ? "image/png" : file.endsWith(".webp") ? "image/webp" : "image/jpeg";
+  try {
+    const data = await fsPromises.readFile(path.join(profileMediaRoot, owner, file));
+    res.setHeader("Content-Type", mime);
+    res.setHeader("Cache-Control", "public, max-age=86400");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    return res.send(data);
+  } catch {
+    return res.status(404).end();
+  }
+});
+app.post(
+  "/api/businesses/:id/profile-media/:kind",
+  authenticate,
+  requireMarketingPermission("business.write"),
+  requireTenantAccess,
+  profileUploadLimiter,
+  express.raw({ type:["image/png","image/jpeg","image/webp"], limit:"3mb" }),
+  async (req: AuthenticatedRequest, res) => {
+    const kind = req.params.kind;
+    if (kind !== "logo" && kind !== "banner") {
+      return res.status(400).json({ error:"Choose logo or banner." });
+    }
+    const data = req.body;
+    if (!Buffer.isBuffer(data) || !data.length) {
+      return res.status(415).json({ error:"Upload a PNG, JPEG or WebP image." });
+    }
+    const maxBytes = kind === "logo" ? PROFILE_LOGO_MAX_BYTES : PROFILE_BANNER_MAX_BYTES;
+    if (data.length > maxBytes) {
+      return res.status(413).json({ error:kind === "logo" ? "Logo must be 1 MB or smaller." : "Banner must be 3 MB or smaller." });
+    }
+    const extension = profileImageExtension(data, String(req.get("Content-Type") || ""));
+    if (!extension) return res.status(415).json({ error:"Invalid image. SVG and non-image files are not accepted." });
+    const business = db.prepare("SELECT id FROM businesses WHERE id=?").get(req.params.id) as any;
+    if (!business) return res.status(404).json({ error:"Business not found." });
+    const owner = crypto.createHash("sha256").update(req.params.id).digest("hex").slice(0,32);
+    const file = crypto.randomUUID() + extension;
+    try {
+      const folder = path.join(profileMediaRoot, owner);
+      await fsPromises.mkdir(folder, {recursive:true, mode:0o700});
+      const files = await fsPromises.readdir(folder);
+      if (files.length >= 40) {
+        return res.status(409).json({error:"Business image storage limit reached. Contact support to remove old images."});
+      }
+      await fsPromises.writeFile(path.join(folder,file), data, {mode:0o600, flag:"wx"});
+      res.status(201).json({
+        url: "/api/businesses/profile-media/" + owner + "/" + file,
+        kind,
+        bytes:data.length,
+      });
+    } catch (error:any) {
+      console.error("[profile-media] Could not store tenant image:", error?.code || "storage-error");
+      res.status(503).json({error:"The image could not be saved. Please retry."});
+    }
+  }
+);
+
+app.put("/api/businesses/:id", authenticate, requireMarketingPermission("business.write"), requireTenantAccess, async (req: AuthenticatedRequest, res) => {
   const { id } = req.params;
   const parsed = businessUpdateSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -820,6 +896,51 @@ app.put("/api/businesses/:id", authenticate, requireMarketingPermission("busines
   if (nextSlug !== existing.slug) {
     const collision = db.prepare("SELECT id FROM businesses WHERE slug=? AND id<>?").get(nextSlug, id);
     if (collision) return res.status(409).json({ error:"That public profile URL is already in use." });
+  }
+
+  // Hub is canonical for names shared by all subscribed applications.
+  // Non-owners can still edit permitted profile fields, but never rename the
+  // entire tenant. A failed Hub write stops the local rename (fail closed).
+  if (updates.name && updates.name !== existing.name && existing.hub_organization_id) {
+    if (req.user?.role !== "BUSINESS_OWNER") {
+      return res.status(403).json({error:"Only the Hub workspace owner may change the shared business name."});
+    }
+    const user = db.prepare("SELECT hub_user_id FROM users WHERE id=? AND business_id=?")
+      .get(req.user.id, id) as any;
+    const hubUserId = String(user?.hub_user_id || "");
+    const organizationId = String(existing.hub_organization_id || "");
+    const secret = String(process.env.V79_PLATFORM_SHARED_SECRET || "").trim();
+    const hubBase = String(process.env.V79_HUB_INTERNAL_URL || "");
+    if (!hubUserId || !organizationId || secret.length < 32 || !hubBase) {
+      return res.status(503).json({error:"Hub business identity update is not configured."});
+    }
+    const pathname = "/api/platform/organizations/rename";
+    const body = JSON.stringify({
+      organizationId, businessId:id, hubUserId, name:updates.name,
+    });
+    const timestamp = String(Date.now());
+    try {
+      const response = await fetch(new URL(pathname, hubBase), {
+        method:"POST",
+        headers:{
+          "content-type":"application/json",
+          "x-v79-service-id":"v79-marketing",
+          "x-v79-timestamp":timestamp,
+          "x-v79-signature":signPlatformRequest({method:"POST",pathname,timestamp,body,secret}),
+        },
+        body,
+        signal:AbortSignal.timeout(5000),
+      });
+      const result:any = await response.json().catch(() => ({}));
+      if (!response.ok ||
+          result?.organization?.id !== organizationId ||
+          result?.organization?.name !== updates.name) {
+        return res.status(response.status === 403 ? 403 : 503)
+          .json({error:"Hub did not confirm the shared business name. No local name change was saved."});
+      }
+    } catch {
+      return res.status(503).json({error:"Hub could not be reached. Business name was not changed."});
+    }
   }
 
   let existingBrand:any = {};
