@@ -26,7 +26,7 @@ import {
 } from "./src/lib/auth.js";
 import { getCreditBalance, deductCredits, addCredits, refundCredits, CREDIT_COSTS } from "./src/lib/creditService.js";
 import { startPublisherWorker, processScheduledPosts } from "./src/lib/publisher.ts";
-import { consumeHubLaunchTicket, verifyHubProvisionRequest, verifyHubSummaryRequest } from "./src/lib/platform.js";
+import { consumeHubLaunchTicket, verifyHubProvisionRequest, verifyHubSummaryRequest, renameHubOrganization } from "./src/lib/platform.js";
 import { deprovisionHubTeamIdentity, provisionHubIdentity } from "./src/lib/hubProvisioning.js";
 import { queueMarketingEvent, startPlatformEventPump } from "./src/lib/platformEvents.js";
 import { decryptToken, encryptToken } from "./src/lib/tokenVault.js";
@@ -801,7 +801,7 @@ app.get("/api/businesses", authenticate, requireMarketingPermission("business.re
   res.json({ businesses });
 });
 
-app.put("/api/businesses/:id", authenticate, requireMarketingPermission("business.write"), requireTenantAccess, (req: AuthenticatedRequest, res) => {
+app.put("/api/businesses/:id", authenticate, requireMarketingPermission("business.write"), requireTenantAccess, async (req: AuthenticatedRequest, res) => {
   const { id } = req.params;
   const parsed = businessUpdateSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -822,6 +822,36 @@ app.put("/api/businesses/:id", authenticate, requireMarketingPermission("busines
     if (collision) return res.status(409).json({ error:"That public profile URL is already in use." });
   }
 
+  let canonicalBusinessName = existing.name;
+  let syncPropagation: Record<string,string> | null = null;
+  const requestedBusinessName = updates.name?.trim().replace(/\s+/g, " ");
+  if (requestedBusinessName !== undefined && requestedBusinessName !== existing.name) {
+    if (req.user!.role !== "BUSINESS_OWNER") {
+      return res.status(403).json({ error: "Only the business owner can change the shared business name." });
+    }
+    if (!existing.hub_organization_id) {
+      return res.status(409).json({ error: "This Marketing workspace must be linked to Hub before its name can be changed." });
+    }
+    const localOwner = db.prepare(
+      "SELECT hub_user_id FROM users WHERE id=? AND business_id=? AND role='BUSINESS_OWNER'"
+    ).get(req.user!.id, id) as { hub_user_id?: string } | undefined;
+    if (!localOwner?.hub_user_id) {
+      return res.status(403).json({ error: "Hub owner identity is unavailable. Reopen Marketing through Hub." });
+    }
+    try {
+      const result = await renameHubOrganization({
+        organizationId: existing.hub_organization_id,
+        scopedUserId: localOwner.hub_user_id,
+        name: requestedBusinessName,
+        expectedName: existing.name,
+      });
+      canonicalBusinessName = result.name;
+      syncPropagation = result.propagation;
+    } catch (error:any) {
+      return res.status(503).json({ error: error?.message || "Hub did not confirm the business name update." });
+    }
+  }
+
   let existingBrand:any = {};
   try { existingBrand = JSON.parse(existing.brand_profile_json || "{}"); } catch {}
   const incomingBrand = updates.brandProfile || undefined;
@@ -839,7 +869,7 @@ app.put("/api/businesses/:id", authenticate, requireMarketingPermission("busines
           services_json = ?, brand_profile_json = ?, plan = ?
       WHERE id = ?
     `).run(
-      updates.name ?? existing.name,
+      canonicalBusinessName,
       nextSlug,
       updates.logoUrl ?? existing.logo_url,
       updates.coverImageUrl ?? existing.cover_image_url,
@@ -867,6 +897,7 @@ app.put("/api/businesses/:id", authenticate, requireMarketingPermission("busines
   const updated = db.prepare("SELECT * FROM businesses WHERE id = ?").get(id) as any;
   res.json({
     success: true,
+    sync: syncPropagation,
     business: {
       id:updated.id,
       name:updated.name,

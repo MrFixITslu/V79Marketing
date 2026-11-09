@@ -90,6 +90,16 @@ export default function App() {
     typeof window === 'undefined' ? 'dashboard' : readMarketingView(window.location.search)
   );
   const [currency, setCurrency] = useState<'XCD' | 'USD'>('XCD');
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    try {
+      const saved = window.localStorage.getItem('v79-marketing-theme');
+      if (saved === 'light' || saved === 'dark') return saved;
+      return 'dark'; // Preserve the approved dark workspace until the user chooses otherwise.
+    } catch { return 'dark'; }
+  });
+  useEffect(() => {
+    try { window.localStorage.setItem('v79-marketing-theme', theme); } catch { /* Private browsing */ }
+  }, [theme]);
   const [sessionState, setSessionState] = useState<'loading' | 'authenticated' | 'unauthenticated'>('loading');
 
   // Keep the current workspace page shareable and stable across reloads.
@@ -321,7 +331,7 @@ export default function App() {
     }
   };
 
-  const handleUpdateBusiness = async (updated: Business): Promise<void> => {
+  const handleUpdateBusiness = async (updated: Business): Promise<Record<string,string> | null> => {
     const editableProfile = {
       name: updated.name,
       slug: updated.slug,
@@ -361,6 +371,7 @@ export default function App() {
     };
     setCurrentBusiness(saved);
     setBusinesses((items) => items.map((b) => (b.id === saved.id ? saved : b)));
+    return body.sync ?? null;
   };
 
   const handleSchedulePost = async (newPost: Partial<Post>): Promise<void> => {
@@ -485,7 +496,7 @@ export default function App() {
   }
 
   return (
-    <div className="v79-marketing-app min-h-screen bg-[#07111f] text-slate-100 font-sans flex flex-col">
+    <div data-theme={theme} className="v79-marketing-app min-h-screen bg-[#07111f] text-slate-100 font-sans flex flex-col">
       {/* Primary Top Navigation */}
       <Navbar
         currentUser={currentUser}
@@ -497,6 +508,8 @@ export default function App() {
         setActiveTab={(tab) => setCurrentView(tab as ViewType)}
         currency={currency}
         setCurrency={setCurrency}
+        theme={theme}
+        onToggleTheme={() => setTheme(value => value === 'dark' ? 'light' : 'dark')}
         onOpenAuth={() => window.location.assign('/api/platform/hub')}
         onViewPublicProfile={() => setCurrentView('public_storefront')}
         onOpenCreditStore={() => window.location.assign('/api/platform/hub')}
