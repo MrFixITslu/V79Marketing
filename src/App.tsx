@@ -101,6 +101,11 @@ export default function App() {
     typeof window === 'undefined' ? 'dashboard' : readMarketingView(window.location.search)
   );
   const [currency, setCurrency] = useState<'XCD' | 'USD'>('XCD');
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    try { return window.localStorage.getItem('v79-marketing-theme') === 'light' ? 'light' : 'dark'; }
+    catch { return 'dark'; }
+  });
+  useEffect(() => { try { window.localStorage.setItem('v79-marketing-theme', theme); } catch {} }, [theme]);
   const [sessionState, setSessionState] = useState<'loading' | 'authenticated' | 'unauthenticated'>('loading');
 
   // Keep the current workspace page shareable and stable across reloads.
@@ -531,7 +536,7 @@ export default function App() {
   }
 
   return (
-    <div className={`v79-marketing-app min-h-screen font-sans flex flex-col ${currentView==='studio'||currentView==='studio-approvals'||currentView==='my-marketing-skill'?'v79-light-workspace':'bg-[#07111f] text-slate-100'}`}>
+    <div data-theme={theme} className={`v79-marketing-app min-h-screen font-sans flex flex-col ${theme === 'light' ? 'v79-light-workspace' : 'bg-[#07111f] text-slate-100'}`}>
       {/* Primary Top Navigation */}
       <Navbar
         currentUser={currentUser}
@@ -547,6 +552,8 @@ export default function App() {
         }}
         currency={currency}
         setCurrency={setCurrency}
+        theme={theme}
+        onToggleTheme={() => setTheme(previous => previous === 'dark' ? 'light' : 'dark')}
         onOpenAuth={() => window.location.assign('/api/platform/hub')}
         onViewPublicProfile={() => setCurrentView('public_storefront')}
         onOpenCreditStore={() => window.location.assign('/api/platform/hub')}
@@ -557,7 +564,7 @@ export default function App() {
       />
 
       {/* Main App Canvas Body */}
-      <main className="flex-1 max-w-[1540px] w-full mx-auto px-4 sm:px-5 xl:px-7 pt-5 pb-[calc(5.25rem+env(safe-area-inset-bottom))] lg:pb-5">
+      <main data-view={currentView} className="v79-workspace flex-1 max-w-[1540px] w-full mx-auto px-4 sm:px-5 xl:px-7 pt-5 pb-[calc(5.25rem+env(safe-area-inset-bottom))] lg:pb-5">
         {currentView === 'landing' && (
           <LandingPage
             onStartDemo={handleGetStartedFromLanding}
