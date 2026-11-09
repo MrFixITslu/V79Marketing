@@ -62,6 +62,50 @@ export type HubLaunchSession = {
   entitlement: { product: "marketing"; enabled: boolean };
 };
 
+// Hub is the sole authority for organisation names. A user-facing rename must
+// be confirmed there before Marketing commits its own display-name mirror.
+export async function renameHubOrganization(input: {
+  organizationId: string;
+  scopedUserId: string;
+  name: string;
+  expectedName: string;
+}): Promise<string> {
+  const baseUrl = clean(process.env.V79_HUB_INTERNAL_URL);
+  const secret = clean(process.env.V79_MARKETING_LAUNCH_SECRET);
+  if (!baseUrl || secret.length < 32) {
+    throw new Error("V79 Hub identity synchronisation is not configured.");
+  }
+  const pathname = "/api/platform/organization/name";
+  const body = JSON.stringify(input);
+  const timestamp = String(Date.now());
+  const signature = signPlatformRequest({ method: "POST", pathname, timestamp, body, secret });
+  const response = await fetch(new URL(pathname, baseUrl), {
+    method: "POST",
+    redirect: "error",
+    headers: {
+      "content-type": "application/json",
+      "x-v79-service-id": LAUNCH_SERVICE_ID,
+      "x-v79-timestamp": timestamp,
+      "x-v79-signature": signature,
+    },
+    body,
+    signal: AbortSignal.timeout(7000),
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(
+      response.status === 409 ? (result?.error || "The business name changed in Hub. Refresh and try again.")
+      : response.status === 403 ? "Only the Hub organisation owner can change the shared business name."
+      : "Hub did not confirm the business name change. Nothing was renamed in Marketing."
+    );
+  }
+  if (result?.success !== true || result?.organizationId !== input.organizationId ||
+      typeof result?.name !== "string" || result.name.trim() !== input.name.trim().replace(/\s+/g, " ")) {
+    throw new Error("Hub returned a mismatched business identity. The local name was not changed.");
+  }
+  return result.name;
+}
+
 export async function consumeHubLaunchTicket(ticket: string): Promise<HubLaunchSession> {
   const baseUrl = clean(process.env.V79_HUB_INTERNAL_URL);
   const secret = clean(process.env.V79_MARKETING_LAUNCH_SECRET);
