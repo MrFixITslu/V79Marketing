@@ -69,7 +69,7 @@ export async function renameHubOrganization(input: {
   scopedUserId: string;
   name: string;
   expectedName: string;
-}): Promise<string> {
+}): Promise<{ name: string; propagation: Record<string, string> }> {
   const baseUrl = clean(process.env.V79_HUB_INTERNAL_URL);
   const secret = clean(process.env.V79_MARKETING_LAUNCH_SECRET);
   if (!baseUrl || secret.length < 32) {
@@ -103,7 +103,9 @@ export async function renameHubOrganization(input: {
       typeof result?.name !== "string" || result.name.trim() !== input.name.trim().replace(/\s+/g, " ")) {
     throw new Error("Hub returned a mismatched business identity. The local name was not changed.");
   }
-  return result.name;
+  return { name: result.name, propagation:
+    result.propagation && typeof result.propagation === 'object' && !Array.isArray(result.propagation)
+      ? result.propagation : {} };
 }
 
 export async function consumeHubLaunchTicket(ticket: string): Promise<HubLaunchSession> {
