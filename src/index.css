@@ -209,3 +209,68 @@
 .v79-marketing-app :where(button,a,input,select,textarea,[tabindex]):focus-visible {
   outline-color:#ff7a00;
 }
+
+/* V79 Marketing user-selected light mode. Applies to workspace only;
+   never to Hub login, other V79 products or public business storefronts. */
+.v79-marketing-app[data-theme="light"] {
+  --v79-bg:#f4f7fb;
+  --v79-panel:#fff;
+  --v79-panel-2:#eef3f9;
+  --v79-border-dark:#d5dfeb;
+  --v79-copy:#22384d;
+  --v79-copy-subtle:#475d72;
+  --v79-copy-muted:#536a81;
+  background:#f4f7fb !important;
+  color:#142b40 !important;
+  color-scheme:light;
+}
+.v79-marketing-app[data-theme="light"] :is(.bg-white,.bg-slate-50,.bg-slate-100,.bg-slate-800,.bg-slate-900,.bg-slate-950,
+  [class~="bg-white/80"],[class~="bg-white/95"],[class~="bg-slate-900/60"],[class~="bg-slate-900/95"],[class~="bg-slate-950/40"],[class~="bg-slate-950/75"]) {
+  background-color:#fff !important;
+}
+.v79-marketing-app[data-theme="light"] :is(.bg-slate-700,.bg-slate-200,.bg-slate-300,
+  [class~="bg-slate-50/50"],[class~="bg-slate-100/70"],[class~="bg-slate-100/80"],[class~="bg-slate-100/90"],[class~="bg-slate-200/60"]) {
+  background-color:#ebf1f8 !important;
+}
+.v79-marketing-app[data-theme="light"] :is(.border-slate-100,.border-slate-200,.border-slate-300,.border-slate-400,
+  .border-slate-500,.border-slate-600,.border-slate-700,.border-slate-800,.border-slate-900) {
+  border-color:#d5dfeb !important;
+}
+.v79-marketing-app[data-theme="light"] :is(.text-white,.text-slate-100,.text-slate-200,.text-slate-300,.text-slate-900,.text-slate-950) {
+  color:#182e42 !important;
+}
+.v79-marketing-app[data-theme="light"] :is(.text-slate-400,.text-slate-500,.text-slate-600,.text-slate-700,.text-slate-800) {
+  color:#475d72 !important;
+}
+.v79-marketing-app[data-theme="light"] :is(.bg-blue-50,.bg-blue-100,[class~="bg-blue-50/60"],[class~="bg-blue-50/80"]) { background:#e6f2ff !important; }
+.v79-marketing-app[data-theme="light"] :is(.bg-purple-50,.bg-purple-100,.bg-indigo-50,[class~="bg-purple-50/60"]) { background:#f3ebff !important; }
+.v79-marketing-app[data-theme="light"] :is(.bg-amber-50,.bg-amber-100,.bg-orange-50,.bg-orange-100,
+  [class~="bg-orange-50/40"],[class~="bg-orange-50/80"],[class~="bg-orange-100/80"],[class~="bg-amber-50/80"]) {
+  background:#fff5e3 !important;
+}
+.v79-marketing-app[data-theme="light"] :is(.bg-emerald-50,.bg-emerald-100,[class~="bg-emerald-50/60"]) { background:#e5f8f1 !important; }
+.v79-marketing-app[data-theme="light"] :is(.bg-red-50,.bg-red-100) { background:#fff0f1 !important; }
+.v79-marketing-app[data-theme="light"] :is(.text-blue-600,.text-blue-700) { color:#0758a5 !important; }
+.v79-marketing-app[data-theme="light"] :is(.text-purple-600,.text-purple-700,.text-indigo-700) { color:#6541a6 !important; }
+.v79-marketing-app[data-theme="light"] :is(.text-orange-500,.text-orange-600,.text-orange-700,.text-amber-600,.text-amber-700) { color:#9c4d06 !important; }
+.v79-marketing-app[data-theme="light"] :is(.text-emerald-600,.text-emerald-700,.text-emerald-800) { color:#086c51 !important; }
+.v79-marketing-app[data-theme="light"] :is(.text-red-600,.text-red-700,.text-red-800) { color:#a9213f !important; }
+.v79-marketing-app[data-theme="light"] :is(.glass-panel,.glass-panel-dark) {
+  background:#fff !important;
+  border-color:#d5dfeb !important;
+  box-shadow:0 8px 28px rgba(13,43,70,.07) !important;
+}
+.v79-marketing-app[data-theme="light"] :is(input:not([type="color"]),select,textarea) {
+  background:#fff !important;
+  border-color:#b7c8d9 !important;
+  color:#142b40 !important;
+}
+.v79-marketing-app[data-theme="light"] input::placeholder,
+.v79-marketing-app[data-theme="light"] textarea::placeholder { color:#566a80 !important; }
+.v79-marketing-app[data-theme="light"] :is(.text-amber-300,.text-amber-400) { color:#96520b !important; }
+.v79-marketing-app[data-theme="light"] :is(button,a):is(.bg-gradient-to-r,.bg-gradient-to-br,.bg-blue-600,.bg-blue-700,
+  .bg-orange-500,.bg-orange-600,.bg-emerald-600,.bg-red-600) .text-white,
+.v79-marketing-app[data-theme="light"] :is(button,a):is(.bg-gradient-to-r,.bg-gradient-to-br,.bg-blue-600,.bg-blue-700,
+  .bg-orange-500,.bg-orange-600,.bg-emerald-600,.bg-red-600).text-white { color:#fff !important; }
+.v79-marketing-app .v79-theme-toggle { background:#10243a; color:#e8eef7; }
+.v79-marketing-app[data-theme="light"] .v79-theme-toggle { background:#eaf3ff; color:#11375c; border-color:#85afd5; }
