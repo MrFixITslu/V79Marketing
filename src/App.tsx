@@ -94,7 +94,7 @@ export default function App() {
     try {
       const saved = window.localStorage.getItem('v79-marketing-theme');
       if (saved === 'light' || saved === 'dark') return saved;
-      return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+      return 'dark'; // Preserve the approved dark workspace until the user chooses otherwise.
     } catch { return 'dark'; }
   });
   useEffect(() => {
