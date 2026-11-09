@@ -331,7 +331,7 @@ export default function App() {
     }
   };
 
-  const handleUpdateBusiness = async (updated: Business): Promise<void> => {
+  const handleUpdateBusiness = async (updated: Business): Promise<Record<string,string> | null> => {
     const editableProfile = {
       name: updated.name,
       slug: updated.slug,
@@ -371,6 +371,7 @@ export default function App() {
     };
     setCurrentBusiness(saved);
     setBusinesses((items) => items.map((b) => (b.id === saved.id ? saved : b)));
+    return body.sync ?? null;
   };
 
   const handleSchedulePost = async (newPost: Partial<Post>): Promise<void> => {
