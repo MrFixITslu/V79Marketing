@@ -913,6 +913,10 @@ app.put("/api/businesses/:id", authenticate, requireMarketingPermission("busines
     });
   }
   const updates = parsed.data;
+  // Match Hub's canonical NFC form before signing, comparing and saving.
+  // A decomposed accent must never cause Hub to commit while Marketing rejects
+  // the successful reply as a different business name.
+  if (updates.name) updates.name = updates.name.normalize("NFC");
 
   const existing = db.prepare("SELECT * FROM businesses WHERE id = ?").get(id) as any;
   if (!existing) return res.status(404).json({ error: "Business not found" });
@@ -961,11 +965,11 @@ app.put("/api/businesses/:id", authenticate, requireMarketingPermission("busines
           result?.organization?.id !== organizationId ||
           result?.organization?.name !== updates.name) {
         return res.status(response.status === 403 ? 403 : 503)
-          .json({error:"Hub did not confirm the shared business name. No local name change was saved."});
+          .json({error:"Hub did not confirm the requested business name. Marketing did not save the change; reload to verify the current name before retrying."});
       }
       hubNameCommitted = true;
     } catch {
-      return res.status(503).json({error:"Hub could not be reached. Business name was not changed."});
+      return res.status(503).json({error:"Hub confirmation was unavailable. Marketing did not save the change; reload to check Hub’s current business name before retrying."});
     }
   }
 
