@@ -900,7 +900,9 @@ app.post(
   }
 );
 
-app.put("/api/businesses/:id", authenticate, requireMarketingPermission("business.write"), requireTenantAccess, async (req: AuthenticatedRequest, res) => {
+app.put("/api/businesses/:id", authenticate, requireMarketingPermission("business.write"), requireTenantAccess, (req: AuthenticatedRequest, res) => {
+  let hubNameCommitted = false;
+  void (async () => {
   const { id } = req.params;
   const parsed = businessUpdateSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -961,6 +963,7 @@ app.put("/api/businesses/:id", authenticate, requireMarketingPermission("busines
         return res.status(response.status === 403 ? 403 : 503)
           .json({error:"Hub did not confirm the shared business name. No local name change was saved."});
       }
+      hubNameCommitted = true;
     } catch {
       return res.status(503).json({error:"Hub could not be reached. Business name was not changed."});
     }
@@ -1003,9 +1006,14 @@ app.put("/api/businesses/:id", authenticate, requireMarketingPermission("busines
     );
   } catch (error:any) {
     if (String(error?.message || "").toLowerCase().includes("unique")) {
-      return res.status(409).json({ error:"That public profile URL is already in use." });
+      return res.status(409).json({
+        error: hubNameCommitted
+          ? "Hub saved the business name, but Marketing could not finish the profile update. Reopen Marketing from Hub to resynchronise."
+          : "That public profile URL is already in use.",
+        code: hubNameCommitted ? "HUB_NAME_SYNC_PENDING" : "PROFILE_SLUG_CONFLICT",
+      });
     }
-    throw error;
+    throw error; // The outer async boundary sends a safe 503; no unhandled rejection.
   }
 
   const updated = db.prepare("SELECT * FROM businesses WHERE id = ?").get(id) as any;
@@ -1031,6 +1039,17 @@ app.put("/api/businesses/:id", authenticate, requireMarketingPermission("busines
       plan:updated.plan,
       createdAt:updated.created_at,
     },
+  });
+  })().catch((error: any) => {
+    console.error("[business-profile] Save failed:", error?.code || error?.name || "storage-error");
+    if (!res.headersSent) {
+      return res.status(503).json({
+        error: hubNameCommitted
+          ? "Hub saved the business name, but Marketing could not complete the profile update. Reopen Marketing from Hub to resynchronise."
+          : "Marketing could not save the business profile. Please retry.",
+        code: hubNameCommitted ? "HUB_NAME_SYNC_PENDING" : "PROFILE_STORAGE_UNAVAILABLE",
+      });
+    }
   });
 });
 
