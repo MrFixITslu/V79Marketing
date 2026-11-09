@@ -28,7 +28,7 @@ import {
 } from "./src/lib/auth.js";
 import { getCreditBalance, deductCredits, addCredits, refundCredits, CREDIT_COSTS } from "./src/lib/creditService.js";
 import { startPublisherWorker, processScheduledPosts } from "./src/lib/publisher.ts";
-import { consumeHubLaunchTicket, verifyHubProvisionRequest, verifyHubSummaryRequest } from "./src/lib/platform.js";
+import { consumeHubLaunchTicket, verifyHubProvisionRequest, verifyHubSummaryRequest, signPlatformRequest } from "./src/lib/platform.js";
 import { deprovisionHubTeamIdentity, provisionHubIdentity } from "./src/lib/hubProvisioning.js";
 import { queueMarketingEvent, startPlatformEventPump } from "./src/lib/platformEvents.js";
 import { decryptToken, encryptToken } from "./src/lib/tokenVault.js";
@@ -877,7 +877,7 @@ app.post(
   }
 );
 
-app.put("/api/businesses/:id", authenticate, requireMarketingPermission("business.write"), requireTenantAccess, (req: AuthenticatedRequest, res) => {
+app.put("/api/businesses/:id", authenticate, requireMarketingPermission("business.write"), requireTenantAccess, async (req: AuthenticatedRequest, res) => {
   const { id } = req.params;
   const parsed = businessUpdateSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -891,6 +891,51 @@ app.put("/api/businesses/:id", authenticate, requireMarketingPermission("busines
 
   const existing = db.prepare("SELECT * FROM businesses WHERE id = ?").get(id) as any;
   if (!existing) return res.status(404).json({ error: "Business not found" });
+
+  // Hub is canonical for names shared by all subscribed applications.
+  // Non-owners can still edit permitted profile fields, but never rename the
+  // entire tenant. A failed Hub write stops the local rename (fail closed).
+  if (updates.name && updates.name !== existing.name && existing.hub_organization_id) {
+    if (req.user?.role !== "BUSINESS_OWNER") {
+      return res.status(403).json({error:"Only the Hub workspace owner may change the shared business name."});
+    }
+    const user = db.prepare("SELECT hub_user_id FROM users WHERE id=? AND business_id=?")
+      .get(req.user.id, id) as any;
+    const hubUserId = String(user?.hub_user_id || "");
+    const organizationId = String(existing.hub_organization_id || "");
+    const secret = String(process.env.V79_PLATFORM_SHARED_SECRET || "").trim();
+    const hubBase = String(process.env.V79_HUB_INTERNAL_URL || "");
+    if (!hubUserId || !organizationId || secret.length < 32 || !hubBase) {
+      return res.status(503).json({error:"Hub business identity update is not configured."});
+    }
+    const pathname = "/api/platform/organizations/rename";
+    const body = JSON.stringify({
+      organizationId, businessId:id, hubUserId, name:updates.name,
+    });
+    const timestamp = String(Date.now());
+    try {
+      const response = await fetch(new URL(pathname, hubBase), {
+        method:"POST",
+        headers:{
+          "content-type":"application/json",
+          "x-v79-service-id":"v79-marketing",
+          "x-v79-timestamp":timestamp,
+          "x-v79-signature":signPlatformRequest({method:"POST",pathname,timestamp,body,secret}),
+        },
+        body,
+        signal:AbortSignal.timeout(5000),
+      });
+      const result:any = await response.json().catch(() => ({}));
+      if (!response.ok ||
+          result?.organization?.id !== organizationId ||
+          result?.organization?.name !== updates.name) {
+        return res.status(response.status === 403 ? 403 : 503)
+          .json({error:"Hub did not confirm the shared business name. No local name change was saved."});
+      }
+    } catch {
+      return res.status(503).json({error:"Hub could not be reached. Business name was not changed."});
+    }
+  }
 
   const nextSlug = updates.slug ?? existing.slug;
   if (nextSlug !== existing.slug) {
