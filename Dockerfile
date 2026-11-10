@@ -14,6 +14,8 @@ ENV NODE_ENV=production
 ENV PORT=3070
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
+# Public web manifest must remain readable by the unprivileged runtime user.
+RUN test -f /app/dist/brand-site.webmanifest && chmod 0644 /app/dist/brand-site.webmanifest
 COPY --from=build /app/package.json ./package.json
 RUN apk add --no-cache ffmpeg font-dejavu
 RUN mkdir -p /app/data && chown node:node /app/data
