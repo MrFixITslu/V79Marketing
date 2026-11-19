@@ -15,6 +15,10 @@ import {
   Share2,
   Megaphone,
   KeyRound,
+  Settings,
+  BookOpen,
+  Clapperboard,
+  ShieldCheck,
   ExternalLink,
   Brain,
   Video,
@@ -30,6 +34,8 @@ import {
   AlertTriangle,
   Trophy,
   Star,
+  Sun,
+  Moon,
   X
 } from 'lucide-react';
 
@@ -41,6 +47,8 @@ interface NavbarProps {
   creditBalance: CreditBalance;
   activeTab: string;
   setActiveTab: (tab: string) => void;
+  theme: 'light' | 'dark';
+  onToggleTheme: () => void;
   currency: 'XCD' | 'USD';
   setCurrency: (curr: 'XCD' | 'USD') => void;
   onOpenAuth: () => void;
@@ -63,6 +71,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   setActiveTab,
   currency,
   setCurrency,
+  theme,
+  onToggleTheme,
   onOpenAuth,
   onViewPublicProfile,
   onOpenCreditStore,
@@ -161,6 +171,8 @@ export const Navbar: React.FC<NavbarProps> = ({
       icon: Sparkles,
       badge: '1-Click',
       items: [
+        { id: 'studio', label: 'Campaign Studio', icon: Clapperboard, badge: 'New', desc: 'Visual brief, concepts and private asset review' },
+        { id: 'studio-approvals', label: 'Publishing Reviews', icon: ShieldCheck, desc: 'Owner review of exact media and scheduled destinations' },
         { id: 'one-idea-campaign', label: 'One Idea → Campaign', icon: Layers, badge: 'Popular', desc: 'Single prompt to full campaign' },
         { id: 'ai-assistant', label: 'Zero-Prompt Creator', icon: Sparkles, desc: 'Guided post & promo captions' },
         { id: 'ai-image', label: 'Graphic Studio', icon: ImageIcon, desc: 'Social posters & banners' },
@@ -201,6 +213,15 @@ export const Navbar: React.FC<NavbarProps> = ({
       ],
     },
     {
+      id: 'settings_hub',
+      label: 'Settings',
+      icon: Settings,
+      items: [
+        { id: 'my-marketing-skill', label: 'My marketing skill', icon: BookOpen, desc: 'Your private instructions, drafts and versions' },
+        { id: 'social-channels', label: 'Connections', icon: Share2, desc: 'Provider accounts and authorisations' },
+      ],
+    },
+    {
       id: 'business_hub',
       label: 'Business',
       icon: Building2,
@@ -228,6 +249,10 @@ export const Navbar: React.FC<NavbarProps> = ({
           <span className="hidden sm:inline text-slate-500">Marketing & Growth Workspace</span>
         </div>
         <div className="flex items-center gap-2 sm:gap-4 shrink-0">
+          <button type="button" onClick={onToggleTheme} aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'} aria-pressed={theme === 'light'} title={theme === 'dark' ? 'Light mode' : 'Dark mode'} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 px-2.5 py-1.5 text-slate-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-orange-500">
+            {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            <span className="hidden md:inline">{theme === 'dark' ? 'Light' : 'Dark'}</span>
+          </button>
           <button
             onClick={() => window.location.assign('/api/platform/hub')}
             aria-label="Back to V79 Hub"
@@ -263,9 +288,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               onClick={() => setActiveTab('landing')}
               className="flex items-center gap-3 cursor-pointer group"
             >
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#0A86FF] via-[#7C3AED] to-[#FF7A00] flex items-center justify-center font-black text-sm tracking-tight text-white border border-white/10 shadow-lg group-hover:brightness-110 transition">
-                V79
-              </div>
+              <img src="/brand/icon-transparent-256.png" alt="V79 Digital" width={36} height={36} className="w-9 h-9 object-contain" />
               <div className="hidden sm:block">
                 <span className="font-bold text-base tracking-tight text-slate-900 block leading-tight">
                   V79 Digital Marketing
@@ -581,7 +604,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* Clean, Grouped Nav Bar (No Scrollbar, Uncluttered) */}
         <div className="border-t border-slate-100 py-2 relative" ref={dropdownRef}>
-          <nav className="flex items-center justify-between sm:justify-start gap-1 sm:gap-2 no-scrollbar text-xs">
+          <nav className="flex flex-wrap items-center justify-start gap-1 sm:gap-2 no-scrollbar text-xs">
             {navGroups.map((group) => {
               const Icon = group.icon;
               const isGroupActive = activeGroup?.id === group.id;

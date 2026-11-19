@@ -1,10 +1,11 @@
 import type Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
+import {ensurePersonalSkillTables,snapshotOwnSkill} from './personalMarketingSkills.js';
 import { publicationUrl } from './publicationLinks.js';
 import { configureSchema, queueSchema, creativeSchema, createMaterials, reviewMaterials, digest,
   type Creative, type ProductionBrand, type ProductionPlan, type ProductionBundle, type Asset } from './productionContract.js';
 import { productionStore, productionEvent, queueProduction, decideDelivery, claimDelivery, deliveryDigest,
-  type ProductionJob, type Destination, type Delivery } from './productionStore.js';
+  type ProductionJob, type Destination, type Delivery, previewApprovalBatch, approveDeliveryBatch } from './productionStore.js';
 
 export type ProductionActor={businessId:string;hubUserId:string;localUserId:string;organizationId:string};
 export type ProductionDependencies={
@@ -19,7 +20,9 @@ export type ProductionDependencies={
   now?:()=>number;
 };
 export function createProductionWorkflow(db:Database.Database,key:string,deps:ProductionDependencies) {
+  ensurePersonalSkillTables(db);
   const store=productionStore(db,key),clock=deps.now||Date.now;
+  const creatorSkill=(actor:ProductionActor)=>snapshotOwnSkill(db,{id:actor.localUserId,businessId:actor.businessId});
   function configure(actor:ProductionActor,input:unknown) {
     const data=configureSchema.parse(input);
     return store.transact(actor.businessId,s=>{
@@ -28,15 +31,36 @@ export function createProductionWorkflow(db:Database.Database,key:string,deps:Pr
       if(s.jobs.some(j=>j.status==='generating'||j.deliveries.some(d=>d.status==='running')))throw Error('An active worker must finish before configuration changes');
       for(const j of s.jobs){if(j.status==='queued')j.status='cancelled';for(const d of j.deliveries)
         if(['awaiting_owner','approved'].includes(d.status))d.status='cancelled';}
-      s.configRevision++;s.ownerHubUserId=actor.hubUserId;s.brand=data.brand;s.plan=data.plan;s.paused=false;
+      s.configRevision++;s.ownerHubUserId=actor.hubUserId;s.ownerLocalUserId=actor.localUserId;s.brand=data.brand;s.plan=data.plan;s.paused=false;
       productionEvent(s,'owner_brand_and_draft_plan_configured',actor.hubUserId,null,null,clock());
       return {configRevision:s.configRevision};
     });
   }
-  function queue(actor:ProductionActor,input:unknown){const data=queueSchema.parse(input);return store.transact(actor.businessId,s=>queueProduction(s,data,actor.hubUserId,clock()));}
+  function queue(actor:ProductionActor,input:unknown){const data=queueSchema.parse(input);
+    const pin=creatorSkill(actor);
+    return store.transact(actor.businessId,s=>queueProduction(s,data,actor.hubUserId,clock(),pin));}
+  function regenerate(actor:ProductionActor,jobId:string,idempotencyKey:string){
+    if(!/^[A-Za-z0-9_-]{16,96}$/.test(idempotencyKey))throw Error('Invalid regeneration key');
+    const pin=creatorSkill(actor);
+    return store.transact(actor.businessId,s=>{
+      const previous=s.jobs.find(j=>j.id===jobId);
+      if(!previous||!previous.skillPin||previous.skillPin.userId!==actor.localUserId||
+         previous.status==='generating'||previous.deliveries.some(d=>['running','succeeded','uncertain'].includes(d.status)))
+        throw Error('Started or unrelated job cannot be regenerated');
+      const found=s.jobs.find(j=>j.key===idempotencyKey);
+      if(found)throw Error('Regeneration key already used');
+      previous.status='cancelled';
+      for(const d of previous.deliveries)if(['awaiting_owner','approved','blocked'].includes(d.status))d.status='cancelled';
+      const next=queueProduction(s,{factId:previous.factId,angle:previous.angle,
+        idempotencyKey},actor.hubUserId,clock(),pin);
+      productionEvent(s,'creator_explicit_regeneration',actor.hubUserId,next.id,null,clock());
+      return next;
+    });
+  }
   function decision(actor:ProductionActor,input:{jobId:string;deliveryId:string;decision:'approve'|'reject';digest:string}) {
     return store.transact(actor.businessId,s=>decideDelivery(s,input.jobId,input.deliveryId,input.decision,input.digest,actor.hubUserId,clock()));
   }
+  function approveBatch(actor:ProductionActor,batchDigest:string){return store.transact(actor.businessId,s=>approveDeliveryBatch(s,batchDigest,actor.hubUserId,clock()));}
   function pause(actor:ProductionActor,value:boolean){return store.transact(actor.businessId,s=>{
     s.paused=value;productionEvent(s,value?'owner_paused':'owner_resumed',actor.hubUserId,null,null,clock());return {paused:s.paused};});}
   function cancel(actor:ProductionActor,jobId:string){return store.transact(actor.businessId,s=>{
@@ -44,7 +68,7 @@ export function createProductionWorkflow(db:Database.Database,key:string,deps:Pr
     if(j.status==='generating'||j.deliveries.some(d=>['running','succeeded','uncertain'].includes(d.status)))throw Error('Started effects require operator reconciliation');
     j.status='cancelled';for(const d of j.deliveries)if(['awaiting_owner','approved','blocked'].includes(d.status))d.status='cancelled';
     productionEvent(s,'owner_cancelled_package',actor.hubUserId,jobId,null,clock());return {cancelled:true};});}
-  function status(actor:ProductionActor){const s=store.read(actor.businessId);return {...s,events:s.events.slice(-100),jobs:s.jobs.slice(-30).reverse().map(j=>({...j,
+  function status(actor:ProductionActor){const s=store.read(actor.businessId);return {...s,approvalBatch:previewApprovalBatch(s,clock()),events:s.events.slice(-100),jobs:s.jobs.slice(-30).reverse().map(j=>({...j,
     deliveries:j.deliveries.map(d=>d.status==='succeeded'&&d.result?{...d,result:{...d.result,providerUrl:publicationUrl(d.channel,d.result.providerPostId)}}:d)}))};}
   function syncPublished(actor:ProductionActor){
     if(!deps.recordPublished)return;
@@ -75,12 +99,12 @@ export function createProductionWorkflow(db:Database.Database,key:string,deps:Pr
       if(!await deps.authorized(actor))return {state:'owner_or_entitlement_unavailable'};
       syncPublished(actor);
       const claimed=store.transact(actor.businessId,s=>{
-        if(s.paused||!s.brand||!s.plan||s.ownerHubUserId!==actor.hubUserId)return null;
+        if(s.paused||!s.brand||!s.plan||s.ownerHubUserId!==actor.hubUserId||s.ownerLocalUserId!==actor.localUserId)return null;
         if(s.plan.automaticDrafts&&(!s.lastAutomaticAt||clock()-Date.parse(s.lastAutomaticAt)>=s.plan.cadenceDays*86400000)){
           const index=s.jobs.length%s.brand.facts.length;
           const epoch=Math.floor(clock()/(s.plan.cadenceDays*86400000));
           queueProduction(s,{factId:s.brand.facts[index].id,angle:'Practical Caribbean SMB service spotlight',
-            idempotencyKey:'automatic_draft_'+s.configRevision+'_'+epoch},'coo-worker',clock());
+            idempotencyKey:'automatic_draft_'+s.configRevision+'_'+epoch},'coo-worker',clock(),creatorSkill(actor));
           s.lastAutomaticAt=new Date(clock()).toISOString();
         }
         if(s.jobs.some(j=>j.status==='generating'))return null;
@@ -90,6 +114,8 @@ export function createProductionWorkflow(db:Database.Database,key:string,deps:Pr
       });
       if(claimed){
         try{
+          if(!claimed.job.skillPin||claimed.job.skillPin.userId!==actor.localUserId||claimed.job.skillPin.businessId!==actor.businessId)
+            throw Error('Creator skill binding unavailable');
           const result=await deps.generate(claimed.brand,claimed.plan,claimed.job);
           const creative=creativeSchema.parse(result.creative);
           const materials=createMaterials(claimed.brand,claimed.plan,claimed.job.factId,creative,claimed.job.id);
@@ -116,6 +142,8 @@ export function createProductionWorkflow(db:Database.Database,key:string,deps:Pr
       if(!ready)return {state:claimed?'produced':'idle'};
       let attempted=false;
       try{
+        if(!ready.job.skillPin||ready.job.skillPin.userId!==actor.localUserId||ready.job.skillPin.businessId!==actor.businessId)
+          throw Error('Production creator skill or entitlement mismatch');
         await deps.verifyAssets(ready.job);
         if(!await deps.destinationUnchanged(actor,ready.delivery))throw Error('Destination changed');
         if(!await deps.authorized(actor))throw Error('Owner permission unavailable');
@@ -149,5 +177,5 @@ export function createProductionWorkflow(db:Database.Database,key:string,deps:Pr
       }
     }finally{running=false;}
   }
-  return {store,configure,queue,decision,pause,cancel,status,tick};
+  return {store,configure,queue,regenerate,decision,approveBatch,pause,cancel,status,tick};
 }

@@ -181,7 +181,12 @@ export const SocialAccountsManager: React.FC<SocialAccountsManagerProps> = ({
                   </div>
                 </div>
 
-                {sa.connected ? (
+                {sa.platform === 'tiktok' && sa.reauthorizationRequired ? (
+                  <span className="flex items-center gap-1 text-xs font-bold bg-amber-500/10 text-amber-300 border border-amber-500/30 px-2 py-1 rounded-full">
+                    <AlertCircle className="w-3 h-3" />
+                    <span>Reconnect required</span>
+                  </span>
+                ) : sa.connected ? (
                   <span className="flex items-center gap-1 text-xs font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 px-2 py-1 rounded-full">
                     <CheckCircle2 className="w-3 h-3" />
                     <span>Connected</span>
@@ -210,6 +215,24 @@ export const SocialAccountsManager: React.FC<SocialAccountsManagerProps> = ({
                   </div>
                 )}
               </div>
+
+              {sa.platform === 'tiktok' && sa.reauthorizationRequired && (
+                <div className="space-y-2 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">
+                  <p>TikTok access needs a new authorisation. Scheduled posts will not use an old refresh token.</p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedPlatform('tiktok');
+                      setHandleInput(sa.accountHandle || '');
+                      setAcceptedPrivacy(false);
+                      setAcceptedTerms(false);
+                      setConnectionError('');
+                      setShowConnectModal(true);
+                    }}
+                    className="rounded-lg border border-amber-500/50 bg-amber-500/15 px-3 py-2 font-semibold hover:bg-amber-500/25"
+                  >Reconnect TikTok</button>
+                </div>
+              )}
 
               {sa.connected && (
                 <button

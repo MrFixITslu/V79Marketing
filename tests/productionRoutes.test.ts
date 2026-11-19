@@ -48,6 +48,15 @@ describe('Founder-only production boundary',()=>{
       f.env.V79_MARKETING_PRODUCTION_ENABLED='0';expect((await f.send()).status).toBe(503);
     }finally{f.db.close();}
   });
+  it('requires fresh founder MFA and the explicit publishing flag for batch approvals',async()=>{
+    const f=fixture();try{
+      const action={action:'approve_batch',batchDigest:'a'.repeat(64)};
+      expect((await f.send({mfaVerifiedAt:Date.now()-300001,request:action})).status).toBe(403);
+      expect((await f.send({request:action})).status).toBe(503);
+      f.env.V79_MARKETING_PRODUCTION_PUBLISH_ENABLED='1';
+      expect((await f.send({request:action})).status).toBe(409); // No exact reviewable batch exists.
+    }finally{f.db.close();}
+  });
   it('draft assets and arbitrary file paths are never publicly exposed',async()=>{
     const f=fixture();try{
       expect((await request(f.app).get('/media/production/00000000-0000-4000-8000-000000000000/'+ '0'.repeat(64)+'/copy.json')).status).toBe(404);

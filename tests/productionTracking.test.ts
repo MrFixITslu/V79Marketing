@@ -6,6 +6,7 @@ import {deliveryDigest,type ProductionJob,type Delivery} from '../src/lib/produc
 import {installProductionTracking,recordProductionPublication,productionManagedPost} from '../src/lib/productionTracking.js';
 import {publicationUrl} from '../src/lib/publicationLinks.js';
 import {createProductionWorkflow,type ProductionDependencies} from '../src/lib/productionWorkflow.js';
+import {ensurePersonalSkillTables,snapshotOwnSkill} from '../src/lib/personalMarketingSkills.js';
 
 const actor={businessId:'biz',organizationId:'org',localUserId:'owner',hubUserId:'hub-owner'};
 const key='synthetic-production-audit-key-32-characters';
@@ -20,10 +21,10 @@ function fixture(){
  CREATE TABLE post_deliveries(post_id TEXT,business_id TEXT,platform TEXT,social_account_id TEXT,status TEXT,provider_post_id TEXT,last_error TEXT,attempts INTEGER,published_at TEXT,updated_at TEXT,PRIMARY KEY(post_id,platform));
  INSERT INTO businesses VALUES('biz','org'); INSERT INTO businesses VALUES('other-biz','other-org');
  INSERT INTO users VALUES('owner','biz','Synthetic owner','hub-owner','vision79slu@gmail.com','BUSINESS_OWNER');
- INSERT INTO social_accounts VALUES('account','biz','youtube');`);installProductionTracking(db);
+ INSERT INTO social_accounts VALUES('account','biz','youtube');`);installProductionTracking(db);ensurePersonalSkillTables(db);
  const materials=createMaterials(brand,plan,'ict',{hook:'Make business technology practical',tip:'Review a recurring task with your team.'});
  const bundle={schemaVersion:1 as const,source:'brand-template' as const,brand,factId:'ict',angle:'Practical ICT',materials,assets:[],review:reviewMaterials(brand,materials)};
- const job:ProductionJob={id:randomUUID(),key:'synthetic-package-key',inputDigest:'',factId:'ict',angle:'Practical ICT',configRevision:1,status:'awaiting_owner',createdAt:'2026-10-14T19:00:00Z',bundle,bundleDigest:digest(bundle),deliveries:[]};
+ const job:ProductionJob={id:randomUUID(),key:'synthetic-package-key',inputDigest:'',factId:'ict',angle:'Practical ICT',configRevision:1,skillPin:snapshotOwnSkill(db,{id:'owner',businessId:'biz'}),status:'awaiting_owner',createdAt:'2026-10-14T19:00:00Z',bundle,bundleDigest:digest(bundle),deliveries:[]};
  const delivery:Delivery={id:randomUUID(),channel:'youtube',accountId:'account',providerAccountId:'exact-channel',accountFingerprint:digest('account'),scheduledAt:'2026-10-14T20:00:00Z',payload:{caption:'Exact approved caption',hashtags:['Exact'],youtube:{title:'Exact uploaded title',privacyStatus:'private'}},digest:'',status:'succeeded',result:{providerPostId:'dQw4w9WgXcQ',at:'2026-10-14T20:00:05Z'}};
  delivery.digest=deliveryDigest(job,delivery);delivery.approval={by:actor.hubUserId,digest:delivery.digest,at:'2026-10-14T19:30:00Z',expiresAt:'2026-10-14T21:00:00Z'};job.deliveries=[delivery];
  return {db,job,delivery};
@@ -60,7 +61,7 @@ describe('Production receipts become normal Marketing records without publishing
   try{
    const dispatch=vi.fn(async()=>({providerPostId:'unused',publishedAt:'2026-10-14T20:00:05Z'}));
    const deps:ProductionDependencies={authorized:async()=>true,generate:async()=>{throw Error('No generation');},render:async()=>[],destinations:async()=>[],verifyAssets:async()=>{},destinationUnchanged:async()=>true,dispatch,recordPublished:(a,j,d)=>recordProductionPublication(f.db,a,j,d)};
-   const w=createProductionWorkflow(f.db,key,deps);w.store.transact('biz',s=>{s.ownerHubUserId=actor.hubUserId;s.configRevision=1;s.brand=brand;s.plan=plan;s.paused=false;s.jobs=[f.job];});
+   const w=createProductionWorkflow(f.db,key,deps);w.store.transact('biz',s=>{s.ownerHubUserId=actor.hubUserId;s.ownerLocalUserId=actor.localUserId;s.configRevision=1;s.brand=brand;s.plan=plan;s.paused=false;s.jobs=[f.job];});
    f.db.exec("CREATE TRIGGER fail_projection BEFORE INSERT ON production_post_links BEGIN SELECT RAISE(ABORT,'synthetic disk error'); END;");
    await w.tick(actor);expect(dispatch).not.toHaveBeenCalled();expect(f.db.prepare('SELECT COUNT(*) n FROM posts').get()).toEqual({n:0});
    let saved=w.store.read('biz').jobs[0].deliveries[0];expect(saved.status).toBe('succeeded');expect(saved.result!.providerPostId).toBe('dQw4w9WgXcQ');expect(saved.result!.marketingPostId).toBeUndefined();
@@ -75,7 +76,7 @@ describe('Production receipts become normal Marketing records without publishing
    let now=Date.parse('2026-10-14T19:00:00Z');const d=f.delivery;d.status='awaiting_owner';delete d.result;delete d.approval;
    const dispatch=vi.fn(async()=>({providerPostId:'dQw4w9WgXcQ',publishedAt:new Date(now).toISOString()}));
    const w=createProductionWorkflow(f.db,key,{now:()=>now,authorized:async()=>true,generate:async()=>{throw Error('No generation');},render:async()=>[],destinations:async()=>[],verifyAssets:async()=>{},destinationUnchanged:async()=>true,dispatch,recordPublished:(a,j,d)=>recordProductionPublication(f.db,a,j,d)});
-   w.store.transact('biz',s=>{s.ownerHubUserId=actor.hubUserId;s.configRevision=1;s.brand=brand;s.plan=plan;s.paused=false;s.jobs=[f.job];});
+   w.store.transact('biz',s=>{s.ownerHubUserId=actor.hubUserId;s.ownerLocalUserId=actor.localUserId;s.configRevision=1;s.brand=brand;s.plan=plan;s.paused=false;s.jobs=[f.job];});
    w.decision(actor,{jobId:f.job.id,deliveryId:d.id,decision:'approve',digest:d.digest});await w.tick(actor);expect(dispatch).not.toHaveBeenCalled();
    now=Date.parse(d.scheduledAt)+1;await w.tick(actor);await w.tick(actor);expect(dispatch).toHaveBeenCalledTimes(1);
    expect(f.db.prepare('SELECT status FROM posts').get()).toEqual({status:'PUBLISHED'});expect(w.store.read('biz').jobs[0].deliveries[0].result!.marketingPostId).toBeDefined();
@@ -86,7 +87,7 @@ describe('Production receipts become normal Marketing records without publishing
    let now=Date.parse('2026-10-14T19:00:00Z'),uploaded=false,failRead=true;const d=f.delivery;d.status='awaiting_owner';delete d.result;delete d.approval;
    const dispatch=vi.fn(async()=>{uploaded=true;return {providerPostId:'dQw4w9WgXcQ',publishedAt:new Date(now).toISOString()};});
    const w=createProductionWorkflow(f.db,key,{now:()=>now,authorized:async()=>true,generate:async()=>{throw Error('No generation');},render:async()=>[],destinations:async()=>[],verifyAssets:async()=>{},destinationUnchanged:async()=>true,dispatch,recordPublished:(a,j,d)=>recordProductionPublication(f.db,a,j,d)});
-   w.store.transact('biz',s=>{s.ownerHubUserId=actor.hubUserId;s.configRevision=1;s.brand=brand;s.plan=plan;s.paused=false;s.jobs=[f.job];});
+   w.store.transact('biz',s=>{s.ownerHubUserId=actor.hubUserId;s.ownerLocalUserId=actor.localUserId;s.configRevision=1;s.brand=brand;s.plan=plan;s.paused=false;s.jobs=[f.job];});
    w.decision(actor,{jobId:f.job.id,deliveryId:d.id,decision:'approve',digest:d.digest});
    const read=w.store.read;w.store.read=(id)=>{if(uploaded&&failRead){failRead=false;throw Error('Synthetic receipt read outage');}return read(id);};
    now=Date.parse(d.scheduledAt)+1;expect(await w.tick(actor)).toMatchObject({state:'published'});

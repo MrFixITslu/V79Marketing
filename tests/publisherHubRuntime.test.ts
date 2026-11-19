@@ -76,6 +76,21 @@ describe.sequential("scheduled social publishing requires current Hub entitlemen
     expect(db.prepare("SELECT status FROM posts WHERE id=?").get(second).status).toBe("SCHEDULED");
     expect(db.prepare("SELECT count(*) AS n FROM post_deliveries WHERE post_id=?").get(second).n).toBe(0);
   });
+  it("never replays a crash-interrupted delivery even on later worker runs",async()=>{
+    const id="worker-interrupted-send",now=new Date().toISOString();
+    db.prepare("INSERT INTO posts (id,business_id,author_id,author_name,title,content_json,media_urls_json,scheduled_for,status,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)")
+      .run(id,biz,author,"Staging Worker","Interrupted publish",JSON.stringify({facebook:{caption:"Do not repost"}}),"[]",
+        new Date(Date.now()-60000).toISOString(),"SCHEDULED",now);
+    db.prepare("INSERT INTO post_deliveries(post_id,business_id,platform,status,attempts,updated_at) VALUES(?,?,?,'DISPATCHING',1,?)")
+      .run(id,biz,"facebook",now);
+    permitted=true;
+    await processScheduledPosts();
+    const before=db.prepare("SELECT status,attempts FROM post_deliveries WHERE post_id=?").get(id) as any;
+    expect(before).toEqual({status:"OUTCOME_UNKNOWN",attempts:1});
+    await processScheduledPosts();
+    const after=db.prepare("SELECT status,attempts FROM post_deliveries WHERE post_id=?").get(id) as any;
+    expect(after).toEqual(before);
+  });
   it("never routes recorded production receipts back through the general publisher, even if a status is changed",async()=>{
     const now=new Date().toISOString();
     const namespaceId='production-00000000-0000-4000-8000-000000000001',linkedId='legacy-tracked-production';

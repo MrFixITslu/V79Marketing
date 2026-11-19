@@ -1,5 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Business, Post, SocialAccount, SocialPlatform, TikTokCreatorInfo } from '../types';
+import type { CampaignContentHandoff } from '../lib/campaignHandoff';
 import {
   Sparkles,
   Copy,
@@ -28,6 +29,8 @@ interface AiContentGeneratorProps {
   socialAccounts: SocialAccount[];
   onSchedulePost: (newPost: Partial<Post>) => Promise<void>;
   initialPrompt?: string;
+  initialTitle?: string;
+  campaignContext?: CampaignContentHandoff | null;
 }
 
 const PUBLISH_PLATFORMS = ['facebook', 'instagram', 'linkedin', 'tiktok', 'youtube', 'google_business'] as const;
@@ -54,17 +57,21 @@ export const AiContentGenerator: React.FC<AiContentGeneratorProps> = ({
   socialAccounts,
   onSchedulePost,
   initialPrompt = '',
+  initialTitle = '',
+  campaignContext = null,
 }) => {
   const [selectedCategory, setSelectedCategory] = useState<'offer' | 'product' | 'event' | 'story' | 'holiday'>('offer');
-  const [itemName, setItemName] = useState('');
+  const [itemName, setItemName] = useState(initialTitle);
   const [specialDetail, setSpecialDetail] = useState('');
   const [prompt, setPrompt] = useState(initialPrompt);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [useOwnCloudKey,setUseOwnCloudKey]=useState(false);
   const [generationError, setGenerationError] = useState('');
   const [activePlatform, setActivePlatform] = useState<SocialPlatform | 'whatsapp'>('facebook');
   const [copied, setCopied] = useState(false);
   const [scheduledSuccess, setScheduledSuccess] = useState(false);
   const [schedulePending, setSchedulePending] = useState(false);
+  const scheduleLock = useRef(false);
   const [scheduleError, setScheduleError] = useState('');
   const [generatedContent, setGeneratedContent] = useState<any>({});
 
@@ -158,12 +165,14 @@ export const AiContentGenerator: React.FC<AiContentGeneratorProps> = ({
     const fullPrompt = `${categories.find((c) => c.id === selectedCategory)?.label}: "${itemName}". Details: "${specialDetail}". ${prompt}`;
 
     setIsGenerating(true);
+    setScheduledSuccess(false);
     setGenerationError('');
+    setGeneratedContent({});
     try {
       const response = await fetch('/api/ai/generate-text', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: fullPrompt }),
+        body: JSON.stringify({ prompt: fullPrompt, useOwnCloudKey }),
       });
 
       const data = await response.json().catch(() => ({}));
@@ -171,10 +180,7 @@ export const AiContentGenerator: React.FC<AiContentGeneratorProps> = ({
       setGeneratedContent(data.data);
       if (!youtubeTitle.trim()) setYoutubeTitle(itemName || 'V79 Marketing video');
 
-      if (selectedPublishPlatforms.length === 0) {
-        const connected = PUBLISH_PLATFORMS.filter(platform => connectedByPlatform.has(platform));
-        setSelectedPublishPlatforms(connected);
-      }
+      // Never auto-select every connected account. The owner chooses each destination.
       if (Number(data.creditsCharged || 0) > 0) window.dispatchEvent(new Event('v79:credits-updated'));
     } catch (err) {
       setGenerationError(err instanceof Error ? err.message : 'Could not generate marketing content.');
@@ -212,6 +218,7 @@ export const AiContentGenerator: React.FC<AiContentGeneratorProps> = ({
   };
 
   const handleScheduleCurrent = async () => {
+    if (scheduleLock.current || schedulePending || scheduledSuccess || isGenerating) return;
     setScheduleError('');
     if (!Object.keys(generatedContent || {}).length) {
       setScheduleError('Generate the marketing copy before scheduling it.');
@@ -219,6 +226,14 @@ export const AiContentGenerator: React.FC<AiContentGeneratorProps> = ({
     }
     if (!selectedPublishPlatforms.length) {
       setScheduleError('Choose at least one publishing channel.');
+      return;
+    }
+    if (selectedPublishPlatforms.some(platform => !generatedContent[platform]?.caption?.trim())) {
+      setScheduleError('Generate copy for every selected channel before scheduling. No channels have been queued.');
+      return;
+    }
+    if (campaignContext && selectedPublishPlatforms.some(platform => !connectedByPlatform.has(platform))) {
+      setScheduleError('Connect each selected social account before scheduling campaign content. You can manage accounts in Social Connections.');
       return;
     }
 
@@ -295,18 +310,20 @@ export const AiContentGenerator: React.FC<AiContentGeneratorProps> = ({
       content,
       scheduledFor: scheduledDate.toISOString(),
       status: 'SCHEDULED',
+      campaignId: campaignContext?.campaignId,
       mediaUrls: publicMedia ? [publicMedia] : [],
     };
 
+    scheduleLock.current = true;
     setSchedulePending(true);
     try {
       await onSchedulePost(newPost);
       window.dispatchEvent(new Event('v79:deliveries-updated'));
       setScheduledSuccess(true);
-      setTimeout(() => setScheduledSuccess(false), 3000);
     } catch (error) {
       setScheduleError(error instanceof Error ? error.message : 'Could not save this post. Try again.');
     } finally {
+      scheduleLock.current = false;
       setSchedulePending(false);
     }
   };
@@ -339,7 +356,7 @@ export const AiContentGenerator: React.FC<AiContentGeneratorProps> = ({
             <Sparkles className="w-4 h-4" />
             <span>Verified Multi-Channel Content Creator</span>
           </div>
-          <h1 className="text-2xl font-black text-slate-900">Create & Schedule a Post</h1>
+          <h1 className="text-2xl font-black text-slate-900">{campaignContext ? 'Prepare Campaign Content' : 'Create & Schedule a Post'}</h1>
           <p className="text-sm text-slate-500 mt-1">
             Generate channel-specific copy, choose exactly where it should publish, and review provider requirements before it enters the queue.
           </p>
@@ -347,13 +364,24 @@ export const AiContentGenerator: React.FC<AiContentGeneratorProps> = ({
 
         <button
           onClick={handleScheduleCurrent}
-          disabled={schedulePending}
+          disabled={isGenerating || schedulePending || scheduledSuccess}
           className="px-6 py-3 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-bold rounded-2xl text-sm shadow-md flex items-center justify-center gap-2 transition-all cursor-pointer whitespace-nowrap disabled:opacity-50"
         >
           {scheduledSuccess ? <Check className="w-4 h-4" /> : <Calendar className="w-4 h-4" />}
           <span>{schedulePending ? 'Scheduling…' : scheduledSuccess ? 'Queued Successfully' : 'Schedule Selected Channels'}</span>
         </button>
       </div>
+
+      {campaignContext && (
+        <div className="rounded-2xl border border-orange-200 bg-orange-50 p-4 text-sm text-slate-800">
+          <p className="font-bold text-slate-900">Campaign: {campaignContext.campaignName}</p>
+          <p className="mt-1">Suggested channel: <strong>{campaignContext.recommendedChannel.replace('_', ' ')}</strong>. No platform is automatically selected.</p>
+          <p className="mt-1">Generate content, inspect the actual copy and media, then explicitly choose connected channels and schedule. A scheduled post will be linked to this campaign.</p>
+          {(['whatsapp','twitter'] as string[]).includes(campaignContext.recommendedChannel) && (
+            <p className="mt-2 font-medium text-amber-800">This step is for manual or separately supported outreach. WhatsApp messages and X/Twitter cannot be automatically posted through this scheduler.</p>
+          )}
+        </div>
+      )}
 
       {scheduleError && (
         <div role="alert" className="rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm font-medium text-red-800">
@@ -426,6 +454,12 @@ export const AiContentGenerator: React.FC<AiContentGeneratorProps> = ({
             />
           </div>
 
+          <label className="flex items-start gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+            <input type="checkbox" checked={useOwnCloudKey} onChange={e=>setUseOwnCloudKey(e.target.checked)}
+              className="mt-1" />
+            <span>Allow a cloud fallback using <strong>my own saved Gemini API key</strong> if local AI is unavailable.
+              Provider charges may apply to my account. Off by default; never shares keys between users.</span>
+          </label>
           {generationError && <p role="alert" className="text-sm text-red-700">{generationError}</p>}
 
           <div className="flex justify-end pt-2">
