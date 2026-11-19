@@ -16,6 +16,7 @@ import {
   ExternalLink,
   MessageSquare,
   Sparkles,
+  Upload,
   Tag
 } from 'lucide-react';
 
@@ -33,12 +34,52 @@ export const BusinessProfileBuilder: React.FC<BusinessProfileBuilderProps> = ({
   const [formData, setFormData] = useState<Business>({ ...business });
   const [isSaved, setIsSaved] = useState(false);
   const [saveError, setSaveError] = useState('');
+  const [uploading, setUploading] = useState<'logo' | 'banner' | null>(null);
+  const [uploadStatus, setUploadStatus] = useState('');
   const [activeSubTab, setActiveSubTab] = useState<'info' | 'branding' | 'hours' | 'products'>('info');
 
   const [newProductName, setNewProductName] = useState('');
   const [newProductPrice, setNewProductPrice] = useState('');
   const [newProductDesc, setNewProductDesc] = useState('');
   const [newProductCategory, setNewProductCategory] = useState('Mains');
+
+  const uploadProfileImage = async (file: File | undefined, kind: 'logo' | 'banner') => {
+    if (!file) return;
+    setUploadStatus('');
+    const maxBytes = kind === 'logo' ? 1024 * 1024 : 3 * 1024 * 1024;
+    if (!['image/png','image/jpeg','image/webp'].includes(file.type) || file.size > maxBytes) {
+      setUploadStatus(kind === 'logo' ?
+        'Select a PNG, JPEG or WebP logo up to 1 MB.' :
+        'Select a PNG, JPEG or WebP banner up to 3 MB.');
+      return;
+    }
+    setUploading(kind);
+    try {
+      const response = await fetch(
+        '/api/businesses/' + encodeURIComponent(business.id) + '/profile-media/' + kind,
+        {
+          method:'POST',
+          credentials:'same-origin',
+          headers:{'Content-Type': file.type},
+          body:file,
+        }
+      );
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || typeof body.url !== 'string') {
+        throw new Error(body.error || 'Image upload failed.');
+      }
+      setFormData(previous => ({
+        ...previous,
+        ...(kind === 'logo' ? {logoUrl:body.url} : {coverImageUrl:body.url}),
+      }));
+      setIsSaved(false);
+      setUploadStatus((kind === 'logo' ? 'Logo' : 'Banner') + ' uploaded. Click Save Profile to apply it.');
+    } catch (error) {
+      setUploadStatus(error instanceof Error ? error.message : 'Image upload failed.');
+    } finally {
+      setUploading(null);
+    }
+  };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -253,9 +294,20 @@ export const BusinessProfileBuilder: React.FC<BusinessProfileBuilderProps> = ({
             />
           </div>
 
+          {/* Tenant-specific logo and banner uploads; changing images requires Save Profile. */}
+          {uploadStatus && <p role="status" aria-live="polite" className="text-xs text-slate-300">{uploadStatus}</p>}
           {/* Logo & Cover URLs */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-2">
+              <label htmlFor="v79-business-logo" className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-xs font-bold text-white">
+                <Upload className="h-4 w-4" />
+                {uploading === 'logo' ? 'Uploading logo…' : 'Upload business logo'}
+              </label>
+              <input id="v79-business-logo" type="file" accept="image/png,image/jpeg,image/webp" className="sr-only"
+                disabled={uploading !== null}
+                onChange={(event) => {const file=event.currentTarget.files?.[0];event.currentTarget.value='';void uploadProfileImage(file,'logo');}}
+              />
+              <p className="text-xs text-slate-400">PNG, JPG or WebP. Up to 1 MB.</p>
               <label className="text-xs font-bold text-slate-300">Logo Image URL</label>
               <input
                 type="text"
@@ -263,10 +315,19 @@ export const BusinessProfileBuilder: React.FC<BusinessProfileBuilderProps> = ({
                 onChange={(e) => setFormData({ ...formData, logoUrl: e.target.value })}
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-slate-200 focus:outline-none"
               />
-              <img src={formData.logoUrl} alt="Logo preview" className="w-16 h-16 rounded-xl object-cover border border-slate-800 mt-2" />
+              {formData.logoUrl && <img src={formData.logoUrl} alt="Logo preview" className="w-16 h-16 rounded-xl object-contain border border-slate-800 mt-2" />}
             </div>
 
             <div className="space-y-2">
+              <label htmlFor="v79-business-banner" className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-xs font-bold text-white">
+                <Upload className="h-4 w-4" />
+                {uploading === 'banner' ? 'Uploading banner…' : 'Upload cover banner'}
+              </label>
+              <input id="v79-business-banner" type="file" accept="image/png,image/jpeg,image/webp" className="sr-only"
+                disabled={uploading !== null}
+                onChange={(event) => {const file=event.currentTarget.files?.[0];event.currentTarget.value='';void uploadProfileImage(file,'banner');}}
+              />
+              <p className="text-xs text-slate-400">PNG, JPG or WebP. Up to 3 MB.</p>
               <label className="text-xs font-bold text-slate-300">Cover Banner URL</label>
               <input
                 type="text"
@@ -274,7 +335,7 @@ export const BusinessProfileBuilder: React.FC<BusinessProfileBuilderProps> = ({
                 onChange={(e) => setFormData({ ...formData, coverImageUrl: e.target.value })}
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-slate-200 focus:outline-none"
               />
-              <img src={formData.coverImageUrl} alt="Cover preview" className="w-full h-16 rounded-xl object-cover border border-slate-800 mt-2" />
+              {formData.coverImageUrl && <img src={formData.coverImageUrl} alt="Cover preview" className="w-full h-24 rounded-xl object-cover border border-slate-800 mt-2" />}
             </div>
           </div>
         </div>
